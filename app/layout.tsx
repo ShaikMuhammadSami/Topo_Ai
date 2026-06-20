@@ -15,10 +15,9 @@ const robotoSlab = Roboto_Slab({
 })
 
 export const metadata: Metadata = {
-  title: 'topo ai — evidence-based RCA for kubernetes',
+  title: 'topo ai - evidence-based RCA for kubernetes',
   description:
-    'topo ai correlates your temporal k8s graph, git diffs, deploy events and live signals into a ranked list of hypotheses — each with supporting evidence and a confidence you can defend in review.',
-  generator: 'v0.app',
+    'topo ai correlates your temporal k8s graph, git diffs, deploy events and live signals into a ranked list of hypotheses - each with supporting evidence and a confidence you can defend in review.',
   icons: {
     icon: [
       {
