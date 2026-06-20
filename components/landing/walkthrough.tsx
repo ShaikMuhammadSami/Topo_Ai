@@ -13,7 +13,7 @@ export function Walkthrough() {
           </h2>
           <div>
             <p className="max-w-md text-pretty leading-relaxed text-muted-foreground">
-              The demo plays out INC-4419 in real time — alert, correlation, ranked
+              The demo plays out INC-4419 in real time - alert, correlation, ranked
               hypotheses with evidence, on-call action, and recovery verification. No
               setup, no auth.
             </p>

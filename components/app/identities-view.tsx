@@ -26,7 +26,7 @@ export function IdentitiesView() {
         </h2>
         <p className="mt-2 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
           The backbone of everything downstream. If identities are wrong, blame is
-          wrong. Every match carries a confidence score and a source — label match
+          wrong. Every match carries a confidence score and a source - label match
           (~0.99), naming heuristic (~0.7) or manual override (1.00).
         </p>
       </div>

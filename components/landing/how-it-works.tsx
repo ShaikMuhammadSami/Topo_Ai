@@ -19,7 +19,7 @@ const features = [
   {
     icon: RefreshCw,
     title: "Recovery loop",
-    body: "After a fix, topo watches the same signals to confirm — or flag a hidden second cause.",
+    body: "After a fix, topo watches the same signals to confirm - or flag a hidden second cause.",
   },
 ]
 
@@ -37,7 +37,7 @@ export function HowItWorks() {
             </h2>
           </div>
           <p className="max-w-xl text-pretty leading-relaxed text-muted-foreground lg:pt-12">
-            topo ai is built around the narrative of an incident — what changed, when,
+            topo ai is built around the narrative of an incident - what changed, when,
             what broke, and what evidence supports each theory. The topology view is
             secondary; the timeline + ranked hypotheses are the primary surface.
             Engineers spend less time spelunking, more time deciding.

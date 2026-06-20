@@ -26,7 +26,7 @@ export function Hero() {
           </h1>
           <p className="mt-6 max-w-md text-pretty leading-relaxed text-muted-foreground">
             topo ai correlates your temporal k8s graph, git diffs, deploy events and
-            live signals into a ranked list of hypotheses — each with supporting{" "}
+            live signals into a ranked list of hypotheses - each with supporting{" "}
             <span className="text-foreground">and counter</span> evidence, and a
             confidence you can defend in an incident review.
           </p>
@@ -71,7 +71,7 @@ function HeroTerminal() {
         <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
         <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
         <span className="ml-3 font-mono text-[11px] text-muted-foreground">
-          topo — zsh — 120×30
+          topo - zsh - 120×30
         </span>
       </div>
       <pre className="overflow-x-auto p-4 font-mono text-[12px] leading-relaxed">

@@ -42,7 +42,7 @@ function runCommand(raw: string): Line[] {
       { type: "out", text: "acme/checkout               checkout-api   LABEL-MATCH    0.99", tone: "ok" },
       { type: "out", text: "acme/pricing                pricing-svc    LABEL-MATCH    0.99", tone: "ok" },
       { type: "out", text: "acme/payments-ledger        ledger         NAMING-HEUR    0.74", tone: "warn" },
-      { type: "out", text: "—                           redis-master   MANUAL         1.00", tone: "info" },
+      { type: "out", text: "-                           redis-master   MANUAL         1.00", tone: "info" },
     ]
   }
   if (cmd.startsWith("diff")) {
@@ -65,7 +65,7 @@ function runCommand(raw: string): Line[] {
       { type: "out", text: "3122f0a #2281 k.lin    feat(auth): extend token TTL to 24h", tone: "muted" },
     ]
   }
-  return [{ type: "out", text: `command not found: ${cmd} — try \`help\``, tone: "danger" }]
+  return [{ type: "out", text: `command not found: ${cmd} - try \`help\``, tone: "danger" }]
 }
 
 const toneClass: Record<string, string> = {
@@ -109,7 +109,7 @@ export function CliView() {
           topo from your terminal
         </h2>
         <p className="mt-2 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
-          Every action in the web workspace has a CLI equivalent. Type below —
+          Every action in the web workspace has a CLI equivalent. Type below -
           arrow-up recalls history.
         </p>
       </div>
@@ -132,7 +132,7 @@ export function CliView() {
           <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
           <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
           <span className="ml-3 font-mono text-[11px] text-muted-foreground">
-            topo — zsh — 120×30
+            topo - zsh - 120×30
           </span>
         </div>
         <div

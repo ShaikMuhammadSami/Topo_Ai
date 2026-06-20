@@ -16,7 +16,7 @@ const firstAnswer = (
   <>
     <p className="leading-relaxed">
       Most likely cause (confidence <span className="font-bold text-warn">0.91</span>)
-      — regression in checkout-api from{" "}
+      - regression in checkout-api from{" "}
       <code className="rounded-sm bg-secondary px-1 text-info">PR #2284</code> merged at
       14:28 UTC. The diff removed{" "}
       <code className="rounded-sm bg-secondary px-1 text-warn">
@@ -76,7 +76,7 @@ export function AskView() {
         role: "topo",
         node: (
           <p className="leading-relaxed text-muted-foreground">
-            This is a demo — topo answers are mocked. In production this query runs
+            This is a demo - topo answers are mocked. In production this query runs
             against the on-prem llama-3.1-70b model with RAG over /runbooks and
             /incidents, and every answer cites the exact graph nodes, diffs and
             signals it relied on.
@@ -98,7 +98,7 @@ export function AskView() {
         </h2>
         <p className="mt-2 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
           Natural language over the graph. Answers cite the exact nodes, diffs and
-          signals they relied on — so you can verify them, not just trust them.
+          signals they relied on - so you can verify them, not just trust them.
         </p>
         <p className="mt-2 font-mono text-[11px] text-muted-foreground">
           running on-prem · llama-3.1-70b via ollama · RAG over /runbooks + /incidents ·{" "}

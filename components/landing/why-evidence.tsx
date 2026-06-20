@@ -12,14 +12,14 @@ export function WhyEvidence() {
           <p className="mt-5 max-w-md text-pretty leading-relaxed text-muted-foreground">
             Single-answer RCA tools are unfalsifiable. topo ai is built around an
             evidence ledger: every score breaks down into the diffs, signals and
-            temporal correlations that contributed — and the counter-evidence that
+            temporal correlations that contributed - and the counter-evidence that
             subtracted. Disagree with the verdict? Show your work.
           </p>
         </div>
 
         <div className="rounded-md border border-border bg-card">
           <div className="border-b border-border px-4 py-2.5 font-mono text-[11px] text-muted-foreground">
-            // hypothesis #1 — confidence 0.91
+            // hypothesis #1 - confidence 0.91
           </div>
           <pre className="overflow-x-auto p-4 font-mono text-[12px] leading-relaxed">
             <code>

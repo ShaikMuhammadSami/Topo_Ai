@@ -1,10 +1,10 @@
 import { MessageSquare, TriangleAlert, GitPullRequest } from "lucide-react"
 
 const slack = [
-  { who: "topo", bot: true, time: "14:32:14", text: "*INC-4419* checkout-api error-rate 3.2%. Investigating — I'll post when evidence confidence > 0.85." },
+  { who: "topo", bot: true, time: "14:32:14", text: "*INC-4419* checkout-api error-rate 3.2%. Investigating - I'll post when evidence confidence > 0.85." },
   { who: "topo", bot: true, time: "14:32:34", text: "Top hypothesis (0.91): regression from PR #2284 (cache removal). 2 corroborating signals + 1 diff." },
   { who: "m.solis", bot: false, time: "14:33:11", text: "yeah that was me. on it. reverting." },
-  { who: "topo", bot: true, time: "14:35:50", text: "Detected revert sha 3c01ab8 deploying — recovery loop armed." },
+  { who: "topo", bot: true, time: "14:35:50", text: "Detected revert sha 3c01ab8 deploying - recovery loop armed." },
   { who: "topo", bot: true, time: "14:39:14", text: "Recovery confirmed. Error-rate 0.14% / p99 240ms. Closing INC-4419. PR comment posted to #2284." },
 ]
 
@@ -123,7 +123,7 @@ export function IntegrationsView() {
               <span className="text-danger">18×</span> (3.2/s → 58/s){"\n"}
               - pricing-svc p99 latency forecast:{" "}
               <span className="text-danger">320ms</span>
-              {"\n"}- 9 of 11 checkout-api pods within 35Mi of memory limit — likely OOM
+              {"\n"}- 9 of 11 checkout-api pods within 35Mi of memory limit - likely OOM
               {"\n\n"}
               <span className="text-foreground">
                 **Recommendation:** raise memory limit to 1Gi or keep an LRU cache (size ≥
