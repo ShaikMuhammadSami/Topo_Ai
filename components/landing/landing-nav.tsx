@@ -22,7 +22,7 @@ export function LandingNav() {
         </div>
         <div className="flex items-center gap-3">
           <a
-            href="https://github.com"
+            href="https://github.com/ShaikMuhammadSami/TopoAi"
             target="_blank"
             rel="noreferrer"
             className="hidden items-center gap-1 font-mono text-xs text-muted-foreground transition-colors hover:text-foreground sm:flex"
