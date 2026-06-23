@@ -5,9 +5,11 @@ import { incident } from "@/lib/topo-data"
 export function AppTopbar({
   title,
   path,
+  showIncidentContext = true,
 }: {
   title: string
   path: string
+  showIncidentContext?: boolean
 }) {
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border bg-background/85 px-5 backdrop-blur">
@@ -28,7 +30,7 @@ export function AppTopbar({
           ⌘K
         </kbd>
       </div>
-
+      {showIncidentContext && (
       <Link
         href="/app"
         className="flex items-center gap-2 rounded-sm border border-danger/40 bg-danger/10 px-2.5 py-1.5 font-mono text-xs font-semibold text-danger"
@@ -36,6 +38,7 @@ export function AppTopbar({
         <span className="h-1.5 w-1.5 rounded-sm bg-danger" />
         {incident.id} · {incident.sev}
       </Link>
+      )}
 
       <button
         className="rounded-sm border border-border p-2 text-muted-foreground transition-colors hover:text-foreground"
@@ -43,11 +46,12 @@ export function AppTopbar({
       >
         <Bell className="h-4 w-4" />
       </button>
-
+{showIncidentContext && (
       <div className="hidden items-center gap-1.5 rounded-sm border border-border px-2.5 py-1.5 font-mono text-xs text-muted-foreground sm:flex">
         <GitCommitHorizontal className="h-3.5 w-3.5" />
         {incident.sha}
       </div>
+)}
     </header>
   )
 }

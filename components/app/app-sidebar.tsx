@@ -10,6 +10,7 @@ import {
   TerminalSquare,
   Sparkles,
   Workflow,
+  Server,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TopoLogo } from "@/components/topo-logo"
@@ -18,11 +19,13 @@ import { incident } from "@/lib/topo-data"
 const nav = [
   { href: "/app", label: "Incident workspace", icon: CircleAlert },
   { href: "/app/topology", label: "Topology", icon: Network },
+   { href: "/app/live-cluster", label: "Live cluster", icon: Server },
   { href: "/app/signals", label: "Signals & changes", icon: Activity },
   { href: "/app/identities", label: "Identities", icon: Fingerprint },
   { href: "/app/cli", label: "CLI", icon: TerminalSquare },
   { href: "/app/ask", label: "Ask topo", icon: Sparkles },
   { href: "/app/integrations", label: "Integrations", icon: Workflow },
+ 
 ]
 
 export function AppSidebar() {
@@ -65,7 +68,9 @@ export function AppSidebar() {
           })}
         </ul>
       </nav>
-
+      <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
+          Demo context
+       </p>
       <div className="border-t border-border px-5 py-4 font-mono text-[11px] leading-relaxed text-muted-foreground">
         <p>
           cluster <span className="text-foreground">{incident.cluster}</span>

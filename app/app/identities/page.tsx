@@ -1,11 +1,16 @@
 import { AppTopbar } from "@/components/app/app-topbar"
-import { IdentitiesView } from "@/components/app/identities-view"
+import { LiveIdentitiesView } from "@/components/app/live-identities-view"
 
 export default function IdentitiesPage() {
   return (
     <>
-      <AppTopbar title="Identity resolution" path="app/identities" />
-      <IdentitiesView />
+      <AppTopbar
+        title="Identities · live resolution"
+        path="app/identities"
+        showIncidentContext={false}
+      />
+
+      <LiveIdentitiesView />
     </>
   )
 }
