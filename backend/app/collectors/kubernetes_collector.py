@@ -10,7 +10,9 @@ from uuid import uuid4
 
 from kubernetes import client, config
 from kubernetes.config.config_exception import ConfigException
-
+from app.services.container_image_graph import (
+    augment_snapshot_with_container_images,
+)
 from app.models.topology import (
     Entity,
     EntityType,
@@ -593,6 +595,8 @@ class KubernetesCollector:
                     {
                         "name": status.name,
                         "image": status.image,
+                        "image_id": status.image_id,
+                        "container_id": status.container_id,
                         "ready": status.ready,
                         "restart_count": (
                             status.restart_count
@@ -821,12 +825,12 @@ class KubernetesCollector:
             f"{str(uuid4())[:8]}"
         )
 
-        return GraphSnapshot(
+        snapshot = GraphSnapshot(
             schema_version="1.0",
             snapshot_id=snapshot_id,
             collected_at=collected_at,
             collector_name="kubernetes-collector",
-            collector_version="0.1.0",
+            collector_version="0.2.0",
             scope={
                 "platform": "kubernetes",
                 "cluster": (
@@ -856,3 +860,8 @@ class KubernetesCollector:
                 },
             },
         )
+        return (
+    augment_snapshot_with_container_images(
+        snapshot
+    )
+)
