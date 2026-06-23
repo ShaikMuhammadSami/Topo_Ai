@@ -71,8 +71,12 @@ const layerDefinition: Record<
     index: 4,
     label: "Pod",
   },
-  KubernetesService: {
+  ContainerImage: {
     index: 5,
+    label: "Image",
+  },
+  KubernetesService: {
+    index: 6,
     label: "Service",
   },
 }
