@@ -1,0 +1,24 @@
+<svg xmlns="http://w3.org" viewBox="0 0 512 512" width="100%" height="100%">
+  <!-- Yellow Background Block -->
+  <rect width="512" height="512" fill="#FFD23F" />
+  
+  <!-- Minimalist Lowercase 't' Path -->
+  <path d="M 288,140 
+           L 244,175 
+           L 244,220 
+           L 200,220 
+           L 200,264 
+           L 244,264 
+           L 244,360 
+           C 244,395 260,410 295,410 
+           C 310,410 322,406 332,400 
+           L 324,362 
+           C 318,365 312,366 306,366 
+           C 294,366 288,358 288,342 
+           L 288,264 
+           L 336,264 
+           L 336,220 
+           L 288,220 
+           Z" 
+        fill="#111111" />
+</svg>
