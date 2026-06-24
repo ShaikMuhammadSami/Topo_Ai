@@ -207,11 +207,23 @@ class KubernetesCollector:
             creation_timestamp = (
                 metadata.creation_timestamp.isoformat()
             )
+        annotations = {
+            str(key): str(value)
+            for key, value in (
+                metadata.annotations
+                or {}
+            ).items()
+        }
 
         return {
             "namespace": metadata.namespace,
-            "resource_version": metadata.resource_version,
-            "creation_timestamp": creation_timestamp,
+            "resource_version":( 
+                metadata.resource_version
+            ),
+            "creation_timestamp":(
+                creation_timestamp,
+            ),
+            "annotations": annotations,
         }
 
     def connection_information(self) -> dict[str, Any]:

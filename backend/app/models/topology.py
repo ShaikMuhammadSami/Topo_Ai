@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class EntityType(str, Enum):
     APPLICATION = "application"
     CODE_REPOSITORY = "code_repository"
+    SOURCE_REVISION = "source_revision"
     PIPELINE = "pipeline"
     ARTIFACT = "artifact"
     ENVIRONMENT = "environment"
@@ -25,6 +26,7 @@ class EntityType(str, Enum):
     TEAM = "team"
     BUSINESS_CAPABILITY = "business_capability"
     UNKNOWN = "unknown"
+    
 
 
 class RelationshipType(str, Enum):

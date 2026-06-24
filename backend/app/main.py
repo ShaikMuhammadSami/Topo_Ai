@@ -13,6 +13,13 @@ from app.api.snapshots import router as snapshots_router
 from app.api.identities import (
     router as identities_router,
 )
+from app.api.github import (
+    router as github_router,
+)
+from dotenv import load_dotenv
+
+
+load_dotenv()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
@@ -45,6 +52,7 @@ app.include_router(topology_router)
 app.include_router(kubernetes_router)
 app.include_router(snapshots_router)
 app.include_router(identities_router)
+app.include_router(github_router)
 
 @app.get("/health")
 def health_check() -> dict:
