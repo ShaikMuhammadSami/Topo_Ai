@@ -37,3 +37,26 @@ class GitHubEnrichmentResult(BaseModel):
     warnings: list[str] = Field(
         default_factory=list
     )
+
+class GitHubActionsEnrichmentResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_snapshot_id: str
+    enriched_snapshot_id: str
+
+    repository: str
+
+    workflow_runs_collected: int
+
+    commit_run_relationship_count: int
+    run_image_relationship_count: int
+
+    mapped_run_count: int
+    mapped_image_count: int
+
+    unresolved_run_count: int
+
+    warnings: list[str] = Field(
+        default_factory=list
+    )
+    
