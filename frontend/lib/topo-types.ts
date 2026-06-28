@@ -278,3 +278,100 @@ export type NormalizedSignal = {
   attributes: Record<string, unknown>
   raw_payload: Record<string, unknown>
 }
+
+export type ChangeType =
+  | "entity_added"
+  | "entity_removed"
+  | "entity_updated"
+  | "relationship_added"
+  | "relationship_removed"
+  | "relationship_updated"
+
+export type ChangeCategory =
+  | "deployment"
+  | "scaling"
+  | "image"
+  | "configuration"
+  | "runtime"
+  | "service"
+  | "networking"
+  | "topology"
+  | "other"
+
+export type ChangeImportance =
+  | "low"
+  | "medium"
+  | "high"
+
+export type ChangeSummary = {
+  change_id: string
+
+  change_type: ChangeType
+  category: ChangeCategory
+  importance: ChangeImportance
+
+  title: string
+  summary: string
+
+  detected_at: string
+
+  from_snapshot_id: string
+  to_snapshot_id: string
+
+  cluster_name: string
+  namespace: string | null
+
+  entity_id: string | null
+  entity_kind: string | null
+  entity_name: string | null
+
+  relationship_id: string | null
+  relationship_type: string | null
+}
+
+export type NormalizedChange = {
+  change_id: string
+  fingerprint: string
+
+  change_type: ChangeType
+  category: ChangeCategory
+  importance: ChangeImportance
+
+  source_system: string
+
+  title: string
+  summary: string
+
+  detected_at: string
+
+  from_snapshot_id: string
+  to_snapshot_id: string
+
+  cluster_name: string
+  namespace: string | null
+
+  entity_id: string | null
+  entity_kind: string | null
+  entity_name: string | null
+
+  relationship_id: string | null
+  relationship_type: string | null
+
+  source_entity_id: string | null
+  target_entity_id: string | null
+
+  changed_fields: Record<
+    string,
+    {
+      before: unknown
+      after: unknown
+    }
+  >
+
+  before: Record<string, unknown> | null
+  after: Record<string, unknown> | null
+
+  related_entity_ids: string[]
+
+  attributes: Record<string, unknown>
+}

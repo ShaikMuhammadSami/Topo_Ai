@@ -10,37 +10,81 @@ import {
   Activity,
   AlertCircle,
   AlertTriangle,
+  ArrowRightLeft,
   CheckCircle2,
   CircleAlert,
   ExternalLink,
+  FileDiff,
   Info,
   LoaderCircle,
   RefreshCw,
   Server,
 } from "lucide-react"
 
-import { Button } from "@/components/ui/button"
 import {
+  Button,
+  buttonVariants,
+} from "@/components/ui/button"
+import {
+  getChange,
   getSignal,
+  listChanges,
   listSignals,
 } from "@/lib/topo-api"
 import type {
+  ChangeImportance,
+  ChangeSummary,
+  NormalizedChange,
   NormalizedSignal,
-  SignalCategory,
   SignalSeverity,
   SignalSummary,
 } from "@/lib/topo-types"
 import { cn } from "@/lib/utils"
 
-type SeverityFilter =
+
+type SourceFilter =
+  | "all"
+  | "signals"
+  | "changes"
+
+type PriorityFilter =
   | ""
   | SignalSeverity
+  | ChangeImportance
 
-type CategoryFilter =
-  | ""
-  | SignalCategory
+type TimelineSelection = {
+  kind: "signal" | "change"
+  id: string
+}
 
-const severityStyles: Record<
+type TimelineItem =
+  | {
+      kind: "signal"
+      id: string
+      occurredAt: string
+      namespace: string | null
+      category: string
+      priority: SignalSeverity
+      title: string
+      summary: string
+      objectLabel: string
+      signal: SignalSummary
+    }
+  | {
+      kind: "change"
+      id: string
+      occurredAt: string
+      namespace: string | null
+      category: string
+      priority: ChangeImportance
+      title: string
+      summary: string
+      objectLabel: string
+      change: ChangeSummary
+    }
+
+
+const signalStyles: Record<
   SignalSeverity,
   string
 > = {
@@ -54,30 +98,52 @@ const severityStyles: Record<
     "border-danger bg-danger/20 text-danger",
 }
 
+const changeStyles: Record<
+  ChangeImportance,
+  string
+> = {
+  low:
+    "border-muted-foreground/30 bg-secondary text-muted-foreground",
+  medium:
+    "border-warn/30 bg-warn/10 text-warn",
+  high:
+    "border-danger/30 bg-danger/10 text-danger",
+}
+
+
 export function LiveSignalsView() {
   const [signals, setSignals] =
     useState<SignalSummary[]>([])
 
-  const [
-    selectedSignalId,
-    setSelectedSignalId,
-  ] = useState("")
+  const [changes, setChanges] =
+    useState<ChangeSummary[]>([])
 
-  const [
-    selectedSignal,
-    setSelectedSignal,
-  ] = useState<NormalizedSignal | null>(
-    null,
-  )
+  const [selection, setSelection] =
+    useState<TimelineSelection | null>(
+      null,
+    )
+
+  const [signalDetail, setSignalDetail] =
+    useState<NormalizedSignal | null>(
+      null,
+    )
+
+  const [changeDetail, setChangeDetail] =
+    useState<NormalizedChange | null>(
+      null,
+    )
 
   const [namespace, setNamespace] =
     useState("")
 
-  const [severity, setSeverity] =
-    useState<SeverityFilter>("")
+  const [source, setSource] =
+    useState<SourceFilter>("all")
+
+  const [priority, setPriority] =
+    useState<PriorityFilter>("")
 
   const [category, setCategory] =
-    useState<CategoryFilter>("")
+    useState("")
 
   const [loadingList, setLoadingList] =
     useState(true)
@@ -90,134 +156,226 @@ export function LiveSignalsView() {
   const [error, setError] =
     useState<string | null>(null)
 
-  async function refreshSignals() {
+
+  async function refreshTimeline() {
     setLoadingList(true)
     setError(null)
 
     try {
-      const results = await listSignals({
-        namespace:
-          namespace.trim() || undefined,
-        severity:
-          severity || undefined,
-        limit: 300,
-      })
+      const namespaceFilter =
+        namespace.trim() || undefined
 
-      setSignals(results)
+      const [
+        signalResults,
+        changeResults,
+      ] = await Promise.all([
+        listSignals({
+          namespace: namespaceFilter,
+          limit: 300,
+        }),
+        listChanges({
+          namespace: namespaceFilter,
+          limit: 300,
+        }),
+      ])
 
-      const nextId =
-        results.some(
-          (signal) =>
-            signal.signal_id ===
-            selectedSignalId,
-        )
-          ? selectedSignalId
-          : results[0]?.signal_id ?? ""
-
-      setSelectedSignalId(nextId)
-
-      if (!nextId) {
-        setSelectedSignal(null)
-      }
+      setSignals(signalResults)
+      setChanges(changeResults)
     } catch (requestError) {
-      setError(errorMessage(requestError))
+      setError(
+        errorMessage(requestError),
+      )
     } finally {
       setLoadingList(false)
     }
   }
 
-  async function loadSignalDetail(
-    signalId: string,
-  ) {
-    if (!signalId) {
-      setSelectedSignal(null)
+
+  useEffect(() => {
+    void refreshTimeline()
+  }, [])
+
+
+  const timeline = useMemo(
+    () =>
+      buildTimeline(
+        signals,
+        changes,
+      )
+        .filter((item) => {
+          if (
+            source === "signals" &&
+            item.kind !== "signal"
+          ) {
+            return false
+          }
+
+          if (
+            source === "changes" &&
+            item.kind !== "change"
+          ) {
+            return false
+          }
+
+          if (
+            priority &&
+            item.priority !== priority
+          ) {
+            return false
+          }
+
+          if (
+            category &&
+            item.category !== category
+          ) {
+            return false
+          }
+
+          return true
+        })
+        .sort(
+          (first, second) =>
+            Date.parse(
+              second.occurredAt,
+            ) -
+            Date.parse(
+              first.occurredAt,
+            ),
+        ),
+    [
+      signals,
+      changes,
+      source,
+      priority,
+      category,
+    ],
+  )
+
+
+  useEffect(() => {
+    if (timeline.length === 0) {
+      setSelection(null)
+      setSignalDetail(null)
+      setChangeDetail(null)
       return
     }
 
-    setLoadingDetail(true)
-    setError(null)
+    const selectionStillExists =
+      selection &&
+      timeline.some(
+        (item) =>
+          item.id === selection.id &&
+          item.kind === selection.kind,
+      )
 
-    try {
-      const result =
-        await getSignal(signalId)
-
-      setSelectedSignal(result)
-    } catch (requestError) {
-      setError(errorMessage(requestError))
-    } finally {
-      setLoadingDetail(false)
+    if (!selectionStillExists) {
+      setSelection({
+        kind: timeline[0].kind,
+        id: timeline[0].id,
+      })
     }
-  }
+  }, [timeline, selection])
+
 
   useEffect(() => {
-    void refreshSignals()
-  }, [])
+    async function loadDetail() {
+      if (!selection) {
+        return
+      }
 
-  useEffect(() => {
-    void loadSignalDetail(
-      selectedSignalId,
-    )
-  }, [selectedSignalId])
+      setLoadingDetail(true)
+      setError(null)
 
-  const visibleSignals = useMemo(
-    () =>
-      category
-        ? signals.filter(
-            (signal) =>
-              signal.category === category,
-          )
-        : signals,
-    [signals, category],
-  )
+      try {
+        if (
+          selection.kind === "signal"
+        ) {
+          const result =
+            await getSignal(
+              selection.id,
+            )
 
-  const metrics = useMemo(() => {
-    const result = {
-      total: visibleSignals.length,
-      info: 0,
-      warning: 0,
-      error: 0,
-      critical: 0,
-      mapped: 0,
-    }
+          setSignalDetail(result)
+          setChangeDetail(null)
+        } else {
+          const result =
+            await getChange(
+              selection.id,
+            )
 
-    for (const signal of visibleSignals) {
-      result[signal.severity] += 1
-
-      if (signal.involved_entity_id) {
-        result.mapped += 1
+          setChangeDetail(result)
+          setSignalDetail(null)
+        }
+      } catch (requestError) {
+        setError(
+          errorMessage(requestError),
+        )
+      } finally {
+        setLoadingDetail(false)
       }
     }
 
-    return result
-  }, [visibleSignals])
+    void loadDetail()
+  }, [selection])
+
+
+  const metrics = useMemo(
+    () => ({
+      total: timeline.length,
+      signals: timeline.filter(
+        (item) =>
+          item.kind === "signal",
+      ).length,
+      changes: timeline.filter(
+        (item) =>
+          item.kind === "change",
+      ).length,
+      failures: timeline.filter(
+        (item) =>
+          item.kind === "signal" &&
+          (
+            item.priority === "error" ||
+            item.priority === "critical"
+          ),
+      ).length,
+      highChanges: timeline.filter(
+        (item) =>
+          item.kind === "change" &&
+          item.priority === "high",
+      ).length,
+    }),
+    [timeline],
+  )
+
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6 p-5">
+    <div className="mx-auto w-full max-w-[1700px] space-y-6 p-5">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="mb-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            persisted operational evidence
+            operational evidence timeline
           </p>
 
           <h2 className="font-heading text-4xl font-black tracking-tight">
-            Signals and events
+            Signals and changes
           </h2>
 
           <p className="mt-2 max-w-3xl leading-relaxed text-muted-foreground">
-            Investigate normalized Kubernetes
-            events, affected resources, occurrence
-            counts and their raw source evidence.
+            Correlate infrastructure changes with
+            Kubernetes failures and lifecycle
+            events in chronological order.
           </p>
         </div>
 
         <div className="flex items-center gap-2 rounded-sm border border-ok/30 bg-ok/10 px-3 py-2 font-mono text-xs text-ok">
           <CheckCircle2 className="h-4 w-4" />
-          persisted signals
+          persisted evidence
         </div>
       </header>
 
+
       <section className="rounded-md border border-border bg-card p-5">
-        <div className="grid gap-4 md:grid-cols-3 xl:grid-cols-[1fr_220px_220px_auto]">
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[1fr_180px_180px_220px_auto]">
           <label>
             <FieldLabel>
               Namespace
@@ -226,7 +384,9 @@ export function LiveSignalsView() {
             <input
               value={namespace}
               onChange={(event) =>
-                setNamespace(event.target.value)
+                setNamespace(
+                  event.target.value,
+                )
               }
               placeholder="All namespaces"
               className="mt-2 h-10 w-full rounded-sm border border-input bg-background px-3 font-mono text-xs outline-none placeholder:text-muted-foreground focus:border-info"
@@ -235,34 +395,83 @@ export function LiveSignalsView() {
 
           <label>
             <FieldLabel>
-              Severity
+              Source
             </FieldLabel>
 
             <select
-              value={severity}
+              value={source}
               onChange={(event) =>
-                setSeverity(
+                setSource(
                   event.target
-                    .value as SeverityFilter,
+                    .value as SourceFilter,
+                )
+              }
+              className="mt-2 h-10 w-full rounded-sm border border-input bg-background px-3 font-mono text-xs outline-none focus:border-info"
+            >
+              <option value="all">
+                All
+              </option>
+
+              <option value="signals">
+                Signals
+              </option>
+
+              <option value="changes">
+                Changes
+              </option>
+            </select>
+          </label>
+
+          <label>
+            <FieldLabel>
+              Priority
+            </FieldLabel>
+
+            <select
+              value={priority}
+              onChange={(event) =>
+                setPriority(
+                  event.target
+                    .value as PriorityFilter,
                 )
               }
               className="mt-2 h-10 w-full rounded-sm border border-input bg-background px-3 font-mono text-xs outline-none focus:border-info"
             >
               <option value="">
-                All severities
+                All priorities
               </option>
-              <option value="info">
-                Info
-              </option>
-              <option value="warning">
-                Warning
-              </option>
-              <option value="error">
-                Error
-              </option>
-              <option value="critical">
-                Critical
-              </option>
+
+              <optgroup label="Signals">
+                <option value="info">
+                  Info
+                </option>
+
+                <option value="warning">
+                  Warning
+                </option>
+
+                <option value="error">
+                  Error
+                </option>
+
+                <option value="critical">
+                  Critical
+                </option>
+              </optgroup>
+
+              <optgroup label="Changes">
+                <option value="low">
+                  Low
+                </option>
+
+                <option value="medium">
+                  Medium
+                </option>
+
+                <option value="high">
+                  High
+                </option>
+              </optgroup>
             </select>
           </label>
 
@@ -275,8 +484,7 @@ export function LiveSignalsView() {
               value={category}
               onChange={(event) =>
                 setCategory(
-                  event.target
-                    .value as CategoryFilter,
+                  event.target.value,
                 )
               }
               className="mt-2 h-10 w-full rounded-sm border border-input bg-background px-3 font-mono text-xs outline-none focus:border-info"
@@ -284,40 +492,61 @@ export function LiveSignalsView() {
               <option value="">
                 All categories
               </option>
-              <option value="health">
-                Health
-              </option>
-              <option value="image">
-                Image
-              </option>
-              <option value="scheduling">
-                Scheduling
-              </option>
-              <option value="storage">
-                Storage
-              </option>
-              <option value="configuration">
-                Configuration
-              </option>
-              <option value="lifecycle">
-                Lifecycle
-              </option>
-              <option value="availability">
-                Availability
-              </option>
-              <option value="security">
-                Security
-              </option>
-              <option value="other">
-                Other
-              </option>
+
+              <optgroup label="Failure signals">
+                <option value="health">
+                  Health
+                </option>
+
+                <option value="image">
+                  Image
+                </option>
+
+                <option value="scheduling">
+                  Scheduling
+                </option>
+
+                <option value="storage">
+                  Storage
+                </option>
+
+                <option value="availability">
+                  Availability
+                </option>
+              </optgroup>
+
+              <optgroup label="Changes">
+                <option value="deployment">
+                  Deployment
+                </option>
+
+                <option value="scaling">
+                  Scaling
+                </option>
+
+                <option value="configuration">
+                  Configuration
+                </option>
+
+                <option value="runtime">
+                  Runtime
+                </option>
+
+                <option value="service">
+                  Service
+                </option>
+
+                <option value="topology">
+                  Topology
+                </option>
+              </optgroup>
             </select>
           </label>
 
           <Button
             className="self-end"
             onClick={() =>
-              void refreshSignals()
+              void refreshTimeline()
             }
             disabled={loadingList}
           >
@@ -328,10 +557,12 @@ export function LiveSignalsView() {
                   : ""
               }
             />
-            Apply filters
+
+            Refresh
           </Button>
         </div>
       </section>
+
 
       {error && (
         <div className="flex items-start gap-3 rounded-md border border-danger/40 bg-danger/10 p-4 text-danger">
@@ -343,105 +574,106 @@ export function LiveSignalsView() {
         </div>
       )}
 
-      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-6">
+
+      <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-5">
         <Metric
-          label="TOTAL"
+          label="TIMELINE"
           value={metrics.total}
         />
 
         <Metric
-          label="INFO"
-          value={metrics.info}
+          label="SIGNALS"
+          value={metrics.signals}
           className="text-info"
         />
 
         <Metric
-          label="WARNING"
-          value={metrics.warning}
+          label="CHANGES"
+          value={metrics.changes}
           className="text-warn"
         />
 
         <Metric
-          label="ERROR"
-          value={metrics.error}
+          label="FAILURES"
+          value={metrics.failures}
           className="text-danger"
         />
 
         <Metric
-          label="CRITICAL"
-          value={metrics.critical}
+          label="HIGH CHANGES"
+          value={metrics.highChanges}
           className="text-danger"
-        />
-
-        <Metric
-          label="ENTITY MAPPED"
-          value={metrics.mapped}
-          className="text-ok"
         />
       </section>
 
-      <div className="grid min-h-[650px] gap-6 xl:grid-cols-[minmax(0,1fr)_430px]">
+
+      <div className="grid min-h-[700px] gap-6 xl:grid-cols-[minmax(0,1fr)_470px]">
         <section className="overflow-hidden rounded-md border border-border bg-card">
           <header className="flex items-center justify-between border-b border-border px-5 py-4">
             <div className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-info" />
 
               <h3 className="font-heading text-lg font-bold">
-                Signal stream
+                Operational timeline
               </h3>
             </div>
 
             <span className="font-mono text-[11px] text-muted-foreground">
-              {visibleSignals.length} records
+              {timeline.length} records
             </span>
           </header>
 
           {loadingList ? (
-            <LoadingMessage text="Loading signals…" />
-          ) : visibleSignals.length === 0 ? (
-            <EmptyMessage text="No signals matched the selected filters." />
+            <LoadingMessage text="Loading operational evidence…" />
+          ) : timeline.length === 0 ? (
+            <EmptyMessage text="No signals or changes matched the selected filters." />
           ) : (
-            <div className="max-h-[760px] divide-y divide-border overflow-y-auto">
-              {visibleSignals.map(
-                (signal) => (
-                  <SignalRow
-                    key={signal.signal_id}
-                    signal={signal}
-                    selected={
-                      signal.signal_id ===
-                      selectedSignalId
-                    }
-                    onSelect={() =>
-                      setSelectedSignalId(
-                        signal.signal_id,
-                      )
-                    }
-                  />
-                ),
-              )}
+            <div className="max-h-[820px] divide-y divide-border overflow-y-auto">
+              {timeline.map((item) => (
+                <TimelineRow
+                  key={`${item.kind}:${item.id}`}
+                  item={item}
+                  selected={
+                    selection?.kind ===
+                      item.kind &&
+                    selection.id === item.id
+                  }
+                  onSelect={() =>
+                    setSelection({
+                      kind: item.kind,
+                      id: item.id,
+                    })
+                  }
+                />
+              ))}
             </div>
           )}
         </section>
 
+
         <aside className="rounded-md border border-border bg-card">
           <header className="border-b border-border px-5 py-4">
             <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Signal evidence
+              Evidence detail
             </p>
 
             <h3 className="mt-1 font-heading text-lg font-bold">
-              Event details
+              Selected record
             </h3>
           </header>
 
           {loadingDetail ? (
-            <LoadingMessage text="Loading signal detail…" />
-          ) : selectedSignal ? (
+            <LoadingMessage text="Loading detail…" />
+          ) : signalDetail ? (
             <SignalDetail
-              signal={selectedSignal}
+              signal={signalDetail}
+            />
+          ) : changeDetail ? (
+            <ChangeDetail
+              change={changeDetail}
             />
           ) : (
-            <EmptyMessage text="Select a signal to inspect its evidence." />
+            <EmptyMessage text="Select a timeline record." />
           )}
         </aside>
       </div>
@@ -449,12 +681,65 @@ export function LiveSignalsView() {
   )
 }
 
-function SignalRow({
-  signal,
+
+function buildTimeline(
+  signals: SignalSummary[],
+  changes: ChangeSummary[],
+): TimelineItem[] {
+  const signalItems: TimelineItem[] =
+    signals.map((signal) => ({
+      kind: "signal",
+      id: signal.signal_id,
+      occurredAt:
+        signal.last_observed_at,
+      namespace: signal.namespace,
+      category: signal.category,
+      priority: signal.severity,
+      title:
+        signal.reason ??
+        signal.title,
+      summary: signal.title,
+      objectLabel: [
+        signal.involved_object_kind,
+        signal.involved_object_name,
+      ]
+        .filter(Boolean)
+        .join("/"),
+      signal,
+    }))
+
+  const changeItems: TimelineItem[] =
+    changes.map((change) => ({
+      kind: "change",
+      id: change.change_id,
+      occurredAt: change.detected_at,
+      namespace: change.namespace,
+      category: change.category,
+      priority: change.importance,
+      title: change.title,
+      summary: change.summary,
+      objectLabel: [
+        change.entity_kind,
+        change.entity_name,
+      ]
+        .filter(Boolean)
+        .join("/"),
+      change,
+    }))
+
+  return [
+    ...signalItems,
+    ...changeItems,
+  ]
+}
+
+
+function TimelineRow({
+  item,
   selected,
   onSelect,
 }: {
-  signal: SignalSummary
+  item: TimelineItem
   selected: boolean
   onSelect: () => void
 }) {
@@ -463,65 +748,82 @@ function SignalRow({
       type="button"
       onClick={onSelect}
       className={cn(
-        "grid w-full gap-3 px-5 py-4 text-left transition-colors md:grid-cols-[110px_minmax(0,1fr)_180px_90px]",
+        "grid w-full gap-3 px-5 py-4 text-left transition-colors md:grid-cols-[120px_minmax(0,1fr)_220px_150px]",
         selected
           ? "bg-info/10"
           : "hover:bg-secondary/40",
       )}
     >
       <div>
-        <SeverityBadge
-          severity={signal.severity}
-        />
+        {item.kind === "signal" ? (
+          <SignalBadge
+            severity={item.priority}
+          />
+        ) : (
+          <ChangeBadge
+            importance={item.priority}
+          />
+        )}
 
-        <p className="mt-2 font-mono text-[10px] uppercase text-muted-foreground">
-          {signal.category}
+        <p className="mt-2 font-mono text-[9px] uppercase text-muted-foreground">
+          {item.kind}
+          {" · "}
+          {item.category}
         </p>
       </div>
 
       <div className="min-w-0">
         <p className="truncate font-mono text-xs font-semibold">
-          {signal.reason ??
-            signal.title}
+          {item.title}
         </p>
 
-        <p className="mt-1 truncate text-sm text-muted-foreground">
-          {signal.title}
+        <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">
+          {item.summary}
         </p>
 
         <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-          {signal.namespace ?? "cluster"}
+          {item.namespace ?? "cluster"}
         </p>
       </div>
 
       <div className="font-mono text-[10px]">
-        <p className="text-foreground">
-          {signal.involved_object_kind ??
-            "Unknown"}
-          {signal.involved_object_name
-            ? `/${signal.involved_object_name}`
-            : ""}
+        <p className="break-all text-foreground">
+          {item.objectLabel || "Topology relationship"}
         </p>
 
         <p className="mt-2 text-muted-foreground">
-          {formatDate(
-            signal.last_observed_at,
-          )}
+          {formatDate(item.occurredAt)}
         </p>
       </div>
 
       <div className="text-right">
-        <p className="font-heading text-xl font-bold">
-          {signal.occurrence_count}
-        </p>
+        {item.kind === "signal" ? (
+          <>
+            <p className="font-heading text-xl font-bold">
+              {
+                item.signal
+                  .occurrence_count
+              }
+            </p>
 
-        <p className="font-mono text-[9px] uppercase text-muted-foreground">
-          occurrences
-        </p>
+            <p className="font-mono text-[9px] uppercase text-muted-foreground">
+              occurrences
+            </p>
+          </>
+        ) : (
+          <>
+            <FileDiff className="ml-auto h-5 w-5 text-warn" />
+
+            <p className="mt-2 font-mono text-[9px] uppercase text-muted-foreground">
+              {item.change.change_type}
+            </p>
+          </>
+        )}
       </div>
     </button>
   )
 }
+
 
 function SignalDetail({
   signal,
@@ -540,12 +842,12 @@ function SignalDetail({
 
   return (
     <div className="space-y-5 p-5">
-      <div>
-        <SeverityBadge
-          severity={signal.severity}
-        />
+      <SignalBadge
+        severity={signal.severity}
+      />
 
-        <h4 className="mt-3 font-heading text-xl font-bold">
+      <div>
+        <h4 className="font-heading text-xl font-bold">
           {signal.reason ??
             signal.title}
         </h4>
@@ -556,17 +858,19 @@ function SignalDetail({
       </div>
 
       {topologyUrl && (
-        <Button
-          asChild
-          variant="outline"
-          className="w-full"
+        <Link
+          href={topologyUrl}
+          className={cn(
+            buttonVariants({
+              variant: "outline",
+            }),
+            "w-full",
+          )}
         >
-          <Link href={topologyUrl}>
-            <Server />
-            Open affected entity
-            <ExternalLink />
-          </Link>
-        </Button>
+          <Server />
+          Open affected entity
+          <ExternalLink />
+        </Link>
       )}
 
       <DetailSection title="Affected object">
@@ -590,16 +894,16 @@ function SignalDetail({
         />
 
         <DetailRow
-          label="entity ID"
+          label="snapshot"
           value={
-            signal.involved_entity_id
+            signal.topology_snapshot_id
           }
         />
 
         <DetailRow
-          label="object UID"
+          label="entity ID"
           value={
-            signal.involved_object_uid
+            signal.involved_entity_id
           }
         />
       </DetailSection>
@@ -625,29 +929,9 @@ function SignalDetail({
             signal.occurrence_count,
           )}
         />
-
-        <DetailRow
-          label="controller"
-          value={
-            signal.reporting_controller
-          }
-        />
-
-        <DetailRow
-          label="instance"
-          value={
-            signal.reporting_instance
-          }
-        />
       </DetailSection>
 
-      <DetailSection title="Normalized attributes">
-        <JsonBlock
-          value={signal.attributes}
-        />
-      </DetailSection>
-
-      <DetailSection title="Raw Kubernetes evidence">
+      <DetailSection title="Raw evidence">
         <JsonBlock
           value={signal.raw_payload}
         />
@@ -656,7 +940,132 @@ function SignalDetail({
   )
 }
 
-function SeverityBadge({
+
+function ChangeDetail({
+  change,
+}: {
+  change: NormalizedChange
+}) {
+  const affectedEntityId =
+    change.entity_id ??
+    change.source_entity_id ??
+    change.target_entity_id
+
+  const topologyUrl =
+    affectedEntityId
+      ? `/app/topology?snapshot_id=${encodeURIComponent(
+          change.to_snapshot_id,
+        )}&entity_id=${encodeURIComponent(
+          affectedEntityId,
+        )}`
+      : null
+
+  return (
+    <div className="space-y-5 p-5">
+      <ChangeBadge
+        importance={change.importance}
+      />
+
+      <div>
+        <h4 className="font-heading text-xl font-bold">
+          {change.title}
+        </h4>
+
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {change.summary}
+        </p>
+      </div>
+
+      {topologyUrl && (
+        <Link
+          href={topologyUrl}
+          className={cn(
+            buttonVariants({
+              variant: "outline",
+            }),
+            "w-full",
+          )}
+        >
+          <Server />
+          Open changed entity
+          <ExternalLink />
+        </Link>
+      )}
+
+      <DetailSection title="Change">
+        <DetailRow
+          label="type"
+          value={change.change_type}
+        />
+
+        <DetailRow
+          label="category"
+          value={change.category}
+        />
+
+        <DetailRow
+          label="detected"
+          value={formatDate(
+            change.detected_at,
+          )}
+        />
+
+        <DetailRow
+          label="entity"
+          value={
+            change.entity_name
+              ? `${change.entity_kind}/${change.entity_name}`
+              : null
+          }
+        />
+
+        <DetailRow
+          label="relationship"
+          value={
+            change.relationship_type
+          }
+        />
+      </DetailSection>
+
+      <DetailSection title="Snapshot transition">
+        <DetailRow
+          label="from"
+          value={
+            change.from_snapshot_id
+          }
+        />
+
+        <DetailRow
+          label="to"
+          value={
+            change.to_snapshot_id
+          }
+        />
+      </DetailSection>
+
+      <DetailSection title="Changed fields">
+        <JsonBlock
+          value={change.changed_fields}
+        />
+      </DetailSection>
+
+      <DetailSection title="Before">
+        <JsonBlock
+          value={change.before ?? {}}
+        />
+      </DetailSection>
+
+      <DetailSection title="After">
+        <JsonBlock
+          value={change.after ?? {}}
+        />
+      </DetailSection>
+    </div>
+  )
+}
+
+
+function SignalBadge({
   severity,
 }: {
   severity: SignalSeverity
@@ -674,7 +1083,7 @@ function SeverityBadge({
     <span
       className={cn(
         "inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 font-mono text-[10px] uppercase",
-        severityStyles[severity],
+        signalStyles[severity],
       )}
     >
       <Icon className="h-3.5 w-3.5" />
@@ -682,6 +1091,26 @@ function SeverityBadge({
     </span>
   )
 }
+
+
+function ChangeBadge({
+  importance,
+}: {
+  importance: ChangeImportance
+}) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-sm border px-2 py-1 font-mono text-[10px] uppercase",
+        changeStyles[importance],
+      )}
+    >
+      <ArrowRightLeft className="h-3.5 w-3.5" />
+      {importance}
+    </span>
+  )
+}
+
 
 function DetailSection({
   title,
@@ -701,6 +1130,7 @@ function DetailSection({
   )
 }
 
+
 function DetailRow({
   label,
   value,
@@ -709,7 +1139,7 @@ function DetailRow({
   value: string | null | undefined
 }) {
   return (
-    <div className="grid grid-cols-[95px_1fr] gap-3 py-1.5 font-mono text-[10px]">
+    <div className="grid grid-cols-[90px_1fr] gap-3 py-1.5 font-mono text-[10px]">
       <span className="text-muted-foreground">
         {label}
       </span>
@@ -720,6 +1150,7 @@ function DetailRow({
     </div>
   )
 }
+
 
 function JsonBlock({
   value,
@@ -736,6 +1167,7 @@ function JsonBlock({
     </pre>
   )
 }
+
 
 function Metric({
   label,
@@ -761,6 +1193,7 @@ function Metric({
   )
 }
 
+
 function FieldLabel({
   children,
 }: {
@@ -772,6 +1205,7 @@ function FieldLabel({
     </span>
   )
 }
+
 
 function LoadingMessage({
   text,
@@ -786,6 +1220,7 @@ function LoadingMessage({
   )
 }
 
+
 function EmptyMessage({
   text,
 }: {
@@ -798,17 +1233,19 @@ function EmptyMessage({
   )
 }
 
+
 function formatDate(
   value: string,
 ): string {
   const parsed = new Date(value)
 
-  if (Number.isNaN(parsed.getTime())) {
-    return value
-  }
-
-  return parsed.toLocaleString()
+  return Number.isNaN(
+    parsed.getTime(),
+  )
+    ? value
+    : parsed.toLocaleString()
 }
+
 
 function errorMessage(
   value: unknown,

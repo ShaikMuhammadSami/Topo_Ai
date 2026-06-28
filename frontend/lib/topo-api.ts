@@ -1,10 +1,14 @@
 import type {
+  ChangeCategory,
+  ChangeImportance,
+  ChangeSummary,
   GraphSnapshot,
   IdentityOverrideCreate,
   IdentityOverrideDeleteResult,
   IdentityOverrideView,
   IdentityResolutionResult,
   IdentityResolutionSummary,
+  NormalizedChange,
   NormalizedSignal,
   SignalSeverity,
   SignalSummary,
@@ -234,6 +238,65 @@ export function getSignal(
   return apiRequest<NormalizedSignal>(
     `/api/v1/signals/${encodeURIComponent(
       signalId,
+    )}`,
+  )
+}
+
+export function listChanges(
+  options?: {
+    clusterName?: string
+    namespace?: string
+    category?: ChangeCategory
+    importance?: ChangeImportance
+    limit?: number
+  },
+): Promise<ChangeSummary[]> {
+  const query = new URLSearchParams()
+
+  if (options?.clusterName) {
+    query.set(
+      "cluster_name",
+      options.clusterName,
+    )
+  }
+
+  if (options?.namespace) {
+    query.set(
+      "namespace",
+      options.namespace,
+    )
+  }
+
+  if (options?.category) {
+    query.set(
+      "category",
+      options.category,
+    )
+  }
+
+  if (options?.importance) {
+    query.set(
+      "importance",
+      options.importance,
+    )
+  }
+
+  query.set(
+    "limit",
+    String(options?.limit ?? 300),
+  )
+
+  return apiRequest<ChangeSummary[]>(
+    `/api/v1/changes?${query.toString()}`,
+  )
+}
+
+export function getChange(
+  changeId: string,
+): Promise<NormalizedChange> {
+  return apiRequest<NormalizedChange>(
+    `/api/v1/changes/${encodeURIComponent(
+      changeId,
     )}`,
   )
 }

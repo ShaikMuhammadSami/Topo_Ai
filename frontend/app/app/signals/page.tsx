@@ -5,7 +5,7 @@ export default function SignalsPage() {
   return (
     <>
       <AppTopbar
-        title="Signals · live events"
+        title="Signals & changes · live evidence"
         path="app/signals"
         showIncidentContext={false}
       />
