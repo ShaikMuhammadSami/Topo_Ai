@@ -207,3 +207,129 @@ class IdentityOverrideRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )    
+
+class SignalRecord(Base):
+    __tablename__ = "signals"
+
+    signal_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    fingerprint: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    signal_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    severity: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    category: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    source_system: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    summary: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    reason: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    action: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    first_observed_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    last_observed_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    occurrence_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    cluster_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    namespace: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    involved_entity_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    involved_object_uid: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    involved_object_kind: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    involved_object_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

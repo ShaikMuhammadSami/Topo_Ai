@@ -16,6 +16,9 @@ from app.api.identities import (
 from app.api.github import (
     router as github_router,
 )
+from app.api.signals import (
+    router as signals_router,
+)
 from dotenv import load_dotenv
 
 
@@ -53,6 +56,7 @@ app.include_router(kubernetes_router)
 app.include_router(snapshots_router)
 app.include_router(identities_router)
 app.include_router(github_router)
+app.include_router(signals_router)
 
 @app.get("/health")
 def health_check() -> dict:
