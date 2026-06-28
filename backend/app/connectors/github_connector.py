@@ -274,43 +274,43 @@ class GitHubConnector:
             ),
         }
     def list_workflow_runs(
-    self,
-    limit: int = 50,
-) -> list[dict[str, Any]]:
-    requested_limit = max(
-        1,
-        min(limit, 100),
-    )
+        self,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        requested_limit = max(
+           1,
+           min(limit, 100),
+        )
 
-    payload = self._get(
-        (
+        payload = self._get(
+           (
             f"/repos/"
             f"{self.settings.owner}/"
             f"{self.settings.repository}/"
             "actions/runs"
-        ),
-        params={
+          ),
+           params={
             "per_page": requested_limit,
-        },
+          },
     )
 
-    if not isinstance(payload, dict):
-        raise GitHubConnectorError(
+        if not isinstance(payload, dict):
+            raise GitHubConnectorError(
             "Unexpected workflow-run response."
+            )
+ 
+        workflow_runs = payload.get(
+            "workflow_runs"
+        ) 
+
+        if not isinstance(workflow_runs, list):
+            raise GitHubConnectorError(
+                 "GitHub response did not contain "
+                "a workflow_runs list."
         )
 
-    workflow_runs = payload.get(
-        "workflow_runs"
-    )
-
-    if not isinstance(workflow_runs, list):
-        raise GitHubConnectorError(
-            "GitHub response did not contain "
-            "a workflow_runs list."
-        )
-
-    return [
-        item
-        for item in workflow_runs
-        if isinstance(item, dict)
-    ]
+        return [
+            item
+            for item in workflow_runs
+            if isinstance(item, dict)
+        ]

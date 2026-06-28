@@ -59,4 +59,3 @@ class GitHubActionsEnrichmentResult(BaseModel):
     warnings: list[str] = Field(
         default_factory=list
     )
-    
