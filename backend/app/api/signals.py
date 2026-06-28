@@ -126,6 +126,17 @@ def ingest_kubernetes_events(
                 snapshot=snapshot
             )
         )
+        
+        signals = [
+            signal.model_copy(
+                update={
+                    "topology_snapshot_id": (
+                     snapshot_id
+                    )
+                }
+            )
+            for signal in signals
+        ]
 
     except ApiException as exc:
         raise HTTPException(

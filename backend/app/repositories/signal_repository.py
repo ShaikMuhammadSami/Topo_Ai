@@ -181,6 +181,9 @@ def _record_to_summary(
             signal.cluster_name
         ),
         namespace=signal.namespace,
+        topology_snapshot_id=(
+           signal.topology_snapshot_id
+        ),
         involved_entity_id=(
             signal.involved_entity_id
         ),

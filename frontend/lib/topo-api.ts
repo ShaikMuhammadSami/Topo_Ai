@@ -5,6 +5,9 @@ import type {
   IdentityOverrideView,
   IdentityResolutionResult,
   IdentityResolutionSummary,
+  NormalizedSignal,
+  SignalSeverity,
+  SignalSummary,
   SnapshotDiffResult,
   SnapshotSummary,
 } from "@/lib/topo-types"
@@ -181,5 +184,56 @@ export function deactivateIdentityOverride(
     {
       method: "DELETE",
     },
+  )
+}
+
+export function listSignals(
+  options?: {
+    clusterName?: string
+    namespace?: string
+    severity?: SignalSeverity
+    limit?: number
+  },
+): Promise<SignalSummary[]> {
+  const query = new URLSearchParams()
+
+  if (options?.clusterName) {
+    query.set(
+      "cluster_name",
+      options.clusterName,
+    )
+  }
+
+  if (options?.namespace) {
+    query.set(
+      "namespace",
+      options.namespace,
+    )
+  }
+
+  if (options?.severity) {
+    query.set(
+      "severity",
+      options.severity,
+    )
+  }
+
+  query.set(
+    "limit",
+    String(options?.limit ?? 200),
+  )
+
+  return apiRequest<SignalSummary[]>(
+    `/api/v1/signals?${query.toString()}`,
+  )
+}
+
+export function getSignal(
+  signalId: string,
+): Promise<NormalizedSignal> {
+  return apiRequest<NormalizedSignal>(
+    `/api/v1/signals/${encodeURIComponent(
+      signalId,
+    )}`,
   )
 }

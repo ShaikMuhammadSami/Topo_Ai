@@ -196,3 +196,85 @@ export type IdentityOverrideDeleteResult = {
   status: string
   override_id: string
 }
+
+export type SignalType =
+  | "kubernetes_event"
+
+export type SignalSeverity =
+  | "info"
+  | "warning"
+  | "error"
+  | "critical"
+
+export type SignalCategory =
+  | "availability"
+  | "health"
+  | "scheduling"
+  | "image"
+  | "storage"
+  | "configuration"
+  | "lifecycle"
+  | "security"
+  | "other"
+
+export type SignalSummary = {
+  signal_id: string
+  signal_type: SignalType
+  severity: SignalSeverity
+  category: SignalCategory
+
+  title: string
+  reason: string | null
+
+  first_observed_at: string
+  last_observed_at: string
+
+  occurrence_count: number
+
+  cluster_name: string
+  namespace: string | null
+
+  topology_snapshot_id: string | null
+
+  involved_entity_id: string | null
+  involved_object_kind: string | null
+  involved_object_name: string | null
+}
+
+export type NormalizedSignal = {
+  signal_id: string
+  fingerprint: string
+
+  signal_type: SignalType
+  severity: SignalSeverity
+  category: SignalCategory
+
+  source_system: string
+
+  title: string
+  summary: string
+
+  reason: string | null
+  action: string | null
+
+  first_observed_at: string
+  last_observed_at: string
+
+  occurrence_count: number
+
+  cluster_name: string
+  namespace: string | null
+
+  topology_snapshot_id: string | null
+
+  involved_entity_id: string | null
+  involved_object_uid: string | null
+  involved_object_kind: string | null
+  involved_object_name: string | null
+
+  reporting_controller: string | null
+  reporting_instance: string | null
+
+  attributes: Record<string, unknown>
+  raw_payload: Record<string, unknown>
+}

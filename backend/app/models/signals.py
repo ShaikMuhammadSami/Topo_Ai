@@ -58,6 +58,8 @@ class NormalizedSignal(BaseModel):
 
     namespace: str | None = None
 
+    topology_snapshot_id: str | None = None
+
     involved_entity_id: str | None = None
 
     involved_object_uid: str | None = None
@@ -93,6 +95,7 @@ class SignalSummary(BaseModel):
 
     cluster_name: str
     namespace: str | None
+    topology_snapshot_id: str | None = None
 
     involved_entity_id: str | None
 

@@ -9,7 +9,7 @@ import {
   AlertCircle,
   LoaderCircle,
 } from "lucide-react"
-
+import { useSearchParams } from "next/navigation"
 import { LiveTopologyGraph } from "@/components/app/live-topology-graph"
 import {
   getSnapshot,
@@ -38,6 +38,14 @@ export function LiveTopologyView() {
 
   const [snapshot, setSnapshot] =
     useState<GraphSnapshot | null>(null)
+  
+  const searchParams = useSearchParams()
+
+  const requestedSnapshotId =
+   searchParams.get("snapshot_id") ?? ""
+
+  const requestedEntityId =
+    searchParams.get("entity_id") ?? ""
 
   const [diff, setDiff] =
     useState<SnapshotDiffResult | null>(null)
@@ -67,6 +75,20 @@ export function LiveTopologyView() {
         if (!newest) {
           return
         }
+        const requestedSnapshot =
+  results.find(
+    (item) =>
+      item.snapshot_id ===
+      requestedSnapshotId,
+  )
+
+const selectedSnapshot =
+  requestedSnapshot ??
+  results[0]
+
+if (!selectedSnapshot) {
+  return
+}
 
         const previous = results.find(
           (candidate) =>
@@ -97,7 +119,7 @@ export function LiveTopologyView() {
     }
 
     void initialise()
-  }, [])
+  }, [requestedSnapshotId])
 
   useEffect(() => {
     async function loadTopology() {
@@ -161,6 +183,30 @@ export function LiveTopologyView() {
         : null,
     [snapshot, diff],
   )
+  useEffect(() => {
+  if (
+    !topology ||
+    !requestedEntityId
+  ) {
+    return
+  }
+
+  const requestedNode =
+    topology.nodes.find(
+      (node) =>
+        node.id ===
+        requestedEntityId,
+    )
+
+  if (requestedNode) {
+    setSelectedNode(
+      requestedNode,
+    )
+  }
+}, [
+  topology,
+  requestedEntityId,
+])
 
   const toSnapshotSummary =
     snapshots.find(
