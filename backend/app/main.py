@@ -25,6 +25,9 @@ from app.api.changes import (
 from app.api.incidents import (
     router as incidents_router,
 )
+from app.api.recommendations import (
+    router as recommendations_router,
+)
 from dotenv import load_dotenv
 
 
@@ -65,7 +68,9 @@ app.include_router(github_router)
 app.include_router(signals_router)
 app.include_router(changes_router)
 app.include_router(incidents_router)
-
+app.include_router(
+    recommendations_router
+)
 @app.get("/health")
 def health_check() -> dict:
     return {
