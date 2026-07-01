@@ -375,3 +375,107 @@ export type NormalizedChange = {
 
   attributes: Record<string, unknown>
 }
+
+export type EvidenceDirection =
+  | "supporting"
+  | "counter"
+
+export type IncidentEvidence = {
+  evidence_id: string
+  direction: EvidenceDirection
+
+  code: string
+  summary: string
+
+  weight: number
+
+  source_type: string
+  source_id: string
+
+  observed_at: string | null
+
+  related_entity_ids: string[]
+
+  attributes: Record<string, unknown>
+}
+
+export type RootCauseHypothesis = {
+  hypothesis_id: string
+  rank: number
+
+  change_id: string
+
+  title: string
+  explanation: string
+
+  score: number
+
+  change_type: ChangeType
+  category: ChangeCategory
+  importance: ChangeImportance
+
+  change_detected_at: string
+
+  minutes_before_signal: number
+
+  graph_distance: number | null
+
+  affected_entity_id: string | null
+  changed_entity_id: string | null
+  changed_entity_kind: string | null
+  changed_entity_name: string | null
+
+  supporting_evidence: IncidentEvidence[]
+  counter_evidence: IncidentEvidence[]
+
+  scoring_components: Record<string, number>
+}
+
+export type IncidentAnalysis = {
+  analysis_id: string
+  algorithm_version: string
+
+  signal_id: string
+  topology_snapshot_id: string
+
+  generated_at: string
+
+  incident_title: string
+
+  cluster_name: string
+  namespace: string | null
+
+  symptom_reason: string | null
+  symptom_summary: string
+  symptom_entity_id: string | null
+
+  signal_first_observed_at: string
+  signal_last_observed_at: string
+
+  lookback_minutes: number
+  grace_minutes: number
+  max_graph_hops: number
+
+  candidate_count: number
+
+  hypotheses: RootCauseHypothesis[]
+  warnings: string[]
+}
+
+export type IncidentAnalysisSummary = {
+  analysis_id: string
+  signal_id: string
+
+  generated_at: string
+
+  incident_title: string
+
+  cluster_name: string
+  namespace: string | null
+
+  candidate_count: number
+  hypothesis_count: number
+
+  top_hypothesis_title: string | null
+  top_hypothesis_score: number | null
+}

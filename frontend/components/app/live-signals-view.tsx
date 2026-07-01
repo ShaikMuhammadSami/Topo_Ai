@@ -19,8 +19,9 @@ import {
   LoaderCircle,
   RefreshCw,
   Server,
+  Sparkles,
 } from "lucide-react"
-
+import { useSearchParams } from "next/navigation"
 import {
   Button,
   buttonVariants,
@@ -156,8 +157,14 @@ export function LiveSignalsView() {
   const [error, setError] =
     useState<string | null>(null)
 
+   const searchParams = useSearchParams()
 
-  async function refreshTimeline() {
+   const requestedSignalId =
+   searchParams.get("signal_id") ?? ""
+
+   const requestedChangeId =
+    searchParams.get("change_id") ?? ""
+    async function refreshTimeline() {
     setLoadingList(true)
     setError(null)
 
@@ -252,71 +259,107 @@ export function LiveSignalsView() {
   )
 
 
-  useEffect(() => {
-    if (timeline.length === 0) {
-      setSelection(null)
+ useEffect(() => {
+  if (timeline.length === 0) {
+    setSelection((current) =>
+      current === null ? current : null,
+    )
+
+    setSignalDetail(null)
+    setChangeDetail(null)
+    return
+  }
+
+  const requestedItem = timeline.find(
+    (item) =>
+      (
+        item.kind === "signal" &&
+        item.id === requestedSignalId
+      ) ||
+      (
+        item.kind === "change" &&
+        item.id === requestedChangeId
+      ),
+  )
+
+  setSelection((current) => {
+    if (requestedItem) {
+      const alreadySelected =
+        current?.kind === requestedItem.kind &&
+        current.id === requestedItem.id
+
+      if (alreadySelected) {
+        return current
+      }
+
+      return {
+        kind: requestedItem.kind,
+        id: requestedItem.id,
+      }
+    }
+
+    const currentStillExists =
+      current !== null &&
+      timeline.some(
+        (item) =>
+          item.kind === current.kind &&
+          item.id === current.id,
+      )
+
+    if (currentStillExists) {
+      return current
+    }
+
+    return {
+      kind: timeline[0].kind,
+      id: timeline[0].id,
+    }
+  })
+}, [
+  timeline,
+  requestedSignalId,
+  requestedChangeId,
+])
+
+
+useEffect(() => {
+  async function loadDetail() {
+    if (!selection) {
       setSignalDetail(null)
       setChangeDetail(null)
       return
     }
 
-    const selectionStillExists =
-      selection &&
-      timeline.some(
-        (item) =>
-          item.id === selection.id &&
-          item.kind === selection.kind,
-      )
+    setLoadingDetail(true)
+    setError(null)
 
-    if (!selectionStillExists) {
-      setSelection({
-        kind: timeline[0].kind,
-        id: timeline[0].id,
-      })
-    }
-  }, [timeline, selection])
-
-
-  useEffect(() => {
-    async function loadDetail() {
-      if (!selection) {
-        return
-      }
-
-      setLoadingDetail(true)
-      setError(null)
-
-      try {
-        if (
-          selection.kind === "signal"
-        ) {
-          const result =
-            await getSignal(
-              selection.id,
-            )
-
-          setSignalDetail(result)
-          setChangeDetail(null)
-        } else {
-          const result =
-            await getChange(
-              selection.id,
-            )
-
-          setChangeDetail(result)
-          setSignalDetail(null)
-        }
-      } catch (requestError) {
-        setError(
-          errorMessage(requestError),
+    try {
+      if (selection.kind === "signal") {
+        const result = await getSignal(
+          selection.id,
         )
-      } finally {
-        setLoadingDetail(false)
-      }
-    }
 
-    void loadDetail()
-  }, [selection])
+        setSignalDetail(result)
+        setChangeDetail(null)
+      } else {
+        const result = await getChange(
+          selection.id,
+        )
+
+        setChangeDetail(result)
+        setSignalDetail(null)
+      }
+    } catch (requestError) {
+      setError(
+        errorMessage(requestError),
+      )
+    } finally {
+      setLoadingDetail(false)
+    }
+  }
+
+  void loadDetail()
+}, [selection])
 
 
   const metrics = useMemo(
@@ -839,7 +882,10 @@ function SignalDetail({
           signal.involved_entity_id,
         )}`
       : null
-
+  const incidentUrl =
+  `/app?signal_id=${encodeURIComponent(
+    signal.signal_id,
+  )}`
   return (
     <div className="space-y-5 p-5">
       <SignalBadge
@@ -856,7 +902,19 @@ function SignalDetail({
           {signal.summary}
         </p>
       </div>
-
+          <Link
+          href={incidentUrl}
+          className={cn(
+          buttonVariants({
+          variant: "default",
+         }),
+          "w-full",
+        )}
+           >
+          <Sparkles />
+           Analyze this signal
+          <ExternalLink />
+          </Link>
       {topologyUrl && (
         <Link
           href={topologyUrl}

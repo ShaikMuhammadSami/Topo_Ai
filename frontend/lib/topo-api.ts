@@ -8,6 +8,8 @@ import type {
   IdentityOverrideView,
   IdentityResolutionResult,
   IdentityResolutionSummary,
+  IncidentAnalysis,
+  IncidentAnalysisSummary,
   NormalizedChange,
   NormalizedSignal,
   SignalSeverity,
@@ -297,6 +299,74 @@ export function getChange(
   return apiRequest<NormalizedChange>(
     `/api/v1/changes/${encodeURIComponent(
       changeId,
+    )}`,
+  )
+}
+
+export function analyzeIncident(
+  signalId: string,
+  options?: {
+    lookbackMinutes?: number
+    graceMinutes?: number
+    maxGraphHops?: number
+    maxHypotheses?: number
+  },
+): Promise<IncidentAnalysis> {
+  const query = new URLSearchParams({
+    signal_id: signalId,
+    lookback_minutes: String(
+      options?.lookbackMinutes ?? 60,
+    ),
+    grace_minutes: String(
+      options?.graceMinutes ?? 2,
+    ),
+    max_graph_hops: String(
+      options?.maxGraphHops ?? 6,
+    ),
+    max_hypotheses: String(
+      options?.maxHypotheses ?? 10,
+    ),
+  })
+
+  return apiRequest<IncidentAnalysis>(
+    `/api/v1/incidents/analyze?${query.toString()}`,
+    {
+      method: "POST",
+    },
+  )
+}
+
+export function listIncidentAnalyses(
+  options?: {
+    signalId?: string
+    limit?: number
+  },
+): Promise<IncidentAnalysisSummary[]> {
+  const query = new URLSearchParams()
+
+  if (options?.signalId) {
+    query.set(
+      "signal_id",
+      options.signalId,
+    )
+  }
+
+  query.set(
+    "limit",
+    String(options?.limit ?? 100),
+  )
+
+  return apiRequest<IncidentAnalysisSummary[]>(
+    `/api/v1/incidents?${query.toString()}`,
+  )
+}
+
+export function getIncidentAnalysis(
+  analysisId: string,
+): Promise<IncidentAnalysis> {
+  return apiRequest<IncidentAnalysis>(
+    `/api/v1/incidents/${encodeURIComponent(
+      analysisId,
     )}`,
   )
 }
