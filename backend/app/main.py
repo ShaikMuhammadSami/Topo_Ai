@@ -22,6 +22,9 @@ from app.api.signals import (
 from app.api.changes import (
     router as changes_router,
 )
+from app.api.incidents import (
+    router as incidents_router,
+)
 from dotenv import load_dotenv
 
 
@@ -61,6 +64,7 @@ app.include_router(identities_router)
 app.include_router(github_router)
 app.include_router(signals_router)
 app.include_router(changes_router)
+app.include_router(incidents_router)
 
 @app.get("/health")
 def health_check() -> dict:

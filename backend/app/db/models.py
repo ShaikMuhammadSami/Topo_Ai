@@ -455,3 +455,92 @@ class ChangeRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class IncidentAnalysisRecord(Base):
+    __tablename__ = "incident_analyses"
+
+    analysis_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    signal_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    topology_snapshot_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    algorithm_version: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    generated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    incident_title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    cluster_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    namespace: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    candidate_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    hypothesis_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    top_hypothesis_title: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    top_hypothesis_score: Mapped[
+        str | None
+    ] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

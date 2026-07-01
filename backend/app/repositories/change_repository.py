@@ -1,5 +1,5 @@
 from collections.abc import Iterable
-
+from datetime import datetime
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -230,3 +230,52 @@ def load_change(
             record.payload_json
         )
     )
+
+def find_changes_in_window(
+    session: Session,
+    cluster_name: str,
+    namespace: str | None,
+    start_at: datetime,
+    end_at: datetime,
+    limit: int = 500,
+) -> list[NormalizedChange]:
+    statement = select(
+        ChangeRecord
+    ).where(
+        ChangeRecord.cluster_name
+        == cluster_name,
+        ChangeRecord.detected_at
+        >= start_at.isoformat(),
+        ChangeRecord.detected_at
+        <= end_at.isoformat(),
+    )
+
+    if namespace:
+        statement = statement.where(
+            ChangeRecord.namespace
+            == namespace
+        )
+
+    statement = (
+        statement
+        .order_by(
+            ChangeRecord
+            .detected_at
+            .desc()
+        )
+        .limit(limit)
+    )
+
+    records = list(
+        session.scalars(
+            statement
+        ).all()
+    )
+
+    return [
+        NormalizedChange
+        .model_validate_json(
+            record.payload_json
+        )
+        for record in records
+    ]
