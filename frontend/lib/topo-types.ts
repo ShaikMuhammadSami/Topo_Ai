@@ -479,3 +479,105 @@ export type IncidentAnalysisSummary = {
   top_hypothesis_title: string | null
   top_hypothesis_score: number | null
 }
+
+export type RecommendationStatus =
+  | "proposed"
+  | "approved"
+  | "applied"
+  | "dismissed"
+
+export type RecommendationRisk =
+  | "low"
+  | "medium"
+  | "high"
+
+export type RecommendationActionType =
+  | "rollback_deployment"
+  | "restore_replica_count"
+  | "restore_configuration"
+  | "verify_image_access"
+  | "investigate_runtime"
+
+export type RecommendationStep = {
+  order: number
+
+  title: string
+  description: string
+
+  command: string | null
+
+  requires_approval: boolean
+
+  expected_result: string | null
+}
+
+export type RemediationRecommendation = {
+  recommendation_id: string
+  algorithm_version: string
+
+  analysis_id: string
+  hypothesis_id: string
+  signal_id: string
+  change_id: string
+
+  generated_at: string
+
+  title: string
+  rationale: string
+
+  action_type: RecommendationActionType
+  status: RecommendationStatus
+
+  confidence: number
+  risk: RecommendationRisk
+
+  cluster_name: string
+  namespace: string | null
+
+  target_entity_id: string | null
+  target_entity_kind: string | null
+  target_entity_name: string | null
+
+  requires_approval: boolean
+
+  steps: RecommendationStep[]
+
+  expected_outcome: string
+
+  verification_checks: string[]
+  safety_notes: string[]
+  evidence_ids: string[]
+
+  attributes: Record<string, unknown>
+
+  status_note: string | null
+  applied_at: string | null
+}
+
+export type RecommendationSummary = {
+  recommendation_id: string
+
+  analysis_id: string
+  signal_id: string
+
+  generated_at: string
+
+  title: string
+  action_type: RecommendationActionType
+
+  status: RecommendationStatus
+  confidence: number
+  risk: RecommendationRisk
+
+  namespace: string | null
+
+  target_entity_kind: string | null
+  target_entity_name: string | null
+
+  applied_at: string | null
+}
+
+export type RecommendationStatusUpdate = {
+  status: RecommendationStatus
+  note?: string | null
+}

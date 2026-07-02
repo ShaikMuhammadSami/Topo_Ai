@@ -12,6 +12,10 @@ import type {
   IncidentAnalysisSummary,
   NormalizedChange,
   NormalizedSignal,
+  RecommendationStatus,
+  RecommendationStatusUpdate,
+  RecommendationSummary,
+  RemediationRecommendation,
   SignalSeverity,
   SignalSummary,
   SnapshotDiffResult,
@@ -368,5 +372,107 @@ export function getIncidentAnalysis(
     `/api/v1/incidents/${encodeURIComponent(
       analysisId,
     )}`,
+  )
+}
+
+export function generateRecommendations(
+  analysisId: string,
+  options?: {
+    minimumScore?: number
+    maxRecommendations?: number
+  },
+): Promise<RemediationRecommendation[]> {
+  const query = new URLSearchParams({
+    analysis_id: analysisId,
+    minimum_score: String(
+      options?.minimumScore ?? 0.5,
+    ),
+    max_recommendations: String(
+      options?.maxRecommendations ?? 3,
+    ),
+  })
+
+  return apiRequest<
+    RemediationRecommendation[]
+  >(
+    `/api/v1/recommendations/generate?${query.toString()}`,
+    {
+      method: "POST",
+    },
+  )
+}
+
+export function listRecommendations(
+  options?: {
+    analysisId?: string
+    signalId?: string
+    status?: RecommendationStatus
+    limit?: number
+  },
+): Promise<RecommendationSummary[]> {
+  const query = new URLSearchParams()
+
+  if (options?.analysisId) {
+    query.set(
+      "analysis_id",
+      options.analysisId,
+    )
+  }
+
+  if (options?.signalId) {
+    query.set(
+      "signal_id",
+      options.signalId,
+    )
+  }
+
+  if (options?.status) {
+    query.set(
+      "status",
+      options.status,
+    )
+  }
+
+  query.set(
+    "limit",
+    String(options?.limit ?? 100),
+  )
+
+  return apiRequest<
+    RecommendationSummary[]
+  >(
+    `/api/v1/recommendations?${query.toString()}`,
+  )
+}
+
+export function getRecommendation(
+  recommendationId: string,
+): Promise<RemediationRecommendation> {
+  return apiRequest<
+    RemediationRecommendation
+  >(
+    `/api/v1/recommendations/${encodeURIComponent(
+      recommendationId,
+    )}`,
+  )
+}
+
+export function updateRecommendationStatus(
+  recommendationId: string,
+  request: RecommendationStatusUpdate,
+): Promise<RemediationRecommendation> {
+  return apiRequest<
+    RemediationRecommendation
+  >(
+    `/api/v1/recommendations/${encodeURIComponent(
+      recommendationId,
+    )}/status`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
   )
 }

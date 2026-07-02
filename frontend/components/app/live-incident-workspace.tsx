@@ -41,7 +41,7 @@ import type {
   SignalSummary,
 } from "@/lib/topo-types"
 import { cn } from "@/lib/utils"
-
+import { IncidentRecommendations } from "@/components/app/incident-recommendations"
 
 export function LiveIncidentWorkspace() {
   const searchParams = useSearchParams()
@@ -677,7 +677,9 @@ export function LiveIncidentWorkspace() {
               )}
             </aside>
           </div>
-
+          <IncidentRecommendations
+             analysis={analysis}
+           />
 
           {analysis.warnings.length > 0 && (
             <section className="rounded-md border border-warn/30 bg-warn/5 p-5">
