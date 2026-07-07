@@ -15,6 +15,9 @@ import type {
   RecommendationStatus,
   RecommendationStatusUpdate,
   RecommendationSummary,
+  RecoveryStatus,
+  RecoveryVerification,
+  RecoveryVerificationSummary,
   RemediationRecommendation,
   SignalSeverity,
   SignalSummary,
@@ -43,24 +46,40 @@ async function apiRequest<T>(
     },
   )
 
-  if (!response.ok) {
-    let message =
-      `API request failed with status ${response.status}`
+if (!response.ok) {
+  let message =
+    `${response.status} ${response.statusText}`
 
-    try {
-      const errorBody = await response.json() as {
-        detail?: unknown
-      }
+  try {
+    const payload: unknown =
+      await response.json()
 
-      if (errorBody.detail) {
-        message = String(errorBody.detail)
-      }
-    } catch {
-      // Use the original HTTP message.
+    if (
+      typeof payload === "object" &&
+      payload !== null &&
+      "detail" in payload
+    ) {
+      const detail = (
+        payload as {
+          detail: unknown
+        }
+      ).detail
+
+      message =
+        typeof detail === "string"
+          ? detail
+          : JSON.stringify(
+              detail,
+              null,
+              2,
+            )
     }
-
-    throw new Error(message)
+  } catch {
+    // Keep the default HTTP message.
   }
+
+  throw new Error(message)
+}
 
   return await response.json() as T
 }
@@ -474,5 +493,67 @@ export function updateRecommendationStatus(
       },
       body: JSON.stringify(request),
     },
+  )
+}
+
+export function verifyRecovery(
+  recommendationId: string,
+  postSnapshotId: string,
+): Promise<RecoveryVerification> {
+  const query = new URLSearchParams({
+    recommendation_id: recommendationId,
+    post_snapshot_id: postSnapshotId,
+  })
+
+  return apiRequest<RecoveryVerification>(
+    `/api/v1/recovery/verify?${query.toString()}`,
+    {
+      method: "POST",
+    },
+  )
+}
+
+export function listRecoveryVerifications(
+  options?: {
+    recommendationId?: string
+    status?: RecoveryStatus
+    limit?: number
+  },
+): Promise<RecoveryVerificationSummary[]> {
+  const query = new URLSearchParams()
+
+  if (options?.recommendationId) {
+    query.set(
+      "recommendation_id",
+      options.recommendationId,
+    )
+  }
+
+  if (options?.status) {
+    query.set(
+      "status",
+      options.status,
+    )
+  }
+
+  query.set(
+    "limit",
+    String(options?.limit ?? 100),
+  )
+
+  return apiRequest<
+    RecoveryVerificationSummary[]
+  >(
+    `/api/v1/recovery?${query.toString()}`,
+  )
+}
+
+export function getRecoveryVerification(
+  verificationId: string,
+): Promise<RecoveryVerification> {
+  return apiRequest<RecoveryVerification>(
+    `/api/v1/recovery/${encodeURIComponent(
+      verificationId,
+    )}`,
   )
 }

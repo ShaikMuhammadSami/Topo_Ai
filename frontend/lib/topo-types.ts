@@ -581,3 +581,91 @@ export type RecommendationStatusUpdate = {
   status: RecommendationStatus
   note?: string | null
 }
+
+export type RecoveryStatus =
+  | "verified"
+  | "failed"
+  | "inconclusive"
+
+export type RecoveryCheckStatus =
+  | "pass"
+  | "fail"
+  | "unknown"
+
+export type RecoveryCheck = {
+  code: string
+  title: string
+
+  status: RecoveryCheckStatus
+
+  summary: string
+
+  expected: string | null
+  observed: string | null
+
+  source_type: string
+  source_id: string
+
+  checked_at: string
+
+  attributes: Record<string, unknown>
+}
+
+export type RecoveryVerification = {
+  verification_id: string
+  algorithm_version: string
+
+  recommendation_id: string
+  analysis_id: string
+  signal_id: string
+
+  pre_snapshot_id: string
+  post_snapshot_id: string
+
+  generated_at: string
+  applied_at: string
+
+  status: RecoveryStatus
+  confidence: number
+
+  summary: string
+
+  cluster_name: string
+  namespace: string | null
+
+  target_entity_id: string | null
+  target_entity_kind: string | null
+  target_entity_name: string | null
+
+  passed_count: number
+  failed_count: number
+  unknown_count: number
+
+  checks: RecoveryCheck[]
+  warnings: string[]
+}
+
+export type RecoveryVerificationSummary = {
+  verification_id: string
+
+  recommendation_id: string
+  analysis_id: string
+  signal_id: string
+
+  generated_at: string
+
+  status: RecoveryStatus
+  confidence: number
+
+  summary: string
+
+  cluster_name: string
+  namespace: string | null
+
+  target_entity_kind: string | null
+  target_entity_name: string | null
+
+  passed_count: number
+  failed_count: number
+  unknown_count: number
+}

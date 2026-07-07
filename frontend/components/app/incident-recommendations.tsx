@@ -39,6 +39,7 @@ import type {
   RecommendationSummary,
   RemediationRecommendation,
 } from "@/lib/topo-types"
+import { IncidentRecoveryVerification } from "@/components/app/incident-recovery-verification"
 import { cn } from "@/lib/utils"
 
 
@@ -932,6 +933,9 @@ function RecommendationDetail({
           }
         />
       </DetailSection>
+      <IncidentRecoveryVerification
+  recommendation={recommendation}
+/>
     </div>
   )
 }
