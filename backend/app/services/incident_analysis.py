@@ -112,6 +112,7 @@ def _analysis_id(
     signal_id: str,
     topology_snapshot_id: str,
     lookback_minutes: int,
+    grace_minutes: int,
     max_graph_hops: int,
 ) -> str:
     value = "|".join(
@@ -119,6 +120,7 @@ def _analysis_id(
             signal_id,
             topology_snapshot_id,
             str(lookback_minutes),
+            str(grace_minutes),
             str(max_graph_hops),
             ALGORITHM_VERSION,
         ]
@@ -819,6 +821,9 @@ def analyze_incident(
         ),
         lookback_minutes=(
             lookback_minutes
+        ),
+        grace_minutes=(
+            grace_minutes
         ),
         max_graph_hops=(
             max_graph_hops

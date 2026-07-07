@@ -265,3 +265,49 @@ def load_signal(
             record.payload_json
         )
     )
+
+def find_signals_after(
+    session: Session,
+    cluster_name: str,
+    namespace: str | None,
+    start_at: datetime,
+    limit: int = 500,
+) -> list[NormalizedSignal]:
+    statement = select(
+        SignalRecord
+    ).where(
+        SignalRecord.cluster_name
+        == cluster_name,
+        SignalRecord.last_observed_at
+        >= start_at.isoformat(),
+    )
+
+    if namespace:
+        statement = statement.where(
+            SignalRecord.namespace
+            == namespace
+        )
+
+    statement = (
+        statement
+        .order_by(
+            SignalRecord
+            .last_observed_at
+            .desc()
+        )
+        .limit(limit)
+    )
+
+    records = list(
+        session.scalars(
+            statement
+        ).all()
+    )
+
+    return [
+        NormalizedSignal
+        .model_validate_json(
+            record.payload_json
+        )
+        for record in records
+    ]

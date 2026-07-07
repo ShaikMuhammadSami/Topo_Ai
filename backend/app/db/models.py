@@ -699,3 +699,175 @@ class RecommendationRecord(Base):
             default=utc_now_iso,
         )
     )
+
+class RecoveryVerificationRecord(Base):
+    __tablename__ = (
+        "recovery_verifications"
+    )
+
+    verification_id: Mapped[
+        str
+    ] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    recommendation_id: Mapped[
+        str
+    ] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    analysis_id: Mapped[str] = (
+        mapped_column(
+            String(255),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    signal_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    pre_snapshot_id: Mapped[
+        str
+    ] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    post_snapshot_id: Mapped[
+        str
+    ] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    algorithm_version: Mapped[
+        str
+    ] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    generated_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    applied_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+        )
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    confidence: Mapped[str] = (
+        mapped_column(
+            String(30),
+            nullable=False,
+        )
+    )
+
+    summary: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    cluster_name: Mapped[str] = (
+        mapped_column(
+            String(255),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    namespace: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    target_entity_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    target_entity_kind: Mapped[
+        str | None
+    ] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    target_entity_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    passed_count: Mapped[int] = (
+        mapped_column(
+            Integer,
+            nullable=False,
+        )
+    )
+
+    failed_count: Mapped[int] = (
+        mapped_column(
+            Integer,
+            nullable=False,
+        )
+    )
+
+    unknown_count: Mapped[int] = (
+        mapped_column(
+            Integer,
+            nullable=False,
+        )
+    )
+
+    payload_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+        )
+    )
+
+    created_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+    updated_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
