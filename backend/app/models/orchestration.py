@@ -42,7 +42,8 @@ class IncidentOrchestrationResult(
     topology_snapshot_id: str | None = None
 
     analysis_id: str | None = None
-
+    incident_id: str | None = None
+    
     candidate_count: int = Field(
         default=0,
         ge=0,

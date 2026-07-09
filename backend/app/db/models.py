@@ -871,3 +871,160 @@ class RecoveryVerificationRecord(Base):
             default=utc_now_iso,
         )
     )
+
+class IncidentRecord(Base):
+    __tablename__ = "incidents"
+
+    incident_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    fingerprint: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    severity: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    summary: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    cluster_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    namespace: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    primary_signal_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    latest_signal_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    topology_snapshot_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    affected_entity_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    affected_object_kind: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    affected_object_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    first_observed_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    last_observed_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    latest_analysis_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    top_hypothesis_title: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    top_hypothesis_score: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    recommendation_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    latest_recommendation_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    recovery_status: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    latest_recovery_verification_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    occurrence_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    status_note: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

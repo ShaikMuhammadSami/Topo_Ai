@@ -38,7 +38,9 @@ from app.services.incident_analysis import (
 from app.services.recommendation_engine import (
     generate_recommendations,
 )
-
+from app.services.incident_lifecycle import (
+    upsert_incident_from_orchestration,
+)
 
 ORCHESTRATION_VERSION = (
     "incident-orchestration-0.1.0"
@@ -347,7 +349,15 @@ def orchestrate_signal(
                 recommendation
             ),
         )
-
+    
+    incident_record = (
+     upsert_incident_from_orchestration(
+          session=session,
+          signal=signal,
+          analysis=analysis,
+          recommendations=recommendations,
+        )
+    )
     warnings = list(
         analysis.warnings
     )
@@ -414,6 +424,9 @@ def orchestrate_signal(
         analysis_id=(
             analysis.analysis_id
         ),
+        incident_id=(
+          incident_record.incident_id
+        ),
         candidate_count=(
             analysis.candidate_count
         ),
@@ -446,4 +459,5 @@ def orchestrate_signal(
         ],
         warnings=warnings,
         parameters=parameters,
+
     )
