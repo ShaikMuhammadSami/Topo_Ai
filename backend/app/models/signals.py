@@ -122,6 +122,9 @@ class SignalIngestionResult(BaseModel):
     )
     
     auto_orchestrate: bool = False
+    qualifying_signal_count: int = 0
+    orchestration_group_count: int = 0
+    duplicate_signal_count: int = 0
     orchestrated_count: int = 0
     skipped_orchestration_count: int = 0
     orchestration_results: list[

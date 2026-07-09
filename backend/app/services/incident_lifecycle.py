@@ -24,26 +24,30 @@ from app.models.signals import (
 from app.repositories.incident_record_repository import (
     get_incident_by_fingerprint,
 )
+from app.services.incident_grouping import (
+    incident_fingerprint,
+    incident_group_label,
+)
 
 
-def _incident_fingerprint(
-    signal: NormalizedSignal,
-) -> str:
-    value = "|".join(
-        [
-            signal.cluster_name,
-            signal.namespace or "",
-            signal.category.value,
-            signal.reason or "",
-            signal.involved_entity_id or "",
-            signal.involved_object_kind or "",
-            signal.involved_object_name or "",
-        ]
-    )
+# def _incident_fingerprint(
+#     signal: NormalizedSignal,
+# ) -> str:
+#     value = "|".join(
+#         [
+#             signal.cluster_name,
+#             signal.namespace or "",
+#             signal.category.value,
+#             signal.reason or "",
+#             signal.involved_entity_id or "",
+#             signal.involved_object_kind or "",
+#             signal.involved_object_name or "",
+#         ]
+#     )
 
-    return sha256(
-        value.encode("utf-8")
-    ).hexdigest()
+#     return sha256(
+#         value.encode("utf-8")
+#     ).hexdigest()
 
 
 def _incident_id(
@@ -56,24 +60,31 @@ def _incident_id(
         signal.namespace
         or "cluster"
     )
-
-    reason = (
-        signal.reason
-        or signal.category.value
-        or "signal"
-    )
-
-    safe_reason = (
-        reason.lower()
+    subject = (
+        incident_group_label(signal)
+        .lower()
+        .replace("/", "-")
         .replace(" ", "-")
         .replace("_", "-")
     )
+
+    # reason = (
+    #     signal.reason
+    #     or signal.category.value
+    #     or "signal"
+    # )
+
+    # safe_reason = (
+    #     reason.lower()
+    #     .replace(" ", "-")
+    #     .replace("_", "-")
+    # )
 
     return (
         "incident:"
         f"{signal.cluster_name}:"
         f"{namespace}:"
-        f"{safe_reason}:"
+        f"{subject}:"
         f"{digest}"
     )
 
@@ -121,7 +132,7 @@ def upsert_incident_from_orchestration(
         RemediationRecommendation
     ],
 ) -> IncidentRecord:
-    fingerprint = _incident_fingerprint(
+    fingerprint = incident_fingerprint(
         signal
     )
 

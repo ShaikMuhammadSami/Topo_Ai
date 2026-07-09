@@ -12,7 +12,9 @@ from app.models.signals import (
     NormalizedSignal,
     SignalSummary,
 )
-
+from app.services.incident_grouping import (
+    incident_fingerprint,
+)
 
 def save_signals(
     session: Session,
@@ -246,7 +248,65 @@ def list_signals(
         for record in records
     ]
 
+def list_signals_by_incident_fingerprint(
+    session: Session,
+    cluster_name: str,
+    namespace: str | None,
+    fingerprint: str,
+    limit: int = 200,
+) -> list[SignalSummary]:
+    statement = select(
+        SignalRecord
+    ).where(
+        SignalRecord.cluster_name
+        == cluster_name,
+    )
 
+    if namespace:
+        statement = statement.where(
+            SignalRecord.namespace
+            == namespace
+        )
+
+    statement = (
+        statement
+        .order_by(
+            SignalRecord
+            .last_observed_at
+            .desc()
+        )
+        .limit(limit * 5)
+    )
+
+    records = list(
+        session.scalars(
+            statement
+        ).all()
+    )
+
+    matched = []
+
+    for record in records:
+        signal = (
+            NormalizedSignal
+            .model_validate_json(
+                record.payload_json
+            )
+        )
+
+        if (
+            incident_fingerprint(signal)
+            == fingerprint
+        ):
+            matched.append(
+                _record_to_summary(record)
+            )
+
+        if len(matched) >= limit:
+            break
+
+    return matched
+    
 def load_signal(
     session: Session,
     signal_id: str,

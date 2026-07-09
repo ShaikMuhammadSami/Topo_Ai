@@ -36,18 +36,49 @@ from app.repositories.snapshot_repository import (
 from app.services.incident_orchestrator import (
     orchestrate_signal,
 )
+from app.services.incident_grouping import (
+    incident_fingerprint,
+    is_failure_signal,
+    signal_priority_key,
+)
 
-FAILURE_SIGNAL_SEVERITIES = {
-    SignalSeverity.WARNING,
-    SignalSeverity.ERROR,
-    SignalSeverity.CRITICAL,
-}
+def _select_representative_signals(
+    signals,
+):
+    grouped = {}
+
+    for signal in signals:
+        fingerprint = (
+            incident_fingerprint(signal)
+        )
+
+        current = grouped.get(
+            fingerprint
+        )
+
+        if (
+            current is None
+            or signal_priority_key(signal)
+            > signal_priority_key(current)
+        ):
+            grouped[fingerprint] = signal
+
+    return sorted(
+        grouped.values(),
+        key=signal_priority_key,
+        reverse=True,
+    )
+# FAILURE_SIGNAL_SEVERITIES = {
+#     SignalSeverity.WARNING,
+#     SignalSeverity.ERROR,
+#     SignalSeverity.CRITICAL,
+# }
 
 
-def _is_failure_signal(
-    severity: SignalSeverity,
-) -> bool:
-    return severity in FAILURE_SIGNAL_SEVERITIES
+# def _is_failure_signal(
+#     severity: SignalSeverity,
+# ) -> bool:
+#     return severity in FAILURE_SIGNAL_SEVERITIES
 
 router = APIRouter(
     prefix="/api/v1/signals",
@@ -71,6 +102,9 @@ def ingest_kubernetes_events(
     auto_orchestrate: bool = Query(
         default=False,
     ),
+    auto_orchestrate_grouped: bool = Query(
+       default=True,
+   ),
     orchestration_lookback_minutes: int = Query(
         default=60,
         ge=5,
@@ -212,38 +246,38 @@ def ingest_kubernetes_events(
             signals=signals,
         )
     )
-    orchestration_results = []
+    # orchestration_results = []
 
-    if auto_orchestrate:
-        qualifying_signals = [
-        signal
-        for signal in signals
-        if _is_failure_signal(
-            signal.severity
-        )
-        ]
+    # if auto_orchestrate:
+    #     qualifying_signals = [
+    #     signal
+    #     for signal in signals
+    #     if _is_failure_signal(
+    #         signal.severity
+    #     )
+    #     ]
 
     qualifying_signals = [
         signal
         for signal in signals
-        if _is_failure_signal(
-            signal.severity
-        )
+        if is_failure_signal(signal)
     ]
-    orchestration_results = []
-
+    # orchestration_results = []
+    if auto_orchestrate_grouped:
+          selected_signals = (
+              _select_representative_signals(
+                   qualifying_signals
+                )
+            )
+    else:
+         selected_signals = sorted(
+              qualifying_signals,
+              key=signal_priority_key,
+              reverse=True,
+            )
+    orchestration_results = []  
     if auto_orchestrate:
-        ordered_qualifying_signals = sorted(
-            qualifying_signals,
-            key=lambda signal: (
-                signal.severity.value,
-                signal.last_observed_at,
-                signal.signal_id,
-            ),
-            reverse=True,
-        )
-
-        for signal in ordered_qualifying_signals[
+        for signal in selected_signals[
            :orchestration_limit
         ]:
             result = orchestrate_signal(
@@ -299,6 +333,17 @@ def ingest_kubernetes_events(
             severity_counts
         ),
         auto_orchestrate=auto_orchestrate,
+        qualifying_signal_count=len(
+          qualifying_signals
+        ),
+        orchestration_group_count=len(
+          selected_signals
+        ),
+        duplicate_signal_count=max(
+          0,
+          len(qualifying_signals)
+         - len(selected_signals),
+        ),
         orchestrated_count=len(
           orchestration_results
         ),

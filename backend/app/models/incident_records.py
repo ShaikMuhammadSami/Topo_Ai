@@ -6,8 +6,24 @@ from pydantic import (
     ConfigDict,
     Field,
 )
+from app.models.signals import (
+    SignalSummary,
+)
 
+class IncidentRelatedSignals(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid"
+    )
 
+    incident_id: str
+    fingerprint: str
+
+    signal_count: int
+
+    signals: list[
+        SignalSummary
+    ] = Field(default_factory=list)
+    
 class IncidentStatus(str, Enum):
     OPEN = "open"
     INVESTIGATING = "investigating"

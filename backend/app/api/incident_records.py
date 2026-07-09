@@ -10,6 +10,7 @@ from app.db.database import (
     get_session,
 )
 from app.models.incident_records import (
+    IncidentRelatedSignals,
     IncidentRecordSummary,
     IncidentRecordView,
     IncidentSeverity,
@@ -20,6 +21,9 @@ from app.repositories.incident_record_repository import (
     list_incident_records,
     load_incident_record,
     update_incident_status,
+)
+from app.repositories.signal_repository import (
+    list_signals_by_incident_fingerprint,
 )
 
 
@@ -64,6 +68,55 @@ def get_incident_records(
         limit=limit,
     )
 
+@router.get(
+    "/{incident_id}/signals",
+    response_model=IncidentRelatedSignals,
+)
+def get_incident_related_signals(
+    incident_id: str,
+    limit: int = Query(
+        default=200,
+        ge=1,
+        le=500,
+    ),
+    session: Session = Depends(
+        get_session
+    ),
+) -> IncidentRelatedSignals:
+    incident = load_incident_record(
+        session=session,
+        incident_id=incident_id,
+    )
+
+    if incident is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"Incident not found: "
+                f"{incident_id}"
+            ),
+        )
+
+    signals = (
+        list_signals_by_incident_fingerprint(
+            session=session,
+            cluster_name=(
+                incident.cluster_name
+            ),
+            namespace=incident.namespace,
+            fingerprint=(
+                incident.fingerprint
+            ),
+            limit=limit,
+        )
+    )
+
+    return IncidentRelatedSignals(
+        incident_id=incident.incident_id,
+        fingerprint=incident.fingerprint,
+        signal_count=len(signals),
+        signals=signals,
+    )
 
 @router.get(
     "/{incident_id}",
