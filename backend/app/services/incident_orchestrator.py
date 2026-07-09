@@ -212,7 +212,7 @@ def orchestrate_signal(
                 completed_at=completed_at,
                 signal_id=signal.signal_id,
                 signal_severity=(
-                    signal.severity
+                    signal.severity.value
                 ),
                 cluster_name=(
                     signal.cluster_name
@@ -402,7 +402,7 @@ def orchestrate_signal(
         completed_at=completed_at,
         signal_id=signal.signal_id,
         signal_severity=(
-            signal.severity
+            signal.severity.value
         ),
         cluster_name=(
             signal.cluster_name

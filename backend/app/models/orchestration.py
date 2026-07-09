@@ -8,9 +8,6 @@ from pydantic import (
     Field,
 )
 
-from app.models.signals import (
-    SignalSeverity,
-)
 
 
 class OrchestrationStatus(
@@ -38,7 +35,7 @@ class IncidentOrchestrationResult(
     completed_at: datetime
 
     signal_id: str
-    signal_severity: SignalSeverity
+    signal_severity: str
 
     cluster_name: str
     namespace: str | None = None

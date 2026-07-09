@@ -33,7 +33,21 @@ from app.repositories.signal_repository import (
 from app.repositories.snapshot_repository import (
     load_snapshot,
 )
+from app.services.incident_orchestrator import (
+    orchestrate_signal,
+)
 
+FAILURE_SIGNAL_SEVERITIES = {
+    SignalSeverity.WARNING,
+    SignalSeverity.ERROR,
+    SignalSeverity.CRITICAL,
+}
+
+
+def _is_failure_signal(
+    severity: SignalSeverity,
+) -> bool:
+    return severity in FAILURE_SIGNAL_SEVERITIES
 
 router = APIRouter(
     prefix="/api/v1/signals",
@@ -53,6 +67,44 @@ def ingest_kubernetes_events(
             "to map Kubernetes object UIDs "
             "to canonical entity IDs."
         )
+    ),
+    auto_orchestrate: bool = Query(
+        default=False,
+    ),
+    orchestration_lookback_minutes: int = Query(
+        default=60,
+        ge=5,
+        le=1440,
+    ),
+    orchestration_grace_minutes: int = Query(
+        default=15,
+        ge=0,
+        le=30,
+    ),
+    orchestration_max_graph_hops: int = Query(
+        default=6,
+        ge=1,
+        le=20,
+    ),
+    orchestration_max_hypotheses: int = Query(
+        default=10,
+        ge=1,
+        le=50,
+    ),
+    orchestration_minimum_recommendation_score: float = Query(
+        default=0.50,
+        ge=0.0,
+        le=1.0,
+    ),
+    orchestration_max_recommendations: int = Query(
+        default=3,
+        ge=1,
+        le=20,
+    ),
+    orchestration_limit: int = Query(
+        default=5,
+        ge=1,
+        le=50,
     ),
     session: Session = Depends(
         get_session
@@ -160,7 +212,64 @@ def ingest_kubernetes_events(
             signals=signals,
         )
     )
+    orchestration_results = []
 
+    if auto_orchestrate:
+        qualifying_signals = [
+        signal
+        for signal in signals
+        if _is_failure_signal(
+            signal.severity
+        )
+        ]
+
+    qualifying_signals = [
+        signal
+        for signal in signals
+        if _is_failure_signal(
+            signal.severity
+        )
+    ]
+    orchestration_results = []
+
+    if auto_orchestrate:
+        ordered_qualifying_signals = sorted(
+            qualifying_signals,
+            key=lambda signal: (
+                signal.severity.value,
+                signal.last_observed_at,
+                signal.signal_id,
+            ),
+            reverse=True,
+        )
+
+        for signal in ordered_qualifying_signals[
+           :orchestration_limit
+        ]:
+            result = orchestrate_signal(
+                session=session,
+                signal_id=signal.signal_id,
+                lookback_minutes=(
+                    orchestration_lookback_minutes
+                ),
+                grace_minutes=(
+                    orchestration_grace_minutes
+                ),
+                max_graph_hops=(
+                    orchestration_max_graph_hops
+                ),
+                max_hypotheses=(
+                 orchestration_max_hypotheses
+                ),
+                minimum_recommendation_score=(
+                    orchestration_minimum_recommendation_score
+                ),
+                max_recommendations=(
+                    orchestration_max_recommendations
+                ),
+                require_failure_severity=True,
+            )
+            orchestration_results.append(result)
     mapped_count = sum(
         1
         for signal in signals
@@ -188,6 +297,22 @@ def ingest_kubernetes_events(
         ),
         severity_counts=dict(
             severity_counts
+        ),
+        auto_orchestrate=auto_orchestrate,
+        orchestrated_count=len(
+          orchestration_results
+        ),
+        skipped_orchestration_count=(
+           max(
+              0,
+               len(qualifying_signals)
+             - len(orchestration_results),
+            )
+            if auto_orchestrate
+            else 0
+        ),
+        orchestration_results=(
+           orchestration_results
         ),
     )
 

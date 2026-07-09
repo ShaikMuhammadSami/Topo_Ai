@@ -1,7 +1,9 @@
 from datetime import datetime
 from enum import Enum
 from typing import Any
-
+from app.models.orchestration import (
+    IncidentOrchestrationResult,
+)
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -118,3 +120,10 @@ class SignalIngestionResult(BaseModel):
     severity_counts: dict[str, int] = Field(
         default_factory=dict
     )
+    
+    auto_orchestrate: bool = False
+    orchestrated_count: int = 0
+    skipped_orchestration_count: int = 0
+    orchestration_results: list[
+        IncidentOrchestrationResult
+    ] = Field(default_factory=list)
