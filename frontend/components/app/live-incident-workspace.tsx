@@ -1,7 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { useSearchParams } from "next/navigation"
+import { useRouter,
+  useSearchParams,
+ } from "next/navigation"
 import {
   useEffect,
   useMemo,
@@ -22,7 +24,7 @@ import {
   ShieldAlert,
   Sparkles,
 } from "lucide-react"
-
+import { IncidentInbox } from "@/components/app/incident-inbox"
 import {
   Button,
   buttonVariants,
@@ -45,12 +47,15 @@ import { IncidentRecommendations } from "@/components/app/incident-recommendatio
 
 export function LiveIncidentWorkspace() {
   const searchParams = useSearchParams()
-
+  const router = useRouter()
   const requestedSignalId =
     searchParams.get("signal_id") ?? ""
 
   const requestedAnalysisId =
     searchParams.get("analysis_id") ?? ""
+
+  const requestedIncidentId =
+  searchParams.get("incident_id") ?? ""
 
   const [signals, setSignals] =
     useState<SignalSummary[]>([])
@@ -75,7 +80,10 @@ export function LiveIncidentWorkspace() {
     selectedHypothesisId,
     setSelectedHypothesisId,
   ] = useState("")
-
+  const [
+    selectedIncidentId,
+    setSelectedIncidentId,
+  ] = useState("")
   const [lookbackMinutes, setLookbackMinutes] =
     useState(60)
 
@@ -96,7 +104,37 @@ export function LiveIncidentWorkspace() {
 
   const [error, setError] =
     useState<string | null>(null)
+function openAnalysisFromIncident(
+  analysisId: string,
+) {
+  if (!analysisId) {
+    return
+  }
 
+  setSelectedAnalysisId(analysisId)
+
+  router.push(
+    `/app?analysis_id=${encodeURIComponent(
+      analysisId,
+    )}`,
+    {
+      scroll: false,
+    },
+  )
+
+  void loadAnalysis(analysisId)
+
+  window.setTimeout(() => {
+    document
+      .getElementById(
+        "incident-analysis-panel",
+      )
+      ?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      })
+  }, 150)
+}
 
   async function loadAnalysis(
     analysisId: string,
@@ -227,7 +265,19 @@ export function LiveIncidentWorkspace() {
     }
   }
 
+useEffect(() => {
+  if (requestedIncidentId) {
+    setSelectedIncidentId(
+      requestedIncidentId,
+    )
+  }
 
+  void loadWorkspace()
+}, [
+  requestedSignalId,
+  requestedAnalysisId,
+  requestedIncidentId,
+])
   useEffect(() => {
     void loadWorkspace()
   }, [
@@ -531,7 +581,11 @@ export function LiveIncidentWorkspace() {
       {loading && (
         <LoadingPanel text="Loading incident evidence…" />
       )}
-
+      <IncidentInbox
+  selectedIncidentId={selectedIncidentId}
+  onSelectIncident={setSelectedIncidentId}
+  onOpenAnalysis={openAnalysisFromIncident}
+/>
 
       {!loading &&
         !analysis &&
@@ -554,11 +608,14 @@ export function LiveIncidentWorkspace() {
         )}
 
 
-      {analysis && !loading && (
-        <>
-          <IncidentSummary
-            analysis={analysis}
-          />
+{analysis && !loading && (
+  <div
+    id="incident-analysis-panel"
+    className="space-y-6"
+  >
+    <IncidentSummary
+      analysis={analysis}
+    />
 
           <section className="grid grid-cols-2 gap-px overflow-hidden rounded-md border border-border bg-border lg:grid-cols-5">
             <Metric
@@ -700,7 +757,7 @@ export function LiveIncidentWorkspace() {
               </ul>
             </section>
           )}
-        </>
+        </div>
       )}
     </div>
   )

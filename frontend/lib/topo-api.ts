@@ -23,6 +23,12 @@ import type {
   SignalSummary,
   SnapshotDiffResult,
   SnapshotSummary,
+  IncidentRecordSummary,
+  IncidentRecordView,
+  IncidentRelatedSignals,
+  IncidentSeverity,
+  IncidentStatus,
+  IncidentStatusUpdate,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -555,5 +561,79 @@ export function getRecoveryVerification(
     `/api/v1/recovery/${encodeURIComponent(
       verificationId,
     )}`,
+  )
+}
+
+export function listIncidentRecords(
+  options?: {
+    status?: IncidentStatus
+    severity?: IncidentSeverity
+    namespace?: string
+    limit?: number
+  },
+): Promise<IncidentRecordSummary[]> {
+  const query = new URLSearchParams()
+
+  if (options?.status) {
+    query.set("status", options.status)
+  }
+
+  if (options?.severity) {
+    query.set("severity", options.severity)
+  }
+
+  if (options?.namespace) {
+    query.set("namespace", options.namespace)
+  }
+
+  query.set("limit", String(options?.limit ?? 100))
+
+  return apiRequest<IncidentRecordSummary[]>(
+    `/api/v1/incident-records?${query.toString()}`,
+  )
+}
+
+export function getIncidentRecord(
+  incidentId: string,
+): Promise<IncidentRecordView> {
+  return apiRequest<IncidentRecordView>(
+    `/api/v1/incident-records/${encodeURIComponent(
+      incidentId,
+    )}`,
+  )
+}
+
+export function updateIncidentRecordStatus(
+  incidentId: string,
+  request: IncidentStatusUpdate,
+): Promise<IncidentRecordView> {
+  return apiRequest<IncidentRecordView>(
+    `/api/v1/incident-records/${encodeURIComponent(
+      incidentId,
+    )}/status`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  )
+}
+
+export function getIncidentRelatedSignals(
+  incidentId: string,
+  options?: {
+    limit?: number
+  },
+): Promise<IncidentRelatedSignals> {
+  const query = new URLSearchParams({
+    limit: String(options?.limit ?? 200),
+  })
+
+  return apiRequest<IncidentRelatedSignals>(
+    `/api/v1/incident-records/${encodeURIComponent(
+      incidentId,
+    )}/signals?${query.toString()}`,
   )
 }

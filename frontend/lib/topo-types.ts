@@ -669,3 +669,100 @@ export type RecoveryVerificationSummary = {
   failed_count: number
   unknown_count: number
 }
+
+export type IncidentStatus =
+  | "open"
+  | "investigating"
+  | "recommended"
+  | "remediating"
+  | "resolved"
+  | "dismissed"
+
+export type IncidentSeverity =
+  | "info"
+  | "warning"
+  | "error"
+  | "critical"
+
+export type IncidentRecordSummary = {
+  incident_id: string
+
+  status: IncidentStatus
+  severity: IncidentSeverity
+
+  title: string
+
+  cluster_name: string
+  namespace: string | null
+
+  affected_object_kind: string | null
+  affected_object_name: string | null
+
+  first_observed_at: string
+  last_observed_at: string
+
+  top_hypothesis_title: string | null
+  top_hypothesis_score: number | null
+
+  recommendation_count: number
+  recovery_status: string | null
+
+  occurrence_count: number
+}
+
+export type IncidentRecordView = {
+  incident_id: string
+  fingerprint: string
+
+  status: IncidentStatus
+  severity: IncidentSeverity
+
+  title: string
+  summary: string
+
+  cluster_name: string
+  namespace: string | null
+
+  primary_signal_id: string
+  latest_signal_id: string | null
+
+  topology_snapshot_id: string | null
+
+  affected_entity_id: string | null
+  affected_object_kind: string | null
+  affected_object_name: string | null
+
+  first_observed_at: string
+  last_observed_at: string
+
+  latest_analysis_id: string | null
+  top_hypothesis_title: string | null
+  top_hypothesis_score: number | null
+
+  recommendation_count: number
+  latest_recommendation_id: string | null
+
+  recovery_status: string | null
+  latest_recovery_verification_id: string | null
+
+  occurrence_count: number
+
+  created_at: string
+  updated_at: string
+
+  status_note: string | null
+}
+
+export type IncidentStatusUpdate = {
+  status: IncidentStatus
+  note?: string | null
+}
+
+export type IncidentRelatedSignals = {
+  incident_id: string
+  fingerprint: string
+
+  signal_count: number
+
+  signals: SignalSummary[]
+}
