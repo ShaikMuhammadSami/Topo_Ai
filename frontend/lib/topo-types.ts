@@ -766,3 +766,30 @@ export type IncidentRelatedSignals = {
 
   signals: SignalSummary[]
 }
+
+export type BlastRadiusEntity = {
+  entity_id: string;
+  entity_kind: string;
+  entity_name: string;
+  namespace: string | null;
+  distance: number;
+  impact: string;
+  impact_score: number;
+  relationship: string | null;
+};
+
+export type DependencyPath = {
+  path: string[];
+};
+
+export type BlastRadiusResponse = {
+  incident_id: string;
+  root_entity_id: string;
+  root_entity_name: string;
+  affected_entity_count: number;
+  direct_impact_count: number;
+  indirect_impact_count: number;
+  potential_impact_count: number;
+  affected_entities: BlastRadiusEntity[];
+  dependency_paths: DependencyPath[];
+};

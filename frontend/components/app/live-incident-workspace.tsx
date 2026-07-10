@@ -34,6 +34,7 @@ import {
   getIncidentAnalysis,
   listIncidentAnalyses,
   listSignals,
+  getBlastRadius,
 } from "@/lib/topo-api"
 import type {
   IncidentAnalysis,
@@ -41,9 +42,13 @@ import type {
   IncidentEvidence,
   RootCauseHypothesis,
   SignalSummary,
+  BlastRadiusResponse,
+  BlastRadiusEntity,
 } from "@/lib/topo-types"
 import { cn } from "@/lib/utils"
 import { IncidentRecommendations } from "@/components/app/incident-recommendations"
+import { BlastRadius } from "@/components/app/blast-radius";
+import { BlastRadiusGraph } from "@/components/app/blast-radius-graph";
 
 export function LiveIncidentWorkspace() {
   const searchParams = useSearchParams()
@@ -378,6 +383,18 @@ useEffect(() => {
     }
   }
 
+const [blastData, setBlastData] = useState<BlastRadiusResponse | null>(null);
+const [selectedEntity, setSelectedEntity] = useState<BlastRadiusEntity | null>(null);
+
+useEffect(() => {
+  if (selectedIncidentId) {
+    getBlastRadius(selectedIncidentId)
+      .then((data) => setBlastData(data))
+      .catch(console.error);
+  } else {
+    setBlastData(null);
+  }
+}, [selectedIncidentId]);
 
   return (
     <div className="mx-auto w-full max-w-[1750px] space-y-6 p-5">
@@ -658,7 +675,11 @@ useEffect(() => {
               className="text-ok"
             />
           </section>
-
+          <BlastRadius data={blastData} />
+          <BlastRadiusGraph
+  data={blastData}
+  onSelectEntity={(entity) => setSelectedEntity(entity)}
+/>
 
           <div className="grid min-h-[720px] gap-6 xl:grid-cols-[minmax(0,1fr)_500px]">
             <section className="overflow-hidden rounded-md border border-border bg-card">

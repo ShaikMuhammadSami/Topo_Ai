@@ -29,6 +29,7 @@ import type {
   IncidentSeverity,
   IncidentStatus,
   IncidentStatusUpdate,
+  BlastRadiusResponse,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -636,4 +637,12 @@ export function getIncidentRelatedSignals(
       incidentId,
     )}/signals?${query.toString()}`,
   )
+}
+
+export function getBlastRadius(
+  incidentId: string
+): Promise<BlastRadiusResponse> {
+  return apiRequest<BlastRadiusResponse>(
+    `/api/v1/incidents/${encodeURIComponent(incidentId)}/blast-radius`
+  );
 }
