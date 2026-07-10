@@ -37,6 +37,9 @@ from app.api.orchestration import (
 from app.api.incident_records import (
     router as incident_records_router,
 )
+from app.api.blast_radius import (
+    router as blast_radius_router,
+)
 from dotenv import load_dotenv
 
 
@@ -86,6 +89,9 @@ app.include_router(
 )
 app.include_router(
     incident_records_router
+)
+app.include_router(
+    blast_radius_router
 )
 
 @app.get("/health")
