@@ -42,6 +42,9 @@ import type {
   NetworkDependencyAnalysisResponse,
   ExplanationProvider,
   IncidentExplanationResponse,
+  CopilotQuestionResponse,
+  CopilotSessionDetail,
+  CopilotSessionSummary,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -884,6 +887,91 @@ export function generateIncidentExplanation(
         force_regenerate:
           options?.forceRegenerate
           ?? false,
+      }),
+    },
+  )
+}
+
+export function createIncidentCopilotSession(
+  incidentId: string,
+  options?: {
+    title?: string
+    provider?: ExplanationProvider
+  },
+): Promise<CopilotSessionDetail> {
+  return apiRequest<
+    CopilotSessionDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/copilot/sessions`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        title:
+          options?.title ?? null,
+        provider:
+          options?.provider ?? "auto",
+      }),
+    },
+  )
+}
+
+
+export function listIncidentCopilotSessions(
+  incidentId: string,
+): Promise<CopilotSessionSummary[]> {
+  return apiRequest<
+    CopilotSessionSummary[]
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/copilot/sessions`,
+  )
+}
+
+
+export function getIncidentCopilotSession(
+  incidentId: string,
+  sessionId: string,
+): Promise<CopilotSessionDetail> {
+  return apiRequest<
+    CopilotSessionDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/copilot/sessions/${encodeURIComponent(
+      sessionId,
+    )}`,
+  )
+}
+
+
+export function sendIncidentCopilotMessage(
+  incidentId: string,
+  sessionId: string,
+  question: string,
+): Promise<CopilotQuestionResponse> {
+  return apiRequest<
+    CopilotQuestionResponse
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/copilot/sessions/${encodeURIComponent(
+      sessionId,
+    )}/messages`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        question,
       }),
     },
   )

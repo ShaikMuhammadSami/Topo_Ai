@@ -37,6 +37,9 @@ import {
 import {
   IncidentAiExplanation,
 } from "@/components/app/incident-ai-explanation"
+import {
+  IncidentCopilot,
+} from "@/components/app/incident-copilot"
 import { cn } from "@/lib/utils"
 
 
@@ -589,6 +592,9 @@ function IncidentDetail({
   incidentId={incident.incident_id}
 />
 <IncidentAiExplanation
+  incidentId={incident.incident_id}
+/>
+<IncidentCopilot
   incidentId={incident.incident_id}
 />
       <section className="rounded-md border border-border bg-background p-5">

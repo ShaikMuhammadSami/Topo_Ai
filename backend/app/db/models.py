@@ -1406,3 +1406,128 @@ class IncidentExplanationRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class CopilotSessionRecord(Base):
+    __tablename__ = "incident_copilot_sessions"
+
+    session_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    provider: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    model_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="active",
+        index=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class CopilotMessageRecord(Base):
+    __tablename__ = "incident_copilot_messages"
+
+    message_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    session_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    role: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    content: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    provider: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    answer_status: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    confidence: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+
+    evidence_ids_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    evidence_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    suggested_questions_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    warning: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

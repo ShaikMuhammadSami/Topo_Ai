@@ -549,6 +549,15 @@ def build_incident_evidence(
             session=session,
             incident_id=incident_id,
         )
+        root_entity = next(
+           (
+                entity
+                for entity in blast.affected_entities
+                if entity.entity_id
+                == blast.root_entity_id
+            ),
+            None,
+        )
 
         _add_evidence(
             evidence,
@@ -570,8 +579,11 @@ def build_incident_evidence(
                     blast.root_entity_id,
                 "root_entity_name":
                     blast.root_entity_name,
-                "root_entity_kind":
-                    blast.root_entity_kind,
+                "root_entity_kind": (
+                  root_entity.entity_kind
+                  if root_entity
+                  else None
+                ),
                 "affected_entity_count":
                     blast
                     .affected_entity_count,

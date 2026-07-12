@@ -55,6 +55,9 @@ from app.api.network_dependencies import (
 from app.api.incident_explanations import (
     router as incident_explanations_router,
 )
+from app.api.incident_copilot import (
+    router as incident_copilot_router,
+)
 from dotenv import load_dotenv
 
 
@@ -123,7 +126,9 @@ app.include_router(
 app.include_router(
     incident_explanations_router
 )
-
+app.include_router(
+    incident_copilot_router
+)  
 @app.get("/health")
 def health_check() -> dict:
     return {

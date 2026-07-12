@@ -1209,3 +1209,69 @@ export type IncidentExplanationResponse = {
   evidence: GroundingEvidence[]
   warnings: string[]
 }
+
+export type CopilotSessionStatus =
+  | "active"
+  | "closed"
+
+export type CopilotMessageRole =
+  | "user"
+  | "assistant"
+
+export type CopilotAnswerStatus =
+  | "answered"
+  | "partial"
+  | "insufficient_evidence"
+
+export type CopilotMessageView = {
+  message_id: string
+  session_id: string
+  incident_id: string
+
+  role: CopilotMessageRole
+  content: string
+
+  provider:
+    ExplanationProvider | null
+
+  answer_status:
+    CopilotAnswerStatus | null
+
+  confidence: number | null
+
+  evidence_ids: string[]
+  suggested_questions: string[]
+
+  warning: string | null
+  created_at: string
+}
+
+export type CopilotSessionSummary = {
+  session_id: string
+  incident_id: string
+
+  title: string
+
+  provider: ExplanationProvider
+  model_name: string | null
+
+  status: CopilotSessionStatus
+
+  message_count: number
+
+  created_at: string
+  updated_at: string
+}
+
+export type CopilotSessionDetail =
+  CopilotSessionSummary & {
+    messages: CopilotMessageView[]
+  }
+
+export type CopilotQuestionResponse = {
+  session_id: string
+
+  user_message: CopilotMessageView
+  assistant_message:
+    CopilotMessageView
+}
