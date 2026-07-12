@@ -1150,3 +1150,172 @@ class OwnershipMappingRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class WebhookEndpointRecord(Base):
+    __tablename__ = "webhook_endpoints"
+
+    webhook_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+    )
+
+    url: Mapped[str] = mapped_column(
+        String(2000),
+        nullable=False,
+    )
+
+    event_types_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    headers_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    # Development implementation.
+    # Move this to encrypted storage or a secret
+    # manager before production use.
+    signing_secret: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+    )
+
+    timeout_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=10,
+    )
+
+    max_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=3,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class WebhookDeliveryRecord(Base):
+    __tablename__ = "webhook_deliveries"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "webhook_id",
+            "event_id",
+            name="uq_webhook_delivery_event",
+        ),
+    )
+
+    delivery_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    webhook_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    event_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    event_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    resource_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    resource_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    response_status: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    response_body: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    error_message: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    requested_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    completed_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

@@ -46,6 +46,9 @@ from app.api.predeployment import (
 from app.api.ownership import (
     router as ownership_router,
 )
+from app.api.webhooks import (
+    router as webhooks_router,
+)
 from dotenv import load_dotenv
 
 
@@ -104,6 +107,9 @@ app.include_router(
 )
 app.include_router(
     ownership_router
+)
+app.include_router(
+    webhooks_router
 )
 
 @app.get("/health")

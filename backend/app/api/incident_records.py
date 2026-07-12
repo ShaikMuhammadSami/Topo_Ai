@@ -25,6 +25,13 @@ from app.repositories.incident_record_repository import (
 from app.repositories.signal_repository import (
     list_signals_by_incident_fingerprint,
 )
+from app.models.webhooks import (
+    WebhookEventType,
+)
+from app.services.webhook_delivery import (
+    build_webhook_event,
+    publish_event_safely,
+)
 
 
 router = APIRouter(
@@ -171,5 +178,44 @@ def patch_incident_status(
                 f"{incident_id}"
             ),
         )
+    event = build_webhook_event(
+     event_type=(
+         WebhookEventType
+         .INCIDENT_STATUS_CHANGED
+        ),
+     resource_type="incident",
+     resource_id=incident.incident_id,
+     summary=(
+         "Incident status changed to "
+         f"{incident.status.value}."
+        ),
+        severity=(
+          incident.severity.value
+        ),
+     dedupe_key=(
+         f"{incident.incident_id}:"
+         f"{incident.status.value}:"
+         f"{incident.updated_at.isoformat()}"
+        ),
+     payload={
+         "incident_id": (
+             incident.incident_id
+           ),
+         "status": (
+             incident.status.value
+            ),
+         "status_note": (
+             incident.status_note
+           ),
+         "updated_at": (
+             incident.updated_at
+             .isoformat()
+            ),
+        },
+    )
 
+    publish_event_safely(
+      session=session,
+      event=event,
+   )
     return incident

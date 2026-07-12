@@ -39,7 +39,13 @@ from app.repositories.snapshot_repository import (
 from app.services.recovery_verification import (
     verify_recovery,
 )
-
+from app.models.webhooks import (
+    WebhookEventType,
+)
+from app.services.webhook_delivery import (
+    build_webhook_event,
+    publish_event_safely,
+)
 
 router = APIRouter(
     prefix="/api/v1/recovery",
@@ -247,6 +253,85 @@ def verify_applied_recommendation(
         session=session,
         verification=verification,
     )
+    event_type_by_status = {
+     "verified": (
+         WebhookEventType
+         .RECOVERY_VERIFIED
+        ),
+     "failed": (
+         WebhookEventType
+         .RECOVERY_FAILED
+        ),
+     "inconclusive": (
+         WebhookEventType
+         .RECOVERY_INCONCLUSIVE
+       ),
+    }
+
+    recovery_event = (
+     build_webhook_event(
+         event_type=(
+             event_type_by_status[
+                 verification.status.value
+                ]
+           ),
+         resource_type=(
+             "recovery_verification"
+           ),
+         resource_id=(
+             verification
+             .verification_id
+            ),
+         summary=(
+             verification.summary
+           ),
+         severity=(
+             "info"
+             if verification
+             .status.value
+             == "verified"
+             else "error"
+            ),
+         dedupe_key=(
+              verification
+             .verification_id
+            ),
+         payload={
+             "verification_id": (
+                 verification
+                 .verification_id
+                ),
+             "recommendation_id": (
+                 verification
+                 .recommendation_id
+                ),
+             "analysis_id": (
+                 verification.analysis_id
+                ),
+             "status": (
+                 verification.status.value
+                ),
+             "confidence": (
+                 verification.confidence
+                ),
+             "passed_count": (
+                 verification.passed_count
+                ),
+             "failed_count": (
+                 verification.failed_count
+               ),
+             "unknown_count": (
+                 verification.unknown_count
+             ),
+            },
+        )
+    )
+
+    publish_event_safely(
+       session=session,
+       event=recovery_event,
+    )
+     
 
     return verification
 

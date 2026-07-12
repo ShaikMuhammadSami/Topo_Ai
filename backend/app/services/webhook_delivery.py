@@ -1,0 +1,368 @@
+from __future__ import annotations
+
+import hashlib
+import hmac
+import json
+import time
+from datetime import (
+    datetime,
+    timezone,
+)
+from uuid import uuid4
+
+import httpx
+from sqlalchemy.orm import Session
+
+from app.db.models import (
+    WebhookDeliveryRecord,
+    WebhookEndpointRecord,
+    utc_now_iso,
+)
+from app.models.webhooks import (
+    WebhookDeliveryStatus,
+    WebhookDeliveryView,
+    WebhookEvent,
+    WebhookEventType,
+)
+from app.repositories.webhook_repository import (
+    find_delivery_record,
+    list_webhook_endpoint_records,
+    save_delivery_result,
+)
+
+
+def build_webhook_event(
+    event_type: WebhookEventType,
+    resource_type: str,
+    resource_id: str,
+    summary: str,
+    payload: dict,
+    severity: str | None = None,
+    dedupe_key: str | None = None,
+) -> WebhookEvent:
+    effective_key = (
+        dedupe_key
+        or resource_id
+    )
+
+    value = "|".join(
+        [
+            event_type.value,
+            effective_key,
+        ]
+    )
+
+    digest = hashlib.sha256(
+        value.encode("utf-8")
+    ).hexdigest()[:32]
+
+    return WebhookEvent(
+        event_id=f"event:{digest}",
+        event_type=event_type,
+        occurred_at=datetime.now(
+            timezone.utc
+        ),
+        resource_type=resource_type,
+        resource_id=resource_id,
+        summary=summary,
+        severity=severity,
+        payload=payload,
+    )
+
+
+def _event_body(
+    event: WebhookEvent,
+) -> str:
+    return json.dumps(
+        event.model_dump(
+            mode="json"
+        ),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+
+
+def _subscribed(
+    endpoint: WebhookEndpointRecord,
+    event: WebhookEvent,
+) -> bool:
+    values = json.loads(
+        endpoint.event_types_json
+    )
+
+    return (
+        event.event_type.value
+        in values
+    )
+
+
+def _signature(
+    secret: str,
+    body: str,
+) -> str:
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        body.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+    return f"sha256={digest}"
+
+
+def deliver_event_to_endpoint(
+    session: Session,
+    endpoint: WebhookEndpointRecord,
+    event: WebhookEvent,
+) -> WebhookDeliveryView:
+    body = _event_body(event)
+
+    requested_at = utc_now_iso()
+
+    headers = {
+        "Content-Type":
+            "application/json",
+        "User-Agent":
+            "Topo-AI-Webhook/0.1",
+        "X-Topo-Event":
+            event.event_type.value,
+        "X-Topo-Event-Id":
+            event.event_id,
+        "X-Topo-Timestamp":
+            event.occurred_at.isoformat(),
+    }
+
+    headers.update(
+        json.loads(
+            endpoint.headers_json
+        )
+    )
+
+    if endpoint.signing_secret:
+        headers[
+            "X-Topo-Signature"
+        ] = _signature(
+            endpoint.signing_secret,
+            body,
+        )
+
+    response_status = None
+    response_body = None
+    error_message = None
+
+    delivery_status = (
+        WebhookDeliveryStatus.FAILED
+    )
+
+    attempt_count = 0
+
+    for attempt in range(
+        1,
+        endpoint.max_attempts + 1,
+    ):
+        attempt_count = attempt
+
+        try:
+            with httpx.Client(
+                timeout=(
+                    endpoint
+                    .timeout_seconds
+                ),
+                follow_redirects=False,
+            ) as client:
+                response = client.post(
+                    endpoint.url,
+                    content=body,
+                    headers=headers,
+                )
+
+            response_status = (
+                response.status_code
+            )
+
+            response_body = (
+                response.text[:4000]
+            )
+
+            if (
+                200
+                <= response.status_code
+                < 300
+            ):
+                delivery_status = (
+                    WebhookDeliveryStatus
+                    .SUCCEEDED
+                )
+
+                error_message = None
+                break
+
+            error_message = (
+                "Webhook returned HTTP "
+                f"{response.status_code}."
+            )
+
+        except Exception as exc:
+            error_message = (
+                f"{type(exc).__name__}: "
+                f"{exc}"
+            )
+
+        if attempt < endpoint.max_attempts:
+            time.sleep(
+                min(
+                    0.25
+                    * (2 ** (attempt - 1)),
+                    2.0,
+                )
+            )
+
+    completed_at = utc_now_iso()
+
+    delivery_id_value = "|".join(
+        [
+            endpoint.webhook_id,
+            event.event_id,
+        ]
+    )
+
+    delivery_digest = hashlib.sha256(
+        delivery_id_value.encode(
+            "utf-8"
+        )
+    ).hexdigest()[:32]
+
+    record = WebhookDeliveryRecord(
+        delivery_id=(
+            f"delivery:"
+            f"{delivery_digest}"
+        ),
+        webhook_id=endpoint.webhook_id,
+        event_id=event.event_id,
+        event_type=(
+            event.event_type.value
+        ),
+        resource_type=(
+            event.resource_type
+        ),
+        resource_id=event.resource_id,
+        status=delivery_status.value,
+        attempt_count=attempt_count,
+        response_status=response_status,
+        response_body=response_body,
+        error_message=error_message,
+        requested_at=requested_at,
+        completed_at=completed_at,
+        payload_json=body,
+        created_at=requested_at,
+        updated_at=completed_at,
+    )
+
+    return save_delivery_result(
+        session=session,
+        record=record,
+    )
+
+
+def publish_event(
+    session: Session,
+    event: WebhookEvent,
+) -> list[WebhookDeliveryView]:
+    deliveries: list[
+        WebhookDeliveryView
+    ] = []
+
+    endpoints = (
+        list_webhook_endpoint_records(
+            session=session,
+            active=True,
+        )
+    )
+
+    for endpoint in endpoints:
+        if not _subscribed(
+            endpoint,
+            event,
+        ):
+            continue
+
+        existing = find_delivery_record(
+            session=session,
+            webhook_id=(
+                endpoint.webhook_id
+            ),
+            event_id=event.event_id,
+        )
+
+        if (
+            existing
+            and existing.status
+            == WebhookDeliveryStatus
+            .SUCCEEDED.value
+        ):
+            continue
+
+        delivery = (
+            deliver_event_to_endpoint(
+                session=session,
+                endpoint=endpoint,
+                event=event,
+            )
+        )
+
+        deliveries.append(delivery)
+
+    return deliveries
+
+
+def publish_event_safely(
+    session: Session,
+    event: WebhookEvent,
+) -> list[str]:
+    try:
+        deliveries = publish_event(
+            session=session,
+            event=event,
+        )
+
+        return [
+            (
+                f"Webhook delivery failed: "
+                f"{delivery.webhook_name or delivery.webhook_id}"
+            )
+            for delivery in deliveries
+            if delivery.status
+            == WebhookDeliveryStatus.FAILED
+        ]
+
+    except Exception as exc:
+        session.rollback()
+
+        return [
+            (
+                "Webhook publication failed: "
+                f"{type(exc).__name__}: {exc}"
+            )
+        ]
+
+
+def create_test_event(
+    webhook_id: str,
+    summary: str,
+) -> WebhookEvent:
+    return build_webhook_event(
+        event_type=(
+            WebhookEventType.TEST
+        ),
+        resource_type="webhook",
+        resource_id=webhook_id,
+        summary=summary,
+        payload={
+            "webhook_id": webhook_id,
+            "test": True,
+        },
+        severity="info",
+        dedupe_key=(
+            f"{webhook_id}:"
+            f"{uuid4().hex}"
+        ),
+    )

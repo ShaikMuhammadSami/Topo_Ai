@@ -41,7 +41,19 @@ from app.services.recommendation_engine import (
 from app.services.incident_lifecycle import (
     upsert_incident_from_orchestration,
 )
-
+from app.models.webhooks import (
+    WebhookEventType,
+)
+from app.repositories.incident_record_repository import (
+    get_incident_by_fingerprint,
+)
+from app.services.incident_grouping import (
+    incident_fingerprint,
+)
+from app.services.webhook_delivery import (
+    build_webhook_event,
+    publish_event_safely,
+)
 ORCHESTRATION_VERSION = (
     "incident-orchestration-0.1.0"
 )
@@ -349,7 +361,16 @@ def orchestrate_signal(
                 recommendation
             ),
         )
-    
+    existing_incident = (
+     get_incident_by_fingerprint(
+          session=session,
+          fingerprint=(
+             incident_fingerprint(
+                 signal
+                )
+            ),
+        )
+    )
     incident_record = (
      upsert_incident_from_orchestration(
           session=session,
@@ -357,6 +378,133 @@ def orchestrate_signal(
           analysis=analysis,
           recommendations=recommendations,
         )
+    )
+    if existing_incident is None:
+     incident_event = (
+        build_webhook_event(
+            event_type=(
+                WebhookEventType
+                .INCIDENT_CREATED
+            ),
+            resource_type="incident",
+            resource_id=(
+                incident_record.incident_id
+            ),
+            summary=(
+                "Topo AI created incident "
+                f"{incident_record.title}."
+            ),
+            severity=(
+                incident_record.severity
+            ),
+            dedupe_key=(
+                incident_record.incident_id
+            ),
+            payload={
+                "incident_id": (
+                    incident_record
+                    .incident_id
+                ),
+                "status": (
+                    incident_record.status
+                ),
+                "severity": (
+                    incident_record.severity
+                ),
+                "cluster_name": (
+                    incident_record
+                    .cluster_name
+                ),
+                "namespace": (
+                    incident_record.namespace
+                ),
+                "affected_object_kind": (
+                    incident_record
+                    .affected_object_kind
+                ),
+                "affected_object_name": (
+                    incident_record
+                    .affected_object_name
+                ),
+                "analysis_id": (
+                    analysis.analysis_id
+                ),
+            },
+        )
+    )
+    for recommendation in recommendations:
+        save_recommendation(
+           session=session,
+           recommendation=recommendation,
+        )
+
+    recommendation_event = (
+        build_webhook_event(
+            event_type=(
+                WebhookEventType
+                .RECOMMENDATION_GENERATED
+            ),
+            resource_type=(
+                "recommendation"
+            ),
+            resource_id=(
+                recommendation
+                .recommendation_id
+            ),
+            summary=(
+                "Topo AI generated "
+                f"recommendation: "
+                f"{recommendation.title}"
+            ),
+            severity="warning",
+            dedupe_key=(
+                recommendation
+                .recommendation_id
+            ),
+            payload={
+                "recommendation_id": (
+                    recommendation
+                    .recommendation_id
+                ),
+                "analysis_id": (
+                    recommendation
+                    .analysis_id
+                ),
+                "signal_id": (
+                    recommendation
+                    .signal_id
+                ),
+                "action_type": (
+                    recommendation
+                    .action_type.value
+                ),
+                "status": (
+                    recommendation
+                    .status.value
+                ),
+                "confidence": (
+                    recommendation
+                    .confidence
+                ),
+                "risk": (
+                    recommendation
+                    .risk.value
+                ),
+                "target_entity_name": (
+                    recommendation
+                    .target_entity_name
+                ),
+            },
+        )
+    )
+
+    publish_event_safely(
+        session=session,
+        event=recommendation_event,
+    )
+    publish_event_safely(
+        session=session,
+        event=incident_event,
     )
     warnings = list(
         analysis.warnings

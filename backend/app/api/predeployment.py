@@ -17,6 +17,16 @@ from app.services.predeployment_impact import (
     PreDeploymentValidationError,
     analyze_predeployment_impact,
 )
+from app.models.predeployment import (
+    ChangeRiskLevel,
+)
+from app.models.webhooks import (
+    WebhookEventType,
+)
+from app.services.webhook_delivery import (
+    build_webhook_event,
+    publish_event_safely,
+)
 
 
 router = APIRouter(
@@ -38,12 +48,79 @@ def analyze_planned_change(
     ),
 ) -> PreDeploymentImpactResponse:
     try:
-        return (
-            analyze_predeployment_impact(
-                session=session,
-                request=request,
-            )
+        result = analyze_predeployment_impact(
+            session=session,
+            request=request,
         )
+        if result.risk_level in {ChangeRiskLevel.HIGH,ChangeRiskLevel.CRITICAL,}:
+
+        
+            event = build_webhook_event(
+               event_type=(
+                 WebhookEventType
+                 .CHANGE_RISK_DETECTED
+                ),
+            resource_type=(
+               "predeployment_analysis"
+            ),
+            resource_id=(
+                result.analysis_id
+            ),
+            summary=(
+              "High-risk planned change "
+               f"detected for "
+               f"{result.root_entity_name}."
+            ),
+            severity=(
+               result.risk_level.value
+            ),
+            dedupe_key=(
+               result.analysis_id
+            ),
+            payload={
+               "analysis_id": (
+                 result.analysis_id
+                ),
+              "snapshot_id": (
+                 result.snapshot_id
+                ),
+              "root_entity_id": (
+                 result.root_entity_id
+                ),
+              "root_entity_name": (
+                 result.root_entity_name
+                ),
+               "change_type": (
+                 result.change_type.value
+                ),
+              "risk_score": (
+                 result.risk_score
+                ),
+              "risk_level": (
+                 result.risk_level.value
+                ),
+             "deployment_decision": (
+                 result
+                 .deployment_decision
+                 .value
+                ),
+             "affected_entity_count": (
+                 result
+                 .affected_entity_count
+                ),
+             "recommendation": (
+                 result.recommendation
+               ),
+            },
+        )
+
+        publish_event_safely(
+          session=session,
+          event=event,
+        )
+
+
+       
 
     except (
         PreDeploymentNotFoundError
@@ -60,3 +137,5 @@ def analyze_planned_change(
             status_code=422,
             detail=str(exc),
         ) from exc
+
+    return result
