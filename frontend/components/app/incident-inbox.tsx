@@ -34,6 +34,9 @@ import type {
 import {
   IncidentOwnershipImpactPanel,
 } from "@/components/app/incident-ownership-impact"
+import {
+  IncidentAiExplanation,
+} from "@/components/app/incident-ai-explanation"
 import { cn } from "@/lib/utils"
 
 
@@ -583,6 +586,9 @@ function IncidentDetail({
         />
       </section>
 <IncidentOwnershipImpactPanel
+  incidentId={incident.incident_id}
+/>
+<IncidentAiExplanation
   incidentId={incident.incident_id}
 />
       <section className="rounded-md border border-border bg-background p-5">

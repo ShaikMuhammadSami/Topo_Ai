@@ -1130,3 +1130,82 @@ export type NetworkDependencyAnalysisResponse = {
   dependency_paths: NetworkDependencyPath[]
   issues: NetworkDependencyIssue[]
 }
+
+export type ExplanationProvider =
+  | "auto"
+  | "groq"
+  | "deterministic"
+
+export type EvidenceType =
+  | "incident"
+  | "signal"
+  | "analysis"
+  | "recommendation"
+  | "recovery"
+  | "topology"
+  | "ownership"
+  | "network"
+
+export type GroundingEvidence = {
+  evidence_id: string
+  evidence_type: EvidenceType
+  summary: string
+  observed_at: string | null
+  data: Record<string, unknown>
+}
+
+export type ExplanationClaim = {
+  text: string
+  evidence_ids: string[]
+  confidence: number
+}
+
+export type ExplanationTimelineItem = {
+  timestamp: string | null
+  event: string
+  evidence_ids: string[]
+}
+
+export type ExplanationAction = {
+  priority: number
+  action: string
+  rationale: string
+  evidence_ids: string[]
+}
+
+export type GeneratedIncidentExplanation = {
+  executive_summary: string
+  technical_summary: string
+  probable_root_cause: string
+  business_impact: string
+
+  response_steps: ExplanationAction[]
+  timeline: ExplanationTimelineItem[]
+  claims: ExplanationClaim[]
+  uncertainty: string[]
+
+  overall_confidence: number
+}
+
+export type IncidentExplanationResponse = {
+  explanation_id: string
+  incident_id: string
+
+  topology_snapshot_id: string | null
+  analysis_id: string | null
+
+  provider: ExplanationProvider
+  model_name: string | null
+
+  prompt_version: string
+  grounding_hash: string
+
+  confidence: number
+  generated_at: string
+
+  explanation:
+    GeneratedIncidentExplanation
+
+  evidence: GroundingEvidence[]
+  warnings: string[]
+}

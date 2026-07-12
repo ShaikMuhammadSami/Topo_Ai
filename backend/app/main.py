@@ -52,6 +52,9 @@ from app.api.webhooks import (
 from app.api.network_dependencies import (
     router as network_dependencies_router,
 )
+from app.api.incident_explanations import (
+    router as incident_explanations_router,
+)
 from dotenv import load_dotenv
 
 
@@ -116,6 +119,9 @@ app.include_router(
 )
 app.include_router(
     network_dependencies_router
+)
+app.include_router(
+    incident_explanations_router
 )
 
 @app.get("/health")

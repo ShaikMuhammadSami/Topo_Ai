@@ -40,6 +40,8 @@ import type {
   WebhookEndpointUpdate,
   WebhookEndpointView,
   NetworkDependencyAnalysisResponse,
+  ExplanationProvider,
+  IncidentExplanationResponse,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -839,5 +841,50 @@ export function getNetworkDependencies(
     `/api/v1/snapshots/${encodeURIComponent(
       snapshotId,
     )}/network-dependencies?${query.toString()}`,
+  )
+}
+
+export function getLatestIncidentExplanation(
+  incidentId: string,
+): Promise<
+  IncidentExplanationResponse | null
+> {
+  return apiRequest<
+    IncidentExplanationResponse | null
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/explanations/latest`,
+  )
+}
+
+
+export function generateIncidentExplanation(
+  incidentId: string,
+  options?: {
+    provider?: ExplanationProvider
+    forceRegenerate?: boolean
+  },
+): Promise<IncidentExplanationResponse> {
+  return apiRequest<
+    IncidentExplanationResponse
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/explanations`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        provider:
+          options?.provider ?? "auto",
+        force_regenerate:
+          options?.forceRegenerate
+          ?? false,
+      }),
+    },
   )
 }

@@ -1319,3 +1319,90 @@ class WebhookDeliveryRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class IncidentExplanationRecord(Base):
+    __tablename__ = "incident_explanations"
+
+    explanation_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    topology_snapshot_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    analysis_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    provider: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    model_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    prompt_version: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    grounding_hash: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    confidence: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    generated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    evidence_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    warnings_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
