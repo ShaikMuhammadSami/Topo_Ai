@@ -974,3 +974,85 @@ export type IncidentOwnershipImpact = {
 
   warnings: string[]
 }
+export type WebhookEventType =
+  | "incident.created"
+  | "incident.status_changed"
+  | "recommendation.generated"
+  | "recovery.verified"
+  | "recovery.failed"
+  | "recovery.inconclusive"
+  | "change.risk_detected"
+  | "webhook.test"
+
+export type WebhookDeliveryStatus =
+  | "succeeded"
+  | "failed"
+
+export type WebhookEndpointCreate = {
+  name: string
+  url: string
+  event_types: WebhookEventType[]
+  headers?: Record<string, string>
+  signing_secret?: string | null
+  active?: boolean
+  timeout_seconds?: number
+  max_attempts?: number
+}
+
+export type WebhookEndpointUpdate = {
+  name?: string
+  url?: string
+  event_types?: WebhookEventType[]
+  headers?: Record<string, string>
+  signing_secret?: string | null
+  active?: boolean
+  timeout_seconds?: number
+  max_attempts?: number
+}
+
+export type WebhookEndpointView = {
+  webhook_id: string
+  name: string
+  url: string
+
+  event_types: WebhookEventType[]
+
+  headers: Record<string, string>
+
+  has_signing_secret: boolean
+
+  active: boolean
+  timeout_seconds: number
+  max_attempts: number
+
+  created_at: string
+  updated_at: string
+}
+
+export type WebhookDeliveryView = {
+  delivery_id: string
+
+  webhook_id: string
+  webhook_name: string | null
+
+  event_id: string
+  event_type: WebhookEventType
+
+  resource_type: string
+  resource_id: string
+
+  status: WebhookDeliveryStatus
+
+  attempt_count: number
+
+  response_status: number | null
+  response_body: string | null
+
+  error_message: string | null
+
+  requested_at: string
+  completed_at: string | null
+
+  created_at: string
+  updated_at: string
+}

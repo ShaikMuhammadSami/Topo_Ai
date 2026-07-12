@@ -32,7 +32,13 @@ import type {
   BlastRadiusResponse,
   PreDeploymentImpactRequest,
   PreDeploymentImpactResponse,
-  IncidentOwnershipImpact
+  IncidentOwnershipImpact,
+  WebhookDeliveryStatus,
+  WebhookDeliveryView,
+  WebhookEventType,
+  WebhookEndpointCreate,
+  WebhookEndpointUpdate,
+  WebhookEndpointView,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -688,5 +694,130 @@ export function getIncidentOwnershipImpact(
     `/api/v1/incidents/${encodeURIComponent(
       incidentId,
     )}/ownership-impact`,
+  )
+}
+export function createWebhookEndpoint(
+  request: WebhookEndpointCreate,
+): Promise<WebhookEndpointView> {
+  return apiRequest<WebhookEndpointView>(
+    "/api/v1/integrations/webhooks",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  )
+}
+
+
+export function listWebhookEndpoints(
+  active?: boolean,
+): Promise<WebhookEndpointView[]> {
+  const query = new URLSearchParams()
+
+  if (active !== undefined) {
+    query.set(
+      "active",
+      String(active),
+    )
+  }
+
+  const suffix = query.toString()
+    ? `?${query.toString()}`
+    : ""
+
+  return apiRequest<
+    WebhookEndpointView[]
+  >(
+    `/api/v1/integrations/webhooks${suffix}`,
+  )
+}
+
+
+export function updateWebhookEndpoint(
+  webhookId: string,
+  request: WebhookEndpointUpdate,
+): Promise<WebhookEndpointView> {
+  return apiRequest<WebhookEndpointView>(
+    `/api/v1/integrations/webhooks/${encodeURIComponent(
+      webhookId,
+    )}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  )
+}
+
+
+export function testWebhookEndpoint(
+  webhookId: string,
+): Promise<WebhookDeliveryView> {
+  return apiRequest<WebhookDeliveryView>(
+    `/api/v1/integrations/webhooks/${encodeURIComponent(
+      webhookId,
+    )}/test`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        summary:
+          "Test delivery from Topo AI.",
+      }),
+    },
+  )
+}
+
+
+export function listWebhookDeliveries(
+  options?: {
+    webhookId?: string
+    status?: WebhookDeliveryStatus
+    eventType?: WebhookEventType
+    limit?: number
+  },
+): Promise<WebhookDeliveryView[]> {
+  const query = new URLSearchParams()
+
+  if (options?.webhookId) {
+    query.set(
+      "webhook_id",
+      options.webhookId,
+    )
+  }
+
+  if (options?.status) {
+    query.set(
+      "status",
+      options.status,
+    )
+  }
+
+  if (options?.eventType) {
+    query.set(
+      "event_type",
+      options.eventType,
+    )
+  }
+
+  query.set(
+    "limit",
+    String(options?.limit ?? 200),
+  )
+
+  return apiRequest<
+    WebhookDeliveryView[]
+  >(
+    `/api/v1/integrations/deliveries?${query.toString()}`,
   )
 }
