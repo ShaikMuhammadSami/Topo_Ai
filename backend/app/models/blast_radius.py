@@ -34,6 +34,7 @@ class BlastRadiusEntity(BaseModel):
     )
 
     relationship: str | None = None
+    risk_score: float | None = None  # 0.0–1.0, higher means more risk
 
 
 class DependencyPath(BaseModel):

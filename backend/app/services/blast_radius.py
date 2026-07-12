@@ -212,6 +212,32 @@ def calculate_blast_radius(
                     )
                 ),
                 relationship=relation,
+                risk_score=calculate_risk_score(
+                    BlastRadiusEntity(
+                        entity_id=entity_id,
+                        entity_kind=(
+                            entity.kind
+                        ),
+                        entity_name=(
+                            entity.name
+                        ),
+                        namespace=(
+                            entity.properties.get("namespace")
+                        ),
+                        distance=distance,
+                        impact=(
+                            impact_label(
+                                distance
+                            )
+                        ),
+                        impact_score=(
+                            calculate_impact_score(
+                                distance
+                            )
+                        ),
+                        relationship=relation,
+                    )
+                )
             )
         )
 
@@ -320,3 +346,25 @@ def calculate_blast_radius(
         dependency_paths=paths,
 
     )
+
+def calculate_risk_score(entity: BlastRadiusEntity) -> float:
+    """
+    Simple scoring based on impact type and distance.
+    Direct → 0.9
+    Dependent → 0.75
+    Indirect → 0.5
+    Potential → 0.3
+    """
+    impact_mapping = {
+        "direct": 0.9,
+        "dependent": 0.75,
+        "indirect": 0.5,
+        "potential": 0.3
+    }
+    base_score = impact_mapping.get(entity.impact, 0.1)
+
+    # Adjust based on distance (optional)
+    adjusted = base_score * (1 - entity.distance * 0.05)
+    return max(min(adjusted, 1.0), 0.0)
+    
+

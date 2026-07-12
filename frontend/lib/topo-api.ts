@@ -30,6 +30,8 @@ import type {
   IncidentStatus,
   IncidentStatusUpdate,
   BlastRadiusResponse,
+  PreDeploymentImpactRequest,
+  PreDeploymentImpactResponse,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -645,4 +647,33 @@ export function getBlastRadius(
   return apiRequest<BlastRadiusResponse>(
     `/api/v1/incidents/${encodeURIComponent(incidentId)}/blast-radius`
   );
+}
+
+export function getTopologySnapshot(
+  snapshotId: string,
+): Promise<GraphSnapshot> {
+  return apiRequest<GraphSnapshot>(
+    `/api/v1/snapshots/${encodeURIComponent(
+      snapshotId,
+    )}`,
+  )
+}
+
+
+export function analyzePreDeploymentImpact(
+  request: PreDeploymentImpactRequest,
+): Promise<PreDeploymentImpactResponse> {
+  return apiRequest<
+    PreDeploymentImpactResponse
+  >(
+    "/api/v1/predeployment/analyze",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  )
 }

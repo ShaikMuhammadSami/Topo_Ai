@@ -768,6 +768,7 @@ export type IncidentRelatedSignals = {
 }
 
 export type BlastRadiusEntity = {
+  risk_score: number;
   entity_id: string;
   entity_kind: string;
   entity_name: string;
@@ -793,3 +794,95 @@ export type BlastRadiusResponse = {
   affected_entities: BlastRadiusEntity[];
   dependency_paths: DependencyPath[];
 };
+
+export type PlannedChangeType =
+  | "container_image_update"
+  | "configuration_change"
+  | "resource_limit_change"
+  | "replica_change"
+  | "network_policy_change"
+  | "service_routing_change"
+  | "secret_or_certificate_change"
+  | "database_schema_change"
+  | "other"
+
+export type ChangeRiskLevel =
+  | "low"
+  | "medium"
+  | "high"
+  | "critical"
+
+export type DeploymentDecision =
+  | "allow"
+  | "review_required"
+  | "approval_required"
+  | "block_until_mitigated"
+
+export type PreDeploymentImpactRequest = {
+  snapshot_id: string
+  entity_id: string
+  change_type: PlannedChangeType
+  change_summary: string
+  max_depth: number
+  metadata?: Record<string, unknown>
+}
+
+export type PreDeploymentAffectedEntity = {
+  entity_id: string
+  entity_kind: string
+  entity_name: string
+  namespace: string | null
+
+  distance: number
+  impact: string
+  impact_score: number
+
+  relationship: string | null
+
+  risk_score: number
+  risk_reasons: string[]
+}
+
+export type PreDeploymentDependencyPath = {
+  path: string[]
+}
+
+export type PreDeploymentImpactResponse = {
+  analysis_id: string
+  algorithm_version: string
+  generated_at: string
+
+  snapshot_id: string
+
+  root_entity_id: string
+  root_entity_kind: string
+  root_entity_name: string
+
+  change_type: PlannedChangeType
+  change_summary: string
+
+  risk_score: number
+  risk_level: ChangeRiskLevel
+  deployment_decision: DeploymentDecision
+
+  recommendation: string
+
+  affected_entity_count: number
+  downstream_entity_count: number
+
+  direct_impact_count: number
+  dependent_impact_count: number
+  indirect_impact_count: number
+  potential_impact_count: number
+
+  high_risk_entity_count: number
+
+  affected_entities:
+    PreDeploymentAffectedEntity[]
+
+  dependency_paths:
+    PreDeploymentDependencyPath[]
+
+  risk_factors: string[]
+  warnings: string[]
+}

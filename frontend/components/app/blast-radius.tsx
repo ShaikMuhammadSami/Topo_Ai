@@ -30,6 +30,7 @@ export function BlastRadius({ data }: BlastRadiusProps) {
             <th className="px-2 py-1 border">Impact</th>
             <th className="px-2 py-1 border">Score</th>
             <th className="px-2 py-1 border">Relationship</th>
+            <th className="px-2 py-1 border">Risk Score</th>
           </tr>
         </thead>
         <tbody>
@@ -42,6 +43,7 @@ export function BlastRadius({ data }: BlastRadiusProps) {
               <td className="px-2 py-1 border">{entity.impact}</td>
               <td className="px-2 py-1 border">{entity.impact_score}</td>
               <td className="px-2 py-1 border">{entity.relationship ?? "—"}</td>
+              <td className="px-2 py-1 border">{(entity.risk_score ?? 0).toFixed(2)}</td>
             </tr>
           ))}
         </tbody>

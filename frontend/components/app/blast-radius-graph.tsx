@@ -24,23 +24,29 @@ export function BlastRadiusGraph({ data, onSelectEntity }: BlastGraphProps) {
   const nodes: Node[] = useMemo(() => {
     if (!data) return [];
 
-return data.affected_entities.map((e, idx) => ({
-  id: e.entity_id,
-  data: { label: e.entity_name },
-  position: { x: idx * 180, y: e.distance * 120 },
-  sourcePosition: Position.Right,
-  targetPosition: Position.Left,
-  style: {
-    border: "2px solid",
-    borderColor:
-      selectedNode === e.entity_id ? "blue" : "#000",
-    padding: 10,
-    borderRadius: 8,
-    background: "#fff",
-    minWidth: 140,
-    textAlign: "center",
-  },
-}));
+    return data.affected_entities.map((entity, idx) => ({
+      id: entity.entity_id,
+      data: { label: entity.entity_name },
+      position: { x: idx * 180, y: entity.distance * 120 },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
+      style: {
+        border: "2px solid",
+        borderColor:
+          selectedNode === entity.entity_id
+            ? "blue"
+            : entity.risk_score && entity.risk_score > 0.8
+            ? "red"
+            : entity.risk_score && entity.risk_score > 0.5
+            ? "orange"
+            : "yellow",
+        padding: 10,
+        borderRadius: 8,
+        background: "#fff",
+        minWidth: 140,
+        textAlign: "center",
+      },
+    }));
   }, [data, selectedNode]);
 
   const edges: Edge[] = useMemo(() => {

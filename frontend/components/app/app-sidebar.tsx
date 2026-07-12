@@ -12,6 +12,7 @@ import {
   Sparkles,
   Workflow,
   Server,
+  GitPullRequestArrow,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TopoLogo } from "@/components/topo-logo"
@@ -22,6 +23,7 @@ const nav = [
   { href: "/app/topology", label: "Topology", icon: Network },
    { href: "/app/live-cluster", label: "Live cluster", icon: Server },
    {href: "/app/code-to-runtime",label: "Code to runtime",icon: GitBranch,},
+  { href: "/app/change-impact", label: "Change impact", icon: GitPullRequestArrow },
   { href: "/app/signals", label: "Signals & changes", icon: Activity },
   { href: "/app/identities", label: "Identities", icon: Fingerprint },
   { href: "/app/cli", label: "CLI", icon: TerminalSquare },
