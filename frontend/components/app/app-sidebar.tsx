@@ -29,6 +29,7 @@ const nav = [
   { href: "/app/cli", label: "CLI", icon: TerminalSquare },
   { href: "/app/ask", label: "Ask topo", icon: Sparkles },
   { href: "/app/integrations", label: "Integrations", icon: Workflow },
+  { href: "/app/network-dependencies", label: "Network dependencies", icon: Network },
  
 ]
 

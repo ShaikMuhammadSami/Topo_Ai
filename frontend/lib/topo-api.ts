@@ -39,6 +39,7 @@ import type {
   WebhookEndpointCreate,
   WebhookEndpointUpdate,
   WebhookEndpointView,
+  NetworkDependencyAnalysisResponse,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -819,5 +820,24 @@ export function listWebhookDeliveries(
     WebhookDeliveryView[]
   >(
     `/api/v1/integrations/deliveries?${query.toString()}`,
+  )
+}
+
+export function getNetworkDependencies(
+  snapshotId: string,
+  maxDepth = 5,
+): Promise<
+  NetworkDependencyAnalysisResponse
+> {
+  const query = new URLSearchParams({
+    max_depth: String(maxDepth),
+  })
+
+  return apiRequest<
+    NetworkDependencyAnalysisResponse
+  >(
+    `/api/v1/snapshots/${encodeURIComponent(
+      snapshotId,
+    )}/network-dependencies?${query.toString()}`,
   )
 }

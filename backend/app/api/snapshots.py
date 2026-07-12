@@ -27,6 +27,9 @@ from app.repositories.snapshot_repository import (
     save_snapshot,
 )
 from app.services.snapshot_diff import compare_snapshots
+from app.services.network_topology_enricher import (
+    enrich_kubernetes_network_topology,
+)
 
 
 router = APIRouter(
@@ -78,7 +81,11 @@ def capture_snapshot(
         )
 
         snapshot = collector.collect()
-
+        snapshot = (
+            enrich_kubernetes_network_topology(
+                snapshot
+            )
+        )
         record = save_snapshot(
             session=session,
             snapshot=snapshot,

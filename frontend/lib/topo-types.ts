@@ -1056,3 +1056,77 @@ export type WebhookDeliveryView = {
   created_at: string
   updated_at: string
 }
+
+export type NetworkIssueSeverity =
+  | "info"
+  | "warning"
+  | "error"
+  | "critical"
+
+export type NetworkEntityView = {
+  entity_id: string
+  entity_type: string
+  entity_kind: string
+  entity_name: string
+
+  namespace: string | null
+
+  properties: Record<
+    string,
+    unknown
+  >
+}
+
+export type NetworkDependencyEdge = {
+  relationship_id: string
+
+  source_entity_id: string
+  target_entity_id: string
+
+  relationship_type: string
+  resolved: boolean
+
+  properties: Record<
+    string,
+    unknown
+  >
+}
+
+export type NetworkDependencyPath = {
+  entity_ids: string[]
+  relationship_types: string[]
+}
+
+export type NetworkDependencyIssue = {
+  issue_id: string
+  severity: NetworkIssueSeverity
+  code: string
+  summary: string
+
+  entity_id: string | null
+  entity_name: string | null
+
+  details: Record<
+    string,
+    unknown
+  >
+}
+
+export type NetworkDependencyAnalysisResponse = {
+  snapshot_id: string
+
+  entity_count: number
+  relationship_count: number
+  path_count: number
+  issue_count: number
+
+  ingress_count: number
+  service_count: number
+  endpoint_slice_count: number
+  external_endpoint_count: number
+
+  entities: NetworkEntityView[]
+  relationships: NetworkDependencyEdge[]
+  dependency_paths: NetworkDependencyPath[]
+  issues: NetworkDependencyIssue[]
+}
