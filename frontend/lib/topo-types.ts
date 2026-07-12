@@ -886,3 +886,91 @@ export type PreDeploymentImpactResponse = {
   risk_factors: string[]
   warnings: string[]
 }
+
+export type ServiceCriticality =
+  | "tier_1"
+  | "tier_2"
+  | "tier_3"
+  | "tier_4"
+
+export type OwnershipSource =
+  | "manual"
+  | "imported"
+  | "entity_metadata"
+  | "unresolved"
+
+export type BusinessImpactLevel =
+  | "none"
+  | "low"
+  | "medium"
+  | "high"
+  | "critical"
+
+export type EntityOwnershipResolution = {
+  resolved: boolean
+
+  entity_id: string
+  entity_kind: string
+  entity_name: string
+
+  service_name: string | null
+
+  cluster_name: string | null
+  namespace: string | null
+
+  owner_team: string | null
+  owner_email: string | null
+  oncall_contact: string | null
+
+  repository_url: string | null
+  business_capability: string | null
+
+  criticality: ServiceCriticality | null
+
+  source: OwnershipSource
+  confidence: number
+
+  matched_ownership_id: string | null
+  resolution_reason: string
+}
+
+export type AffectedEntityOwnership = {
+  entity_id: string
+  entity_kind: string
+  entity_name: string
+
+  impact: string
+  distance: number
+  impact_score: number
+
+  ownership: EntityOwnershipResolution
+}
+
+export type IncidentOwnershipImpact = {
+  incident_id: string
+
+  business_impact_level:
+    BusinessImpactLevel
+
+  affected_entity_count: number
+  resolved_entity_count: number
+  unresolved_entity_count: number
+
+  affected_team_count: number
+  affected_capability_count: number
+
+  highest_criticality:
+    ServiceCriticality | null
+
+  owner_teams: string[]
+  business_capabilities: string[]
+  oncall_contacts: string[]
+  repositories: string[]
+
+  routing_recommendation: string
+
+  affected_entities:
+    AffectedEntityOwnership[]
+
+  warnings: string[]
+}

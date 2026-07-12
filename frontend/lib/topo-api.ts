@@ -32,6 +32,7 @@ import type {
   BlastRadiusResponse,
   PreDeploymentImpactRequest,
   PreDeploymentImpactResponse,
+  IncidentOwnershipImpact
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -675,5 +676,17 @@ export function analyzePreDeploymentImpact(
       },
       body: JSON.stringify(request),
     },
+  )
+}
+
+export function getIncidentOwnershipImpact(
+  incidentId: string,
+): Promise<IncidentOwnershipImpact> {
+  return apiRequest<
+    IncidentOwnershipImpact
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/ownership-impact`,
   )
 }

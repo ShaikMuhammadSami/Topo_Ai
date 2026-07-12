@@ -1028,3 +1028,125 @@ class IncidentRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class OwnershipMappingRecord(Base):
+    __tablename__ = "ownership_mappings"
+
+    ownership_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    fingerprint: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    # Highest-priority exact match.
+    entity_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    # Stable service/workload identity.
+    service_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    cluster_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    namespace: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    entity_kind: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    entity_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    environment: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    owner_team: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    owner_email: Mapped[str | None] = mapped_column(
+        String(320),
+        nullable=True,
+    )
+
+    oncall_contact: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    repository_url: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
+
+    business_capability: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    criticality: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="tier_3",
+        index=True,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="manual",
+    )
+
+    active: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+    )
+
+    notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

@@ -43,6 +43,9 @@ from app.api.blast_radius import (
 from app.api.predeployment import (
     router as predeployment_router,
 )
+from app.api.ownership import (
+    router as ownership_router,
+)
 from dotenv import load_dotenv
 
 
@@ -98,6 +101,9 @@ app.include_router(
 )
 app.include_router(
     predeployment_router
+)
+app.include_router(
+    ownership_router
 )
 
 @app.get("/health")

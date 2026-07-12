@@ -31,6 +31,9 @@ import type {
   IncidentStatus,
   SignalSummary,
 } from "@/lib/topo-types"
+import {
+  IncidentOwnershipImpactPanel,
+} from "@/components/app/incident-ownership-impact"
 import { cn } from "@/lib/utils"
 
 
@@ -579,7 +582,9 @@ function IncidentDetail({
           value={incident.recovery_status ?? "—"}
         />
       </section>
-
+<IncidentOwnershipImpactPanel
+  incidentId={incident.incident_id}
+/>
       <section className="rounded-md border border-border bg-background p-5">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
