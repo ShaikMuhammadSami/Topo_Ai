@@ -45,6 +45,9 @@ import type {
   CopilotQuestionResponse,
   CopilotSessionDetail,
   CopilotSessionSummary,
+  InvestigationPlanDetail,
+  InvestigationPlanSummary,
+  InvestigationStepStatus,
 } from "@/lib/topo-types"
 
 const API_BASE_URL = (
@@ -973,6 +976,97 @@ export function sendIncidentCopilotMessage(
       body: JSON.stringify({
         question,
       }),
+    },
+  )
+}
+
+export function generateInvestigationPlan(
+  incidentId: string,
+  options?: {
+    provider?: ExplanationProvider
+    forceRegenerate?: boolean
+  },
+): Promise<InvestigationPlanDetail> {
+  return apiRequest<
+    InvestigationPlanDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/investigation-plans`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        provider:
+          options?.provider ?? "auto",
+        force_regenerate:
+          options?.forceRegenerate
+          ?? false,
+      }),
+    },
+  )
+}
+
+
+export function listInvestigationPlans(
+  incidentId: string,
+): Promise<InvestigationPlanSummary[]> {
+  return apiRequest<
+    InvestigationPlanSummary[]
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/investigation-plans`,
+  )
+}
+
+
+export function getInvestigationPlan(
+  incidentId: string,
+  planId: string,
+): Promise<InvestigationPlanDetail> {
+  return apiRequest<
+    InvestigationPlanDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/investigation-plans/${encodeURIComponent(
+      planId,
+    )}`,
+  )
+}
+
+
+export function updateInvestigationStep(
+  incidentId: string,
+  planId: string,
+  stepId: string,
+  request: {
+    status?: InvestigationStepStatus
+    finding?: string | null
+    responder_notes?: string | null
+  },
+): Promise<InvestigationPlanDetail> {
+  return apiRequest<
+    InvestigationPlanDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/investigation-plans/${encodeURIComponent(
+      planId,
+    )}/steps/${encodeURIComponent(
+      stepId,
+    )}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(request),
     },
   )
 }

@@ -1275,3 +1275,90 @@ export type CopilotQuestionResponse = {
   assistant_message:
     CopilotMessageView
 }
+
+export type InvestigationPlanStatus =
+  | "active"
+  | "completed"
+  | "cancelled"
+
+export type InvestigationStepStatus =
+  | "pending"
+  | "in_progress"
+  | "completed"
+  | "skipped"
+  | "blocked"
+
+export type InvestigationCommandType =
+  | "kubectl"
+  | "http"
+  | "dns"
+  | "none"
+
+export type InvestigationStepView = {
+  step_id: string
+  plan_id: string
+  incident_id: string
+
+  sequence: number
+
+  title: string
+  objective: string
+
+  command_type:
+    InvestigationCommandType
+
+  command: string | null
+  target: string
+
+  expected_observation: string
+  success_criteria: string
+  failure_indication: string
+
+  evidence_ids: string[]
+
+  status: InvestigationStepStatus
+
+  finding: string | null
+  responder_notes: string | null
+  completed_at: string | null
+
+  created_at: string
+  updated_at: string
+}
+
+export type InvestigationPlanSummary = {
+  plan_id: string
+  incident_id: string
+
+  title: string
+  objective: string
+
+  provider: ExplanationProvider
+  model_name: string | null
+
+  prompt_version: string
+  grounding_hash: string
+
+  status: InvestigationPlanStatus
+
+  overall_confidence: number
+
+  step_count: number
+  completed_step_count: number
+  blocked_step_count: number
+
+  created_at: string
+  updated_at: string
+}
+
+export type InvestigationPlanDetail =
+  InvestigationPlanSummary & {
+    incident_summary: string
+
+    evidence_gaps: string[]
+    warnings: string[]
+
+    evidence_count: number
+
+    steps: InvestigationStepView[]
+  }

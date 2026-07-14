@@ -1531,3 +1531,217 @@ class CopilotMessageRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class InvestigationPlanRecord(Base):
+    __tablename__ = "incident_investigation_plans"
+
+    plan_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    objective: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    incident_summary: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    provider: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    model_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    prompt_version: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    grounding_hash: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="active",
+        index=True,
+    )
+
+    overall_confidence: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    evidence_gaps_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    warnings_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    evidence_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class InvestigationStepRecord(Base):
+    __tablename__ = "incident_investigation_steps"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "plan_id",
+            "sequence",
+            name=(
+                "uq_investigation_plan_sequence"
+            ),
+        ),
+    )
+
+    step_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    plan_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+
+    sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+
+    objective: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    command_type: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    command: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    target: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+    )
+
+    expected_observation: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    success_criteria: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    failure_indication: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    evidence_ids_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="pending",
+        index=True,
+    )
+
+    finding: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    responder_notes: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    completed_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
