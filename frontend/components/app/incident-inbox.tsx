@@ -43,6 +43,9 @@ import {
 import {
   IncidentInvestigationPlan,
 } from "@/components/app/incident-investigation-plan"
+import {
+  IncidentPostIncidentReport,
+} from "@/components/app/incident-post-incident-report"
 import { cn } from "@/lib/utils"
 
 
@@ -601,6 +604,9 @@ function IncidentDetail({
   incidentId={incident.incident_id}
 />
 <IncidentInvestigationPlan
+  incidentId={incident.incident_id}
+/>
+<IncidentPostIncidentReport
   incidentId={incident.incident_id}
 />
       <section className="rounded-md border border-border bg-background p-5">

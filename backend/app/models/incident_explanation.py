@@ -23,6 +23,7 @@ class EvidenceType(str, Enum):
     TOPOLOGY = "topology"
     OWNERSHIP = "ownership"
     NETWORK = "network"
+    INVESTIGATION = "investigation"
 
 
 class GroundingEvidence(BaseModel):

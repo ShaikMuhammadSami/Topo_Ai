@@ -1145,6 +1145,7 @@ export type EvidenceType =
   | "topology"
   | "ownership"
   | "network"
+  | "investigation"
 
 export type GroundingEvidence = {
   evidence_id: string
@@ -1361,4 +1362,126 @@ export type InvestigationPlanDetail =
     evidence_count: number
 
     steps: InvestigationStepView[]
+  }
+
+export type PostIncidentReportStatus =
+  | "draft"
+  | "in_review"
+  | "approved"
+  | "rejected"
+
+export type ReportActionStatus =
+  | "open"
+  | "in_progress"
+  | "completed"
+  | "cancelled"
+
+export type ReportActionPriority =
+  | "low"
+  | "medium"
+  | "high"
+  | "critical"
+
+export type ReportTimelinePhase =
+  | "detection"
+  | "analysis"
+  | "impact"
+  | "response"
+  | "recovery"
+  | "follow_up"
+
+export type ReportTimelineItem = {
+  timestamp: string | null
+  phase: ReportTimelinePhase
+  event: string
+  evidence_ids: string[]
+}
+
+export type ReportFinding = {
+  summary: string
+  significance: string
+  evidence_ids: string[]
+}
+
+export type ReportActionItemView = {
+  action_item_id: string
+  report_id: string
+  incident_id: string
+
+  sequence: number
+
+  title: string
+  description: string
+
+  owner_team: string | null
+  owner_contact: string | null
+
+  priority: ReportActionPriority
+  due_date: string | null
+
+  success_criteria: string
+  evidence_ids: string[]
+
+  status: ReportActionStatus
+  notes: string | null
+  completed_at: string | null
+
+  created_at: string
+  updated_at: string
+}
+
+export type PostIncidentReportSummary = {
+  report_id: string
+  incident_id: string
+
+  version: number
+  title: string
+
+  status: PostIncidentReportStatus
+
+  provider: ExplanationProvider
+  model_name: string | null
+
+  prompt_version: string
+  grounding_hash: string
+
+  overall_confidence: number
+
+  action_item_count: number
+  completed_action_item_count: number
+
+  reviewer_name: string | null
+  reviewed_at: string | null
+  approved_at: string | null
+
+  created_at: string
+  updated_at: string
+}
+
+export type PostIncidentReportDetail =
+  PostIncidentReportSummary & {
+    executive_summary: string
+    incident_overview: string
+    root_cause: string
+
+    contributing_factors: string[]
+
+    business_impact: string
+    technical_impact: string
+
+    timeline: ReportTimelineItem[]
+    investigation_findings: ReportFinding[]
+
+    remediation_summary: string
+    recovery_validation: string
+
+    lessons_learned: string[]
+    evidence_gaps: string[]
+
+    action_items: ReportActionItemView[]
+
+    review_notes: string | null
+
+    evidence_count: number
+    warnings: string[]
   }

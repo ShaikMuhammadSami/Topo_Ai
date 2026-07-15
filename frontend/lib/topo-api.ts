@@ -48,7 +48,12 @@ import type {
   InvestigationPlanDetail,
   InvestigationPlanSummary,
   InvestigationStepStatus,
+  PostIncidentReportDetail,
+  PostIncidentReportStatus,
+  PostIncidentReportSummary,
+  ReportActionStatus,
 } from "@/lib/topo-types"
+
 
 const API_BASE_URL = (
   process.env.NEXT_PUBLIC_TOPO_API_URL ??
@@ -1059,6 +1064,128 @@ export function updateInvestigationStep(
       planId,
     )}/steps/${encodeURIComponent(
       stepId,
+    )}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  )
+}
+
+export function generatePostIncidentReport(
+  incidentId: string,
+  options?: {
+    provider?: ExplanationProvider
+    forceRegenerate?: boolean
+  },
+): Promise<PostIncidentReportDetail> {
+  return apiRequest<
+    PostIncidentReportDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/reports`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify({
+        provider:
+          options?.provider ?? "auto",
+        force_regenerate:
+          options?.forceRegenerate
+          ?? false,
+      }),
+    },
+  )
+}
+
+
+export function listPostIncidentReports(
+  incidentId: string,
+): Promise<PostIncidentReportSummary[]> {
+  return apiRequest<
+    PostIncidentReportSummary[]
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/reports`,
+  )
+}
+
+
+export function getPostIncidentReport(
+  incidentId: string,
+  reportId: string,
+): Promise<PostIncidentReportDetail> {
+  return apiRequest<
+    PostIncidentReportDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/reports/${encodeURIComponent(
+      reportId,
+    )}`,
+  )
+}
+
+
+export function updatePostIncidentReport(
+  incidentId: string,
+  reportId: string,
+  request: {
+    status?: PostIncidentReportStatus
+    reviewer_name?: string | null
+    review_notes?: string | null
+  },
+): Promise<PostIncidentReportDetail> {
+  return apiRequest<
+    PostIncidentReportDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/reports/${encodeURIComponent(
+      reportId,
+    )}`,
+    {
+      method: "PATCH",
+      headers: {
+        "Content-Type":
+          "application/json",
+      },
+      body: JSON.stringify(request),
+    },
+  )
+}
+
+
+export function updateReportActionItem(
+  incidentId: string,
+  reportId: string,
+  actionItemId: string,
+  request: {
+    status?: ReportActionStatus
+    owner_team?: string | null
+    owner_contact?: string | null
+    due_date?: string | null
+    notes?: string | null
+  },
+): Promise<PostIncidentReportDetail> {
+  return apiRequest<
+    PostIncidentReportDetail
+  >(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/reports/${encodeURIComponent(
+      reportId,
+    )}/actions/${encodeURIComponent(
+      actionItemId,
     )}`,
     {
       method: "PATCH",
