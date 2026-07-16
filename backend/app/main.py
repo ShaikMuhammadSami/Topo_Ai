@@ -75,11 +75,13 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Topo AI API",
     description=(
-        "Evidence-based infrastructure intelligence backend",
+        "Evidence-based infrastructure intelligence backend"
     ),
     version="0.1.0",
     lifespan=lifespan,
 )
+
+
 
 
 app.add_middleware(
@@ -141,12 +143,24 @@ app.include_router(
 app.include_router(
     post_incident_reports_router
 )
-@app.get("/health")
-def health_check() -> dict:
+# @app.get("/health")
+# def health_check() -> dict:
+#     return {
+#         "status": "healthy",
+#         "service": "topo-ai-backend",
+#         "version": "0.1.0",
+#         "phase": "graph-contract",
+#         "timestamp": datetime.now(timezone.utc).isoformat(),
+#     }
+
+@app.get(
+    "/health",
+    tags=["system"],
+    include_in_schema=False,
+)
+def health() -> dict[str, str]:
     return {
-        "status": "healthy",
-        "service": "topo-ai-backend",
+        "status": "available",
+        "service": "Topo AI",
         "version": "0.1.0",
-        "phase": "graph-contract",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
     }

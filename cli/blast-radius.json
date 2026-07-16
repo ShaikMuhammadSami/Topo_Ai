@@ -1,0 +1,166 @@
+﻿{
+  "affected_entities": [
+    {
+      "distance": 0,
+      "entity_id": "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+      "entity_kind": "KubernetesPod",
+      "entity_name": "dedupe-proof-565cb79bd-sj2pn",
+      "impact": "direct",
+      "impact_score": 1.0,
+      "namespace": "dedupe-demo",
+      "relationship": null,
+      "risk_score": 0.9
+    },
+    {
+      "distance": 1,
+      "entity_id": "k8s:docker-desktop:namespace:4b228065-b443-4491-94b4-f21b69e71bd6",
+      "entity_kind": "KubernetesNamespace",
+      "entity_name": "dedupe-demo",
+      "impact": "dependent",
+      "impact_score": 0.85,
+      "namespace": null,
+      "relationship": "contains",
+      "risk_score": 0.7124999999999999
+    },
+    {
+      "distance": 1,
+      "entity_id": "k8s:docker-desktop:replicaset:4b86fc60-679a-43ef-913c-d44765732374",
+      "entity_kind": "KubernetesReplicaSet",
+      "entity_name": "dedupe-proof-565cb79bd",
+      "impact": "dependent",
+      "impact_score": 0.85,
+      "namespace": "dedupe-demo",
+      "relationship": "runs",
+      "risk_score": 0.7124999999999999
+    },
+    {
+      "distance": 1,
+      "entity_id": "artifact:container-image:reference:25d24a746fd11e14dbc7ab19",
+      "entity_kind": "ContainerImage",
+      "entity_name": "example.invalid/topo/not-found:v7",
+      "impact": "dependent",
+      "impact_score": 0.85,
+      "namespace": null,
+      "relationship": "uses",
+      "risk_score": 0.7124999999999999
+    },
+    {
+      "distance": 2,
+      "entity_id": "k8s:docker-desktop:cluster",
+      "entity_kind": "KubernetesCluster",
+      "entity_name": "docker-desktop",
+      "impact": "indirect",
+      "impact_score": 0.65,
+      "namespace": null,
+      "relationship": "contains",
+      "risk_score": 0.45
+    },
+    {
+      "distance": 2,
+      "entity_id": "k8s:docker-desktop:deployment:12764f4d-6c9c-4c62-ae1c-4a0d0bdfa90a",
+      "entity_kind": "KubernetesDeployment",
+      "entity_name": "dedupe-proof",
+      "impact": "indirect",
+      "impact_score": 0.65,
+      "namespace": "dedupe-demo",
+      "relationship": "contains",
+      "risk_score": 0.45
+    },
+    {
+      "distance": 2,
+      "entity_id": "k8s:docker-desktop:replicaset:40e159c4-daec-476d-9687-1669b38e0600",
+      "entity_kind": "KubernetesReplicaSet",
+      "entity_name": "dedupe-proof-59894fcc47",
+      "impact": "indirect",
+      "impact_score": 0.65,
+      "namespace": "dedupe-demo",
+      "relationship": "contains",
+      "risk_score": 0.45
+    },
+    {
+      "distance": 2,
+      "entity_id": "k8s:docker-desktop:pod:606edde5-eb2a-4437-aca0-c7bd128d5ae4",
+      "entity_kind": "KubernetesPod",
+      "entity_name": "dedupe-proof-59894fcc47-9j8hs",
+      "impact": "indirect",
+      "impact_score": 0.65,
+      "namespace": "dedupe-demo",
+      "relationship": "contains",
+      "risk_score": 0.45
+    },
+    {
+      "distance": 3,
+      "entity_id": "artifact:container-image:sha256:20316569d8f81a160065d7d2a5eeffc7ca97d79022462ee255fd23fa103a6b5c",
+      "entity_kind": "ContainerImage",
+      "entity_name": "library/nginx@20316569d8f8",
+      "impact": "potential",
+      "impact_score": 0.45,
+      "namespace": null,
+      "relationship": "uses",
+      "risk_score": 0.255
+    }
+  ],
+  "affected_entity_count": 9,
+  "dependency_paths": [
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "k8s:docker-desktop:namespace:4b228065-b443-4491-94b4-f21b69e71bd6"
+      ]
+    },
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "k8s:docker-desktop:replicaset:4b86fc60-679a-43ef-913c-d44765732374"
+      ]
+    },
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "artifact:container-image:reference:25d24a746fd11e14dbc7ab19"
+      ]
+    },
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "k8s:docker-desktop:namespace:4b228065-b443-4491-94b4-f21b69e71bd6",
+        "k8s:docker-desktop:cluster"
+      ]
+    },
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "k8s:docker-desktop:namespace:4b228065-b443-4491-94b4-f21b69e71bd6",
+        "k8s:docker-desktop:deployment:12764f4d-6c9c-4c62-ae1c-4a0d0bdfa90a"
+      ]
+    },
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "k8s:docker-desktop:namespace:4b228065-b443-4491-94b4-f21b69e71bd6",
+        "k8s:docker-desktop:replicaset:40e159c4-daec-476d-9687-1669b38e0600"
+      ]
+    },
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "k8s:docker-desktop:namespace:4b228065-b443-4491-94b4-f21b69e71bd6",
+        "k8s:docker-desktop:pod:606edde5-eb2a-4437-aca0-c7bd128d5ae4"
+      ]
+    },
+    {
+      "path": [
+        "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+        "k8s:docker-desktop:namespace:4b228065-b443-4491-94b4-f21b69e71bd6",
+        "k8s:docker-desktop:pod:606edde5-eb2a-4437-aca0-c7bd128d5ae4",
+        "artifact:container-image:sha256:20316569d8f81a160065d7d2a5eeffc7ca97d79022462ee255fd23fa103a6b5c"
+      ]
+    }
+  ],
+  "direct_impact_count": 1,
+  "incident_id": "incident:docker-desktop:dedupe-demo:workload-dedupe-proof:a5891ccf3f62b71d0b5a452d",
+  "indirect_impact_count": 3,
+  "potential_impact_count": 5,
+  "root_entity_id": "k8s:docker-desktop:pod:6d5a98ce-e324-41b1-bb01-d387584c62d0",
+  "root_entity_name": "dedupe-proof-565cb79bd-sj2pn"
+}

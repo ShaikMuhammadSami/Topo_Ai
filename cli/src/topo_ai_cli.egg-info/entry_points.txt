@@ -1,0 +1,2 @@
+[console_scripts]
+topo = topo_cli.main:app
