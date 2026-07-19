@@ -13,6 +13,7 @@ src/topo_cli/config.py
 src/topo_cli/errors.py
 src/topo_cli/main.py
 src/topo_cli/output.py
+src/topo_cli/retry.py
 src/topo_cli/runtime.py
 src/topo_cli/commands/_init__.py
 src/topo_cli/commands/blast_radius.py
@@ -23,3 +24,5 @@ src/topo_cli/commands/investigations.py
 src/topo_cli/commands/profiles.py
 src/topo_cli/commands/reports.py
 src/topo_cli/commands/snapshots.py
+tests/test_config.py
+tests/test_retry.py

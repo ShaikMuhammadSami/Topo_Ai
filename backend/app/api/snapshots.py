@@ -119,11 +119,16 @@ def get_snapshot_list(
         ge=1,
         le=100,
     ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
     session: Session = Depends(get_session),
 ) -> list[SnapshotSummary]:
     records = list_snapshots(
         session=session,
         limit=limit,
+        offset=offset,
     )
 
     return [

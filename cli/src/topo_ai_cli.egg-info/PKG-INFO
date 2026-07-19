@@ -1,12 +1,18 @@
 Metadata-Version: 2.4
 Name: topo-ai-cli
-Version: 0.2.0
+Version: 0.3.0
 Summary: Command-line client for Topo AI
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
 Requires-Dist: typer<1.0,>=0.21
 Requires-Dist: httpx<1.0,>=0.28
 Requires-Dist: rich<15,>=14
+Requires-Dist: keyring<27,>=25
+Provides-Extra: dev
+Requires-Dist: build>=1; extra == "dev"
+Requires-Dist: twine>=6; extra == "dev"
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-cov>=6; extra == "dev"
 
 # Topo AI CLI
 

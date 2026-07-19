@@ -247,6 +247,7 @@ def list_post_incident_reports(
     session: Session,
     incident_id: str,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[PostIncidentReportSummary]:
     statement = (
         select(
@@ -262,6 +263,7 @@ def list_post_incident_reports(
             .version
             .desc()
         )
+        .offset(offset)
         .limit(limit)
     )
 

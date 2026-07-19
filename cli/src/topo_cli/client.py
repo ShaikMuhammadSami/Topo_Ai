@@ -12,7 +12,9 @@ from topo_cli.errors import (
     ConnectionFailure,
     ResourceNotFound,
 )
-
+from topo_cli.retry import (
+    execute_request,
+)
 
 JsonValue = (
     dict[str, Any]
@@ -34,13 +36,17 @@ class TopoClient:
         timeout: float,
         verify_tls: bool,
         snapshot_capture_path: str,
+        max_retries: int = 3,
+        retry_backoff: float = 0.75,
     ) -> None:
         self.api_url = api_url.rstrip("/")
         self.snapshot_capture_path = snapshot_capture_path
+        self.max_retries = max(max_retries,0,)
+        self.retry_backoff = max(retry_backoff,0.0,)
 
         headers = {
             "Accept": "application/json",
-            "User-Agent": "topo-ai-cli/0.2.0",
+            "User-Agent": "topo-ai-cli/0.3.0",
         }
 
         if token:
@@ -129,11 +135,19 @@ class TopoClient:
         json_body: dict[str, Any] | None = None,
     ) -> JsonValue:
         try:
-            response = self._client.request(
-                method=method,
-                url=path,
-                params=params,
-                json=json_body,
+            response = execute_request(
+                lambda: self._client.request(
+                  method=method,
+                  url=path,
+                  params=params,
+                  json=json_body,
+                ),
+                max_retries=(
+                    self.max_retries
+                ), 
+                backoff=(
+                    self.retry_backoff
+                ),
             )
 
         except httpx.TimeoutException as exc:
@@ -222,11 +236,12 @@ class TopoClient:
         self,
         *,
         limit: int,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         value = self._request(
             "GET",
             "/api/v1/incident-records",
-            params={"limit": limit},
+            params={"limit": limit,"offset": offset,},
         )
 
         return self._collection(
@@ -387,6 +402,7 @@ class TopoClient:
         self,
         *,
         limit: int,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         value = self._request(
             "GET",
@@ -511,6 +527,7 @@ class TopoClient:
         *,
         incident_id: str,
         limit: int,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         path = (
             "/api/v1/incidents/"
@@ -521,7 +538,7 @@ class TopoClient:
         value = self._request(
             "GET",
             path,
-            params={"limit": limit},
+            params={"limit": limit,"offset": offset,},
         )
 
         return self._collection(
@@ -627,6 +644,7 @@ class TopoClient:
         *,
         incident_id: str,
         limit: int,
+        offset: int = 0
     ) -> list[dict[str, Any]]:
         path = (
             "/api/v1/incidents/"
@@ -637,7 +655,7 @@ class TopoClient:
         value = self._request(
             "GET",
             path,
-            params={"limit": limit},
+            params={"limit": limit,"offset": offset,},
         )
 
         return self._collection(
@@ -758,6 +776,7 @@ class TopoClient:
         *,
         incident_id: str,
         limit: int,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
         path = (
             "/api/v1/incidents/"
@@ -768,7 +787,7 @@ class TopoClient:
         value = self._request(
             "GET",
             path,
-            params={"limit": limit},
+            params={"limit": limit,"offset": offset,},
         )
 
         return self._collection(
@@ -915,10 +934,18 @@ class TopoClient:
         )
 
         try:
-            response = self._client.request(
-                method="GET",
-                url=path,
-                params={"format": export_format},
+            response = execute_request(
+                lambda: self._client.request(
+                   method="GET",
+                   url=path,
+                   params={"format": export_format},
+                ),
+                max_retries=(
+                    self.max_retries
+                ),
+                backoff=(
+                    self.retry_backoff
+                ),   
             )
 
         except httpx.TimeoutException as exc:
@@ -963,3 +990,18 @@ class TopoClient:
             filename = match.group(1)
 
         return response.content, filename
+    
+    def whoami(
+     self,
+    ) -> dict[str, Any]:
+        value = self._request(
+             "GET",
+             "/api/v1/system/whoami",
+            )
+
+        if not isinstance(value, dict):
+               raise ApiFailure(
+                 "Identity endpoint returned "
+                 "an invalid response."
+                )
+        return value

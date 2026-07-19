@@ -1,3 +1,10 @@
 typer<1.0,>=0.21
 httpx<1.0,>=0.28
 rich<15,>=14
+keyring<27,>=25
+
+[dev]
+build>=1
+twine>=6
+pytest>=8
+pytest-cov>=6

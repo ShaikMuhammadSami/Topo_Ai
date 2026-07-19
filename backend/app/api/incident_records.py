@@ -55,6 +55,10 @@ def get_incident_records(
         ge=1,
         le=500,
     ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
     session: Session = Depends(
         get_session
     ),
@@ -73,6 +77,7 @@ def get_incident_records(
         ),
         namespace=namespace,
         limit=limit,
+        offset=offset,
     )
 
 @router.get(

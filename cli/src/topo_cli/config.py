@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import keyring
 from dataclasses import (
     asdict,
     dataclass,
@@ -14,8 +15,11 @@ from topo_cli.errors import (
     ConfigurationError,
     FileOperationFailure,
 )
+from keyring.errors import (
+    KeyringError,
+)
 
-
+KEYRING_SERVICE = "topo-ai-cli"
 DEFAULT_PROFILE_NAME = "local"
 DEFAULT_API_URL = "http://127.0.0.1:8000"
 
@@ -33,6 +37,10 @@ class Profile:
     verify_tls: bool = True
 
     timeout: float = 30.0
+
+    max_retries: int = 3
+
+    retry_backoff: float = 0.75
 
     snapshot_capture_path: str = (
         DEFAULT_CAPTURE_PATH
@@ -66,6 +74,18 @@ class Profile:
                 value.get(
                     "timeout",
                     30.0,
+                )
+            ),
+            max_retries=int(
+                value.get(
+                    "max_retries",
+                    3,
+                )
+            ),
+            retry_backoff=float(
+                value.get(
+                    "retry_backoff",
+                     0.75,
                 )
             ),
             snapshot_capture_path=str(
@@ -281,6 +301,8 @@ def resolve_profile(
         token_env=profile.token_env,
         verify_tls=profile.verify_tls,
         timeout=profile.timeout,
+        max_retries=profile.max_retries,
+        retry_backoff=profile.retry_backoff,
         snapshot_capture_path=(
             profile.snapshot_capture_path
         ),
@@ -289,7 +311,88 @@ def resolve_profile(
 
 def profile_token(
     profile: Profile,
+    profile_name: str,
 ) -> str | None:
-    return os.getenv(
-        profile.token_env
-    )
+     environment_value = os.getenv(
+         profile.token_env
+        )
+     if environment_value:
+        return environment_value
+     try:
+        return keyring.get_password(
+            KEYRING_SERVICE,
+            profile_name,
+        )
+     except KeyringError : 
+        return None
+
+def store_profile_token(
+    profile_name: str,
+    token: str,
+) -> None:
+    try:
+        keyring.set_password(
+            KEYRING_SERVICE,
+            profile_name,
+            token,
+        )
+
+    except KeyringError as exc:
+        raise FileOperationFailure(
+            "Unable to store the API token "
+            "in the operating system "
+            f"credential store: {exc}"
+        ) from exc
+
+
+def delete_profile_token(
+    profile_name: str,
+) -> bool:
+    try:
+        existing = keyring.get_password(
+            KEYRING_SERVICE,
+            profile_name,
+        )
+
+        if existing is None:
+            return False
+
+        keyring.delete_password(
+            KEYRING_SERVICE,
+            profile_name,
+        )
+
+        return True
+
+    except KeyringError as exc:
+        raise FileOperationFailure(
+            "Unable to remove the API token "
+            "from the operating system "
+            f"credential store: {exc}"
+        ) from exc
+
+
+def token_source(
+    profile: Profile,
+    profile_name: str,
+) -> str:
+    if os.getenv(profile.token_env):
+        return (
+            f"environment:"
+            f"{profile.token_env}"
+        )
+
+    try:
+        stored = keyring.get_password(
+            KEYRING_SERVICE,
+            profile_name,
+        )
+
+    except KeyringError:
+        return "unavailable"
+
+    if stored:
+        return "operating-system-keyring"
+
+    return "not-configured"
+

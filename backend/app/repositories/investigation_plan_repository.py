@@ -200,6 +200,7 @@ def list_incident_investigation_plans(
     session: Session,
     incident_id: str,
     limit: int = 50,
+    offset: int = 0,
 ) -> list[InvestigationPlanSummary]:
     statement = (
         select(
@@ -216,6 +217,7 @@ def list_incident_investigation_plans(
             .desc()
         )
         .limit(limit)
+        .offset(offset)
     )
 
     records = list(

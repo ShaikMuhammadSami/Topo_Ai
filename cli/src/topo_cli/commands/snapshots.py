@@ -16,9 +16,11 @@ from topo_cli.output import (
     emit_json,
     render_data,
     render_records,
+    OutputFormat,
 )
 from topo_cli.runtime import (
     api_call,
+    collect_pages,
     get_runtime,
 )
 
@@ -37,9 +39,52 @@ def list_snapshots(
         min=1,
         max=1000,
     ),
+    all_pages: bool = typer.Option(
+        False,
+        "--all",
+        help="Retrieve every available page.",
+    ),
+    page_size: int = typer.Option(
+       100,
+       "--page-size",
+       min=1,
+       max=100,
+    ),
+    maximum_items: int | None = (
+        typer.Option(
+            None,
+            "--max-items",
+            min=1,
+            help=(
+               "Stop after this many records "
+               "when using --all."
+            ),
+        )
+    ),
 ) -> None:
     runtime = get_runtime(context)
 
+    if all_pages:
+     incidents = collect_pages(
+         lambda offset, size:
+             runtime.client.list_incidents(
+                 limit=size,
+                 offset=offset,
+                ),
+         page_size=page_size,
+         maximum_items=maximum_items,
+        )
+    
+    else:
+        incidents = api_call(
+         lambda:
+             runtime.client.list_incidents(
+                 limit=limit,
+                 offset = 0,
+                )
+        )
+
+    
     snapshots = api_call(
         lambda:
             runtime.client.list_snapshots(

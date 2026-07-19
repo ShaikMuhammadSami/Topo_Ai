@@ -19,8 +19,13 @@ from topo_cli.output import (
     emit_json,
     render_detail,
     render_records,
+    OutputFormat,
 )
-from topo_cli.runtime import get_runtime
+from topo_cli.runtime import (
+    get_runtime,
+    api_call,
+    collect_pages,
+)
 
 
 app = typer.Typer(
@@ -145,6 +150,8 @@ def show_profile(
         "verify_tls":
             profile.verify_tls,
         "timeout": profile.timeout,
+        "max_retries": profile.max_retries,
+        "retry_backoff": profile.retry_backoff,
         "snapshot_capture_path":
             profile
             .snapshot_capture_path,
@@ -201,6 +208,26 @@ def set_profile(
         "--verify-tls",
         help="Enable TLS verification.",
     ),
+    max_retries: int | None = typer.Option(
+      None,
+      "--retries",
+      min=0,
+      help=(
+          "Retry count for temporary "
+          "failures."
+        ),
+    ),
+    retry_backoff: float | None = (
+     typer.Option(
+         None,
+         "--retry-backoff",
+         min=0.0,
+         help=(
+             "Initial retry backoff "
+             "in seconds."
+            ),
+        )
+    ),
     insecure: bool = typer.Option(
         False,
         "--insecure",
@@ -208,6 +235,16 @@ def set_profile(
     ),
 ) -> None:
     runtime = get_runtime(context)
+    max_retries=(
+     max_retries
+     if max_retries is not None
+     else existing.max_retries
+    ),
+    retry_backoff=(
+     retry_backoff
+     if retry_backoff is not None
+     else existing.retry_backoff
+    ),
 
     if verify_tls and insecure:
         abort(

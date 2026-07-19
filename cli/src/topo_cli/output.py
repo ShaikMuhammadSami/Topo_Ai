@@ -11,7 +11,7 @@ from rich.table import Table
 
 
 console = Console()
-
+_quiet = False
 
 class OutputFormat(str, Enum):
     TABLE = "table"
@@ -234,3 +234,21 @@ def render_data(
         return
 
     console.print(value)
+
+def configure_output(
+    *,
+    quiet: bool,
+    no_color: bool,
+) -> None:
+    global _quiet
+
+    _quiet = quiet
+
+    console.no_color = no_color
+
+
+def emit_notice(
+    message: str,
+) -> None:
+    if not _quiet:
+        typer.echo(message)

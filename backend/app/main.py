@@ -64,6 +64,12 @@ from app.api.investigation_plans import (
 from app.api.post_incident_reports import (
     router as post_incident_reports_router,
 )
+from app.api.system import (
+    router as system_router,
+)
+from app.security.api_tokens import (
+    ApiTokenAuthMiddleware,
+)
 from dotenv import load_dotenv
 
 
@@ -82,21 +88,24 @@ app = FastAPI(
 )
 
 
-
-
 app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://127.0.0.1:3000",
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "https://topo-ai-hxhm.vercel.app",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    ApiTokenAuthMiddleware
 )
+
+# app.add_middleware(
+#     CORSMiddleware,
+#     allow_origins=[
+#         "http://localhost:3000",
+#         "http://127.0.0.1:3000",
+#         "http://localhost:5173",
+#         "http://127.0.0.1:5173",
+#         "https://topo-ai-hxhm.vercel.app",
+#     ],
+#     allow_credentials=True,
+#     allow_methods=["*"],
+#     allow_headers=["*"],
+# )
+
 
 app.include_router(topology_router)
 app.include_router(kubernetes_router)
@@ -142,6 +151,9 @@ app.include_router(
 )
 app.include_router(
     post_incident_reports_router
+)
+app.include_router(
+    system_router
 )
 # @app.get("/health")
 # def health_check() -> dict:

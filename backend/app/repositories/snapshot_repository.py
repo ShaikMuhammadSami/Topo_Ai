@@ -39,11 +39,13 @@ def save_snapshot(
 def list_snapshots(
     session: Session,
     limit: int = 20,
+    offset: int = 0,
 ) -> list[SnapshotRecord]:
     statement = (
         select(SnapshotRecord)
         .order_by(SnapshotRecord.collected_at.desc())
         .limit(limit)
+        .offset(offset)
     )
 
     return list(

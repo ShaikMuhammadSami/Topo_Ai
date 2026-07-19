@@ -150,6 +150,7 @@ def list_incident_analyses(
     session: Session,
     signal_id: str | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> list[IncidentAnalysisSummary]:
     statement = select(
         IncidentAnalysisRecord
@@ -168,7 +169,9 @@ def list_incident_analyses(
             .generated_at
             .desc()
         )
+        .offset(offset)
         .limit(limit)
+        
     )
 
     records = list(

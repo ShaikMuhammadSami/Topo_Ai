@@ -172,6 +172,7 @@ def list_copilot_messages(
     session: Session,
     session_id: str,
     limit: int = 200,
+    offset: int = 0,
 ) -> list[CopilotMessageView]:
     statement = (
         select(
@@ -191,6 +192,7 @@ def list_copilot_messages(
             .asc(),
         )
         .limit(limit)
+        .offset(offset)
     )
 
     records = list(
@@ -235,6 +237,7 @@ def list_incident_copilot_sessions(
     session: Session,
     incident_id: str,
     limit: int = 50,
+    offset: int =0,
 ) -> list[CopilotSessionSummary]:
     statement = (
         select(

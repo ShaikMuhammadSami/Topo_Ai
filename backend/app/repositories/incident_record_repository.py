@@ -124,6 +124,7 @@ def list_incident_records(
     severity: str | None = None,
     namespace: str | None = None,
     limit: int = 100,
+    offset: int = 0,
 ) -> list[IncidentRecordSummary]:
     statement = select(
         IncidentRecord
@@ -150,6 +151,7 @@ def list_incident_records(
             IncidentRecord.last_observed_at.desc()
         )
         .limit(limit)
+        .offset(offset)
     )
 
     records = list(

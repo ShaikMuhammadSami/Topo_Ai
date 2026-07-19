@@ -9,6 +9,7 @@ from topo_cli.errors import (
 from topo_cli.output import (
     ColumnSpec,
     OutputFormat,
+    console,
     emit_json,
     render_detail,
     render_records,
@@ -21,8 +22,8 @@ from topo_cli.runtime import (
 
 app = typer.Typer(
     help=(
-        "Generate and track incident "
-        "investigation plans."
+        "Ask evidence-grounded questions "
+        "about incidents."
     ),
     no_args_is_help=True,
 )
@@ -35,21 +36,12 @@ VALID_PROVIDERS = {
 }
 
 
-VALID_STEP_STATUSES = {
-    "pending",
-    "in_progress",
-    "completed",
-    "skipped",
-    "blocked",
-}
-
-
-def _provider(
-    value: str,
+def _validate_provider(
+    provider: str,
 ) -> str:
-    normalized = value.lower().strip()
+    value = provider.strip().lower()
 
-    if normalized not in VALID_PROVIDERS:
+    if value not in VALID_PROVIDERS:
         abort(
             InputValidationFailure(
                 "Provider must be one of: "
@@ -57,10 +49,42 @@ def _provider(
             )
         )
 
-    return normalized
+    return value
 
 
-def _display_plan(
+def _latest_session(
+    context: typer.Context,
+    incident_id: str,
+) -> dict | None:
+    runtime = get_runtime(context)
+
+    sessions = api_call(
+        lambda:
+            runtime.client
+            .list_copilot_sessions(
+                incident_id=incident_id,
+                limit=50,
+            )
+    )
+
+    active = next(
+        (
+            item
+            for item in sessions
+            if item.get("status")
+            == "active"
+        ),
+        None,
+    )
+
+    return active or (
+        sessions[0]
+        if sessions
+        else None
+    )
+
+
+def _display_session(
     context: typer.Context,
     value: dict,
 ) -> None:
@@ -75,114 +99,160 @@ def _display_plan(
 
     render_detail(
         {
-            "plan_id":
-                value.get("plan_id"),
+            "session_id":
+                value.get("session_id"),
             "incident_id":
                 value.get("incident_id"),
             "title":
                 value.get("title"),
-            "status":
-                value.get("status"),
             "provider":
                 value.get("provider"),
             "model_name":
                 value.get("model_name"),
-            "confidence":
+            "status":
+                value.get("status"),
+            "message_count":
                 value.get(
-                    "overall_confidence"
-                ),
-            "step_count":
-                value.get("step_count"),
-            "completed":
-                value.get(
-                    "completed_step_count"
-                ),
-            "blocked":
-                value.get(
-                    "blocked_step_count"
-                ),
-            "evidence_count":
-                value.get(
-                    "evidence_count"
+                    "message_count"
                 ),
             "created_at":
                 value.get("created_at"),
             "updated_at":
                 value.get("updated_at"),
         },
-        title="Investigation Plan",
+        title="Incident Copilot Session",
     )
 
-    steps = value.get(
-        "steps",
+    messages = value.get(
+        "messages",
         [],
     )
 
-    if isinstance(steps, list):
+    if isinstance(messages, list):
         render_records(
             [
                 item
-                for item in steps
+                for item in messages
                 if isinstance(item, dict)
             ],
-            title="Investigation Steps",
+            title="Copilot Conversation",
             columns=[
                 ColumnSpec(
-                    "STEP",
-                    ("sequence",),
+                    "TIME",
+                    ("created_at",),
+                ),
+                ColumnSpec(
+                    "ROLE",
+                    ("role",),
+                ),
+                ColumnSpec(
+                    "PROVIDER",
+                    ("provider",),
                 ),
                 ColumnSpec(
                     "STATUS",
-                    ("status",),
+                    ("answer_status",),
                 ),
                 ColumnSpec(
-                    "TITLE",
-                    ("title",),
-                    max_width=48,
+                    "CONFIDENCE",
+                    ("confidence",),
                 ),
                 ColumnSpec(
-                    "TARGET",
-                    ("target",),
-                    max_width=40,
+                    "MESSAGE",
+                    ("content",),
+                    max_width=100,
                 ),
                 ColumnSpec(
-                    "TYPE",
-                    ("command_type",),
-                ),
-                ColumnSpec(
-                    "COMMAND",
-                    ("command",),
+                    "EVIDENCE",
+                    ("evidence_ids",),
                     max_width=80,
-                ),
-                ColumnSpec(
-                    "FINDING",
-                    ("finding",),
-                    max_width=55,
-                ),
-                ColumnSpec(
-                    "STEP ID",
-                    ("step_id",),
-                    max_width=55,
                 ),
             ],
         )
 
 
-@app.command("generate")
-def generate_plan(
+def _display_answer(
+    context: typer.Context,
+    value: dict,
+) -> None:
+    runtime = get_runtime(context)
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(value)
+        return
+
+    assistant = value.get(
+        "assistant_message",
+        {},
+    )
+
+    if not isinstance(assistant, dict):
+        emit_json(value)
+        return
+
+    render_detail(
+        {
+            "session_id":
+                value.get("session_id"),
+            "provider":
+                assistant.get("provider"),
+            "answer_status":
+                assistant.get(
+                    "answer_status"
+                ),
+            "confidence":
+                assistant.get("confidence"),
+            "created_at":
+                assistant.get("created_at"),
+            "evidence_ids":
+                assistant.get(
+                    "evidence_ids"
+                ),
+        },
+        title="Copilot Answer",
+    )
+
+    console.print()
+    console.print(
+        assistant.get(
+            "content",
+            "",
+        )
+    )
+
+    warning = assistant.get(
+        "warning"
+    )
+
+    if warning:
+        console.print()
+        console.print(
+            f"[yellow]{warning}[/yellow]"
+        )
+
+
+@app.command("new")
+def new_session(
     context: typer.Context,
     incident_id: str = typer.Argument(
         ...,
         help="Stable incident ID.",
     ),
+    title: str | None = typer.Option(
+        None,
+        "--title",
+        help="Optional session title.",
+    ),
     provider: str = typer.Option(
         "auto",
         "--provider",
-    ),
-    force_regenerate: bool = typer.Option(
-        False,
-        "--force",
-        help="Generate a new plan.",
+        help=(
+            "auto, groq, or "
+            "deterministic"
+        ),
     ),
 ) -> None:
     runtime = get_runtime(context)
@@ -190,25 +260,25 @@ def generate_plan(
     result = api_call(
         lambda:
             runtime.client
-            .generate_investigation_plan(
+            .create_copilot_session(
                 incident_id=incident_id,
-                provider=_provider(
-                    provider
-                ),
-                force_regenerate=(
-                    force_regenerate
+                title=title,
+                provider=(
+                    _validate_provider(
+                        provider
+                    )
                 ),
             )
     )
 
-    _display_plan(
+    _display_session(
         context,
         result,
     )
 
 
-@app.command("list")
-def list_plans(
+@app.command("sessions")
+def list_sessions(
     context: typer.Context,
     incident_id: str = typer.Argument(
         ...,
@@ -220,13 +290,55 @@ def list_plans(
         min=1,
         max=100,
     ),
+    all_pages: bool = typer.Option(
+        False,
+        "--all",
+        help="Retrieve every available page.",
+    ),
+    page_size: int = typer.Option(
+       100,
+       "--page-size",
+       min=1,
+       max=100,
+    ),
+    maximum_items: int | None = (
+        typer.Option(
+            None,
+            "--max-items",
+            min=1,
+            help=(
+               "Stop after this many records "
+               "when using --all."
+            ),
+        )
+    ),
+
 ) -> None:
     runtime = get_runtime(context)
-
+    if all_pages:
+     incidents = collect_pages(
+         lambda offset, size:
+             runtime.client.list_incidents(
+                 limit=size,
+                 offset=offset,
+                ),
+         page_size=page_size,
+         maximum_items=maximum_items,
+        )
+    
+    else:
+        incidents = api_call(
+         lambda:
+             runtime.client.list_incidents(
+                 limit=limit,
+                 offset = 0,
+                )
+        )
+    
     values = api_call(
         lambda:
             runtime.client
-            .list_investigation_plans(
+            .list_copilot_sessions(
                 incident_id=incident_id,
                 limit=limit,
             )
@@ -241,11 +353,11 @@ def list_plans(
 
     render_records(
         values,
-        title="Investigation Plans",
+        title="Copilot Sessions",
         columns=[
             ColumnSpec(
-                "CREATED",
-                ("created_at",),
+                "UPDATED",
+                ("updated_at",),
             ),
             ColumnSpec(
                 "STATUS",
@@ -256,18 +368,12 @@ def list_plans(
                 ("provider",),
             ),
             ColumnSpec(
-                "CONFIDENCE",
-                ("overall_confidence",),
+                "MODEL",
+                ("model_name",),
             ),
             ColumnSpec(
-                "COMPLETE",
-                (
-                    "completed_step_count",
-                ),
-            ),
-            ColumnSpec(
-                "TOTAL",
-                ("step_count",),
+                "MESSAGES",
+                ("message_count",),
             ),
             ColumnSpec(
                 "TITLE",
@@ -275,8 +381,8 @@ def list_plans(
                 max_width=55,
             ),
             ColumnSpec(
-                "PLAN ID",
-                ("plan_id",),
+                "SESSION ID",
+                ("session_id",),
                 max_width=65,
             ),
         ],
@@ -284,15 +390,15 @@ def list_plans(
 
 
 @app.command("get")
-def get_plan(
+def get_session(
     context: typer.Context,
     incident_id: str = typer.Argument(
         ...,
         help="Stable incident ID.",
     ),
-    plan_id: str = typer.Argument(
+    session_id: str = typer.Argument(
         ...,
-        help="Investigation plan ID.",
+        help="Copilot session ID.",
     ),
 ) -> None:
     runtime = get_runtime(context)
@@ -300,98 +406,162 @@ def get_plan(
     result = api_call(
         lambda:
             runtime.client
-            .get_investigation_plan(
+            .get_copilot_session(
                 incident_id=incident_id,
-                plan_id=plan_id,
+                session_id=session_id,
             )
     )
 
-    _display_plan(
+    _display_session(
         context,
         result,
     )
 
 
-@app.command("update-step")
-def update_step(
+@app.command("history")
+def session_history(
     context: typer.Context,
     incident_id: str = typer.Argument(
         ...,
         help="Stable incident ID.",
     ),
-    plan_id: str = typer.Argument(
-        ...,
-        help="Investigation plan ID.",
-    ),
-    step_id: str = typer.Argument(
-        ...,
-        help="Investigation step ID.",
-    ),
-    status: str | None = typer.Option(
+    session_id: str | None = typer.Option(
         None,
-        "--status",
+        "--session-id",
         help=(
-            "pending, in_progress, "
-            "completed, skipped, or blocked"
+            "Session ID. Defaults to the "
+            "most recently updated session."
         ),
     ),
-    finding: str | None = typer.Option(
-        None,
-        "--finding",
-        help="Observed investigation result.",
-    ),
-    notes: str | None = typer.Option(
-        None,
-        "--notes",
-        help="Responder notes.",
-    ),
 ) -> None:
-    if (
-        status is None
-        and finding is None
-        and notes is None
-    ):
-        abort(
-            InputValidationFailure(
-                "Provide --status, --finding, "
-                "or --notes."
-            )
-        )
-
-    normalized_status = None
-
-    if status is not None:
-        normalized_status = (
-            status.lower().strip()
-        )
-
-        if (
-            normalized_status
-            not in VALID_STEP_STATUSES
-        ):
-            abort(
-                InputValidationFailure(
-                    "Invalid investigation-step "
-                    "status."
-                )
-            )
-
     runtime = get_runtime(context)
+
+    selected_id = session_id
+
+    if selected_id is None:
+        latest = _latest_session(
+            context,
+            incident_id,
+        )
+
+        if latest is None:
+            console.print(
+                "[dim]No Copilot sessions "
+                "were found.[/dim]"
+            )
+            return
+
+        selected_id = str(
+            latest["session_id"]
+        )
 
     result = api_call(
         lambda:
             runtime.client
-            .update_investigation_step(
+            .get_copilot_session(
                 incident_id=incident_id,
-                plan_id=plan_id,
-                step_id=step_id,
-                status=normalized_status,
-                finding=finding,
-                responder_notes=notes,
+                session_id=selected_id,
             )
     )
 
-    _display_plan(
+    _display_session(
+        context,
+        result,
+    )
+
+
+@app.command("ask")
+def ask_question(
+    context: typer.Context,
+    incident_id: str = typer.Argument(
+        ...,
+        help="Stable incident ID.",
+    ),
+    question: str = typer.Argument(
+        ...,
+        help="Question for Topo Copilot.",
+    ),
+    session_id: str | None = typer.Option(
+        None,
+        "--session-id",
+        help=(
+            "Existing session ID. When "
+            "omitted, the latest active "
+            "session is used."
+        ),
+    ),
+    provider: str = typer.Option(
+        "auto",
+        "--provider",
+        help=(
+            "Provider used when a new "
+            "session must be created."
+        ),
+    ),
+    new_session: bool = typer.Option(
+        False,
+        "--new",
+        help=(
+            "Create a new Copilot session "
+            "before asking."
+        ),
+    ),
+) -> None:
+    runtime = get_runtime(context)
+
+    if not question.strip():
+        abort(
+            InputValidationFailure(
+                "Question cannot be empty."
+            )
+        )
+
+    selected_id = session_id
+
+    if (
+        selected_id is None
+        and not new_session
+    ):
+        latest = _latest_session(
+            context,
+            incident_id,
+        )
+
+        if latest is not None:
+            selected_id = str(
+                latest["session_id"]
+            )
+
+    if selected_id is None:
+        created = api_call(
+            lambda:
+                runtime.client
+                .create_copilot_session(
+                    incident_id=incident_id,
+                    title=None,
+                    provider=(
+                        _validate_provider(
+                            provider
+                        )
+                    ),
+                )
+        )
+
+        selected_id = str(
+            created["session_id"]
+        )
+
+    result = api_call(
+        lambda:
+            runtime.client
+            .send_copilot_message(
+                incident_id=incident_id,
+                session_id=selected_id,
+                question=question.strip(),
+            )
+    )
+
+    _display_answer(
         context,
         result,
     )

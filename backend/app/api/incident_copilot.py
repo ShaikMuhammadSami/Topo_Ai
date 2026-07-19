@@ -77,6 +77,10 @@ def get_sessions(
         ge=1,
         le=100,
     ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
     session: Session = Depends(
         get_session
     ),
@@ -85,6 +89,7 @@ def get_sessions(
         session=session,
         incident_id=incident_id,
         limit=limit,
+        offset=offset,
     )
 
 
