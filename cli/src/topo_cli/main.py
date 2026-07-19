@@ -8,9 +8,12 @@ from topo_cli import __version__
 from topo_cli.client import TopoClient
 from topo_cli.commands import (
     blast_radius,
+    copilot,
     explanations,
     incidents,
+    investigations,
     profiles,
+    reports,
     snapshots,
 )
 from topo_cli.config import (
@@ -69,7 +72,20 @@ app.add_typer(
     explanations.app,
     name="explanations",
 )
+app.add_typer(
+    copilot.app,
+    name="copilot",
+)
 
+app.add_typer(
+    investigations.app,
+    name="investigations",
+)
+
+app.add_typer(
+    reports.app,
+    name="reports",
+)
 
 @app.callback()
 def initialize(

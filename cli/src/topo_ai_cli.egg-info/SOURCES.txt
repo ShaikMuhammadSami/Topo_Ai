@@ -16,7 +16,10 @@ src/topo_cli/output.py
 src/topo_cli/runtime.py
 src/topo_cli/commands/_init__.py
 src/topo_cli/commands/blast_radius.py
+src/topo_cli/commands/copilot.py
 src/topo_cli/commands/explanations.py
 src/topo_cli/commands/incidents.py
+src/topo_cli/commands/investigations.py
 src/topo_cli/commands/profiles.py
+src/topo_cli/commands/reports.py
 src/topo_cli/commands/snapshots.py
