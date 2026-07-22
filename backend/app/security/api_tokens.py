@@ -213,6 +213,14 @@ class ApiTokenAuthMiddleware(
         "/redoc",
     )
 
+    AGENT_EXACT_PATHS = {
+       "/api/v1/agents/enroll",
+    }
+
+    AGENT_PREFIXES = (
+       "/api/v1/agent/",
+    )
+
     async def dispatch(
         self,
         request: Request,
@@ -225,11 +233,18 @@ class ApiTokenAuthMiddleware(
             request.method == "OPTIONS"
             or path
             in self.PUBLIC_EXACT_PATHS
+            or path 
+            in self.AGENT_EXACT_PATHS
             or any(
                 path.startswith(prefix)
                 for prefix
                 in self.PUBLIC_PREFIXES
             )
+            or any(
+                path.startswith(prefix)
+                for prefix
+                in self.AGENT_PREFIXES
+            )            
             or not path.startswith(
                 "/api/"
             )

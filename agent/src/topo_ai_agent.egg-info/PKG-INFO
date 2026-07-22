@@ -1,0 +1,23 @@
+Metadata-Version: 2.4
+Name: topo-ai-agent
+Version: 0.1.0
+Summary: Infrastructure discovery agent for Topo AI
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: typer<1.0,>=0.21
+Requires-Dist: httpx<1.0,>=0.28
+Requires-Dist: rich<15,>=14
+Requires-Dist: kubernetes<40,>=30
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: build>=1; extra == "dev"
+
+# Topo AI Agent
+
+The Kubernetes discovery and topology submission agent for Topo AI.
+
+## Development
+
+```powershell
+python -m pip install -e .
+topo-agent --help

@@ -1,0 +1,8 @@
+typer<1.0,>=0.21
+httpx<1.0,>=0.28
+rich<15,>=14
+kubernetes<40,>=30
+
+[dev]
+pytest>=8
+build>=1

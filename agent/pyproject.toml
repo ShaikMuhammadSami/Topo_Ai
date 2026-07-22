@@ -1,0 +1,38 @@
+[project]
+name = "topo-ai-agent"
+version = "0.1.0"
+description = "Infrastructure discovery agent for Topo AI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "typer>=0.21,<1.0",
+    "httpx>=0.28,<1.0",
+    "rich>=14,<15",
+    "kubernetes>=30,<40",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "build>=1",
+]
+
+[project.scripts]
+topo-agent = "topo_agent.main:app"
+
+[build-system]
+requires = [
+    "setuptools>=75",
+    "wheel",
+]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+"" = "src"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

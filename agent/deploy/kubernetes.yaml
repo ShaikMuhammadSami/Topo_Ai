@@ -1,0 +1,166 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: topo-system
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: topo-agent
+  namespace: topo-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: topo-agent-readonly
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+      - nodes
+      - pods
+      - services
+      - endpoints
+    verbs:
+      - get
+      - list
+      - watch
+
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - replicasets
+    verbs:
+      - get
+      - list
+      - watch
+
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - get
+      - list
+      - watch
+
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: topo-agent-readonly
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: topo-agent-readonly
+subjects:
+  - kind: ServiceAccount
+    name: topo-agent
+    namespace: topo-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: topo-agent
+  namespace: topo-system
+spec:
+  replicas: 1
+
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: topo-agent
+
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: topo-agent
+
+    spec:
+      serviceAccountName: topo-agent
+
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+
+      containers:
+        - name: topo-agent
+          image: topo-agent:0.1.0
+          imagePullPolicy: IfNotPresent
+
+          args:
+            - run
+
+          env:
+            - name: TOPO_BACKEND_URL
+              value: http://host.docker.internal:8000
+
+            - name: TOPO_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: topo-agent-credentials
+                  key: agent-token
+
+            - name: TOPO_AGENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: topo-agent-credentials
+                  key: agent-id
+
+            - name: TOPO_AGENT_NAME
+              value: docker-desktop-agent
+
+            - name: TOPO_CLUSTER_NAME
+              value: docker-desktop
+
+            - name: TOPO_ENVIRONMENT
+              value: development
+
+            - name: TOPO_NAMESPACES
+              value: dedupe-demo
+
+            - name: TOPO_COLLECTION_INTERVAL
+              value: "300"
+
+            - name: TOPO_HEARTBEAT_INTERVAL
+              value: "30"
+
+            - name: TOPO_VERIFY_TLS
+              value: "false"
+
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/topo-agent
+
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+
+            limits:
+              cpu: 500m
+              memory: 512Mi
+
+      volumes:
+        - name: state
+          emptyDir: {}

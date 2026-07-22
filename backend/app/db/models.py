@@ -1965,3 +1965,225 @@ class ReportActionItemRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class AgentEnrollmentTokenRecord(Base):
+    __tablename__ = "agent_enrollment_tokens"
+
+    enrollment_token_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    token_hint: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+    )
+
+    label: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    max_uses: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+
+    use_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    expires_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    last_used_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    revoked_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    created_by: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class TopoAgentRecord(Base):
+    __tablename__ = "topo_agents"
+
+    agent_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    agent_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="kubernetes",
+        index=True,
+    )
+
+    cluster_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    environment: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    version: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    token_hash: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    token_hint: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="enrolled",
+        index=True,
+    )
+
+    collection_interval_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=300,
+    )
+
+    heartbeat_interval_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=30,
+    )
+
+    namespace_scope_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    capabilities_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    labels_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    metadata_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    buffered_item_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    last_collection_status: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    last_seen_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    last_heartbeat_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    last_snapshot_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    enrolled_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    revoked_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

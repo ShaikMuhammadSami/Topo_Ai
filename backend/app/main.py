@@ -70,6 +70,10 @@ from app.api.system import (
 from app.security.api_tokens import (
     ApiTokenAuthMiddleware,
 )
+from app.api.agents import (
+    admin_router as agents_router,
+    agent_router as agent_runtime_router,
+)
 from dotenv import load_dotenv
 
 
@@ -154,6 +158,13 @@ app.include_router(
 )
 app.include_router(
     system_router
+)
+app.include_router(
+    agents_router
+)
+
+app.include_router(
+    agent_runtime_router
 )
 # @app.get("/health")
 # def health_check() -> dict:

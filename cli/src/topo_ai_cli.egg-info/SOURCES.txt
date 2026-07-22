@@ -16,6 +16,7 @@ src/topo_cli/output.py
 src/topo_cli/retry.py
 src/topo_cli/runtime.py
 src/topo_cli/commands/_init__.py
+src/topo_cli/commands/agents.py
 src/topo_cli/commands/blast_radius.py
 src/topo_cli/commands/copilot.py
 src/topo_cli/commands/explanations.py

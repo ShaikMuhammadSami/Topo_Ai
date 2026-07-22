@@ -1005,3 +1005,132 @@ class TopoClient:
                  "an invalid response."
                 )
         return value
+    
+    def create_agent_enrollment_token(
+     self,
+     *,
+     label: str | None,
+     expires_in_minutes: int,
+     max_uses: int,
+    ) -> dict[str, Any]:
+        value = self._request(
+          "POST",
+           (
+             "/api/v1/agents/"
+             "enrollment-tokens"
+            ),
+            json_body={
+             "label": label,
+             "expires_in_minutes":
+                 expires_in_minutes,
+             "max_uses": max_uses,
+            },
+        )
+
+        if not isinstance(value, dict):
+          raise ApiFailure(
+             "Agent enrollment-token "
+             "endpoint returned an "
+             "invalid response."
+            )
+
+        return value
+
+
+    def list_agents(
+     self,
+     *,
+     limit: int,
+     offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+         "GET",
+         "/api/v1/agents",
+         params={
+             "limit": limit,
+             "offset": offset,
+            },
+        )
+
+        return self._collection(
+         value,
+         keys=(
+             "items",
+             "agents",
+             "records",
+            ),
+        )
+
+
+    def get_agent(
+     self,
+     agent_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+          "GET",
+          (
+             "/api/v1/agents/"
+             + self._encode_identifier(
+                 agent_id
+                )
+           ),
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+             "Agent endpoint returned an "
+             "invalid response."
+            )
+
+        return value
+
+
+    def get_agent_health(
+     self,
+     agent_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+         "GET",
+         (
+             "/api/v1/agents/"
+             + self._encode_identifier(
+                 agent_id
+                )
+             + "/health"
+            ),
+        )
+
+        if not isinstance(value, dict):
+         raise ApiFailure(
+             "Agent-health endpoint returned "
+             "an invalid response."
+            )
+
+        return value
+
+
+    def revoke_agent(
+     self,
+     agent_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+         "POST",
+         (
+             "/api/v1/agents/"
+             + self._encode_identifier(
+                 agent_id
+                )
+             + "/revoke"
+            ),
+        )
+
+        if not isinstance(value, dict):
+         raise ApiFailure(
+             "Agent revoke endpoint returned "
+             "an invalid response."
+            )
+
+        return value
+
+
+        

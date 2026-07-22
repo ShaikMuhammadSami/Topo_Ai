@@ -7,6 +7,7 @@ import sys
 from topo_cli import __version__
 from topo_cli.client import TopoClient
 from topo_cli.commands import (
+    agents,
     blast_radius,
     copilot,
     explanations,
@@ -94,6 +95,11 @@ app.add_typer(
 app.add_typer(
     reports.app,
     name="reports",
+)
+
+app.add_typer(
+    agents.app,
+    name="agents",
 )
 
 @app.callback()

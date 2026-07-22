@@ -1,0 +1,2 @@
+[console_scripts]
+topo-agent = topo_agent.main:app
