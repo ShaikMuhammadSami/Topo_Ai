@@ -29,6 +29,7 @@ from app.models.agents import (
     AgentSnapshotReceipt,
     AgentSnapshotSubmission,
     AgentSummary,
+    AgentPluginsResponse,
 )
 from app.repositories.agent_repository import (
     agent_health,
@@ -38,6 +39,7 @@ from app.repositories.agent_repository import (
     load_agent,
     record_heartbeat,
     revoke_agent,
+    agent_plugins,
 )
 from app.security.agent_tokens import (
     require_agent,
@@ -341,3 +343,28 @@ def submit_snapshot(
         agent=agent,
         submission=submission,
     )
+
+@admin_router.get(
+    "/{agent_id}/plugins",
+    response_model=(
+        AgentPluginsResponse
+    ),
+)
+def get_agent_plugins(
+    agent_id: str,
+    session: Session = Depends(
+        get_session
+    ),
+) -> AgentPluginsResponse:
+    result = agent_plugins(
+        session=session,
+        agent_id=agent_id,
+    )
+
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found.",
+        )
+
+    return result

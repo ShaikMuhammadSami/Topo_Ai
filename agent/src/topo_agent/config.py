@@ -52,6 +52,17 @@ def _namespaces(
         if item.strip()
     ]
 
+def _plugins(
+    value: str | None,
+) -> list[str]:
+    if not value:
+        return []
+
+    return [
+        item.strip().lower()
+        for item in value.split(",")
+        if item.strip()
+    ]
 
 def agent_home() -> Path:
     override = os.getenv(
@@ -151,6 +162,22 @@ class AgentConfig:
         default_factory=list
     )
 
+    enabled_plugins: list[str] = field(
+     default_factory=lambda: [
+         "kubernetes",
+        ]
+    )
+
+    docker_base_url: str | None = None
+
+    collect_process_username: bool = False
+
+    network_include_loopback: bool = False
+
+    network_include_listening: bool = True
+
+    network_include_established: bool = True
+
     kube_context: str | None = None
 
     verify_tls: bool = True
@@ -204,6 +231,40 @@ class AgentConfig:
                     [],
                 )
             ],
+            enabled_plugins=[
+             str(item).lower()
+             for item in value.get(
+                 "enabled_plugins",
+                 ["kubernetes"],
+                )
+            ],
+            docker_base_url=value.get(
+              "docker_base_url"
+            ),
+            collect_process_username=bool(
+             value.get(
+                 "collect_process_username",
+                 False,
+                )
+            ),
+            network_include_loopback=bool(
+             value.get(
+                 "network_include_loopback",
+                 False,
+                )
+            ),
+            network_include_listening=bool(
+             value.get(
+                  "network_include_listening",
+                   True,
+                )
+            ),
+            network_include_established=bool(
+             value.get(
+                 "network_include_established",
+                 True,
+                )
+            ),
             kube_context=value.get(
                 "kube_context"
             ),
@@ -324,6 +385,55 @@ class AgentConfig:
                 ),
                 self
                 .collection_interval_seconds,
+            )
+        )
+        plugin_value = os.getenv(
+          "TOPO_ENABLED_PLUGINS"
+        )
+
+        if plugin_value is not None:
+           self.enabled_plugins = _plugins(
+              plugin_value
+            )
+
+        self.docker_base_url = os.getenv(
+           "TOPO_DOCKER_BASE_URL",
+            self.docker_base_url,
+        )
+
+        self.collect_process_username = (
+          _boolean(
+             os.getenv(
+                 "TOPO_COLLECT_PROCESS_USERNAME"
+                ),
+             self.collect_process_username,
+            )
+        )
+
+        self.network_include_loopback = (
+          _boolean(
+              os.getenv(
+                 "TOPO_NETWORK_INCLUDE_LOOPBACK"
+                ),
+              self.network_include_loopback,
+           )
+        ) 
+
+        self.network_include_listening = (
+          _boolean(
+              os.getenv(
+                 "TOPO_NETWORK_INCLUDE_LISTENING"
+                ),
+              self.network_include_listening,
+            )
+        )
+
+        self.network_include_established = (
+         _boolean(
+             os.getenv(
+                 "TOPO_NETWORK_INCLUDE_ESTABLISHED"
+                ),
+             self.network_include_established,
             )
         )
 

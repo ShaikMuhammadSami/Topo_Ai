@@ -113,6 +113,9 @@ spec:
                 secretKeyRef:
                   name: topo-agent-credentials
                   key: agent-token
+                  
+            - name: TOPO_ENABLED_PLUGINS
+              value: kubernetes
 
             - name: TOPO_AGENT_ID
               valueFrom:

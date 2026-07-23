@@ -30,6 +30,8 @@ from app.models.agents import (
     AgentHeartbeatResponse,
     AgentStatus,
     AgentSummary,
+    AgentPluginStatusView,
+    AgentPluginsResponse,
 )
 
 
@@ -590,4 +592,74 @@ def agent_health(
         heartbeat_interval_seconds=(
             record.heartbeat_interval_seconds
         ),
+    )
+
+def agent_plugins(
+    session: Session,
+    *,
+    agent_id: str,
+) -> AgentPluginsResponse | None:
+    record = session.get(
+        TopoAgentRecord,
+        agent_id,
+    )
+
+    if record is None:
+        return None
+
+    metadata = json.loads(
+        record.metadata_json
+    )
+
+    raw_plugins = metadata.get(
+        "plugins",
+        [],
+    )
+
+    enabled_plugins = metadata.get(
+        "enabled_plugins",
+        [],
+    )
+
+    plugins: list[
+        AgentPluginStatusView
+    ] = []
+
+    if isinstance(
+        raw_plugins,
+        list,
+    ):
+        for item in raw_plugins:
+            if not isinstance(
+                item,
+                dict,
+            ):
+                continue
+
+            try:
+                plugins.append(
+                    AgentPluginStatusView
+                    .model_validate(
+                        item
+                    )
+                )
+
+            except Exception:
+                continue
+
+    return AgentPluginsResponse(
+        agent_id=record.agent_id,
+        enabled_plugins=[
+            str(item)
+            for item in (
+                enabled_plugins
+                if isinstance(
+                    enabled_plugins,
+                    list,
+                )
+                else []
+            )
+        ],
+        plugins=plugins,
+        updated_at=record.updated_at,
     )

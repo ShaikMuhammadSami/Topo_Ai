@@ -454,6 +454,32 @@ class KubernetesCollector:
                 .container_statuses
                 or []
             )
+            container_ids = []
+
+            for item in statuses:
+               container_id = getattr(
+                  item,
+                  "container_id",
+                  None,
+                )
+
+            if not container_id:
+               continue
+
+            normalized = str(
+              container_id
+            )
+
+            if "://" in normalized:
+              normalized = normalized.split(
+                 "://",
+                 1,
+                )[1]
+
+            container_ids.append(
+              normalized
+            )
+
 
             inventory["pods"].append(
                 {
@@ -497,6 +523,8 @@ class KubernetesCollector:
                             or []
                         )
                     ],
+                    "container_ids":
+                        container_ids,
                     "pod_ip":
                         pod.status.pod_ip,
                 }

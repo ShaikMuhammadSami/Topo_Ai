@@ -25,6 +25,9 @@ from app.models.topology import (
 from app.repositories.agent_repository import (
     record_snapshot_success,
 )
+from app.services.agent_runtime_enrichment import (
+    enrich_runtime_inventory,
+)
 
 
 def _enum_member(
@@ -764,6 +767,11 @@ def persist_agent_snapshot(
     snapshot = build_agent_snapshot(
         agent=agent,
         submission=submission,
+    )
+    snapshot = enrich_runtime_inventory(
+      snapshot=snapshot,
+      agent=agent,
+      submission=submission,
     )
 
     existing = session.get(

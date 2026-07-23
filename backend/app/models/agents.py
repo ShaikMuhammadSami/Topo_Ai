@@ -297,3 +297,44 @@ class AgentHealthResponse(BaseModel):
     last_collection_status: str | None
     last_error: str | None
     heartbeat_interval_seconds: int
+
+class AgentPluginStatusView(BaseModel):
+    model_config = ConfigDict(
+        extra="allow"
+    )
+
+    name: str
+    status: str
+
+    duration_ms: float | None = None
+
+    capabilities: list[str] = Field(
+        default_factory=list
+    )
+
+    errors: list[str] = Field(
+        default_factory=list
+    )
+
+    inventory_counts: dict[
+        str,
+        int,
+    ] = Field(
+        default_factory=dict
+    )
+
+
+class AgentPluginsResponse(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    agent_id: str
+
+    enabled_plugins: list[str]
+
+    plugins: list[
+        AgentPluginStatusView
+    ]
+
+    updated_at: str

@@ -12,11 +12,11 @@ from topo_agent.client import (
     AgentApiClient,
     AgentClientError,
 )
-from topo_agent.collector import (
-    KubernetesCollector,
-)
 from topo_agent.config import (
     AgentConfig,
+)
+from topo_agent.plugin_manager import (
+    PluginManager,
 )
 
 
@@ -31,13 +31,17 @@ class AgentRunner:
         *,
         config: AgentConfig,
         client: AgentApiClient,
-        collector:
-            KubernetesCollector,
+        plugin_manager:
+            PluginManager,
         buffer: SnapshotBuffer,
     ) -> None:
         self.config = config
         self.client = client
-        self.collector = collector
+
+        self.plugin_manager = (
+            plugin_manager
+        )
+
         self.buffer = buffer
 
         self.last_collection_status: (
@@ -62,20 +66,19 @@ class AgentRunner:
                     .last_collection_status,
                 "last_error":
                     self.last_error,
-                "capabilities": [
-                    "kubernetes.namespaces",
-                    "kubernetes.nodes",
-                    "kubernetes.deployments",
-                    "kubernetes.replicasets",
-                    "kubernetes.pods",
-                    "kubernetes.services",
-                    "kubernetes.ingresses",
-                    "kubernetes.endpointslices",
-                ],
+                "capabilities":
+                    self
+                    .plugin_manager
+                    .capabilities(),
                 "metadata": {
-                    "collector_access_mode":
-                        self.collector
-                        .access_mode,
+                    "enabled_plugins":
+                        self
+                        .plugin_manager
+                        .plugin_names(),
+                    "plugins":
+                        self
+                        .plugin_manager
+                        .status_snapshot(),
                 },
             }
         )
@@ -116,18 +119,21 @@ class AgentRunner:
         self,
     ) -> dict[str, Any] | None:
         LOGGER.info(
-            "Starting topology collection."
+            "Starting plugin-based "
+            "topology collection."
         )
 
         try:
             submission = (
-                self.collector.collect()
+                self.plugin_manager
+                .collect()
             )
 
         except Exception as exc:
             self.last_collection_status = (
                 "collection_failed"
             )
+
             self.last_error = (
                 f"{type(exc).__name__}: "
                 f"{exc}"
@@ -138,6 +144,16 @@ class AgentRunner:
             )
 
             return None
+
+        collection_status = (
+            submission.get(
+                "metadata",
+                {},
+            ).get(
+                "collection_status",
+                "unknown",
+            )
+        )
 
         try:
             receipt = (
@@ -157,6 +173,7 @@ class AgentRunner:
             self.last_collection_status = (
                 "buffered"
             )
+
             self.last_error = str(exc)
 
             LOGGER.warning(
@@ -169,8 +186,9 @@ class AgentRunner:
             return None
 
         self.last_collection_status = (
-            "success"
+            collection_status
         )
+
         self.last_error = None
 
         LOGGER.info(
@@ -187,8 +205,12 @@ class AgentRunner:
     ) -> None:
         LOGGER.info(
             "Topo Agent started for "
-            "cluster %s.",
+            "cluster %s with plugins: %s",
             self.config.cluster_name,
+            ", ".join(
+                self.plugin_manager
+                .plugin_names()
+            ),
         )
 
         next_heartbeat = 0.0
@@ -241,3 +263,9 @@ class AgentRunner:
                 )
 
             time.sleep(1)
+
+    def close(
+        self,
+    ) -> None:
+        self.plugin_manager.close()
+        self.client.close()

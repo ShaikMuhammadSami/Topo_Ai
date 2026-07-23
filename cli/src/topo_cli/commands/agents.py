@@ -253,3 +253,67 @@ def revoke(
         ),
         title="Revoked Agent",
     )
+
+@app.command("plugins")
+def plugins(
+    context: typer.Context,
+    agent_id: str = typer.Argument(
+        ...,
+    ),
+) -> None:
+    runtime = get_runtime(context)
+
+    result = api_call(
+        lambda:
+            runtime.client
+            .get_agent_plugins(
+                agent_id
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    values = result.get(
+        "plugins",
+        [],
+    )
+
+    render_records(
+        [
+            item
+            for item in values
+            if isinstance(item, dict)
+        ],
+        title=(
+            "Agent Plugin Status"
+        ),
+        columns=[
+            ColumnSpec(
+                "PLUGIN",
+                ("name",),
+            ),
+            ColumnSpec(
+                "STATUS",
+                ("status",),
+            ),
+            ColumnSpec(
+                "DURATION MS",
+                ("duration_ms",),
+            ),
+            ColumnSpec(
+                "INVENTORY",
+                ("inventory_counts",),
+                max_width=70,
+            ),
+            ColumnSpec(
+                "ERRORS",
+                ("errors",),
+                max_width=80,
+            ),
+        ],
+    )

@@ -2,6 +2,8 @@ typer<1.0,>=0.21
 httpx<1.0,>=0.28
 rich<15,>=14
 kubernetes<40,>=30
+docker<8,>=7
+psutil<8,>=6
 
 [dev]
 pytest>=8

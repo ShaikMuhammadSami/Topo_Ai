@@ -16,9 +16,6 @@ from topo_agent.client import (
     AgentApiClient,
     AgentClientError,
 )
-from topo_agent.collector import (
-    KubernetesCollector,
-)
 from topo_agent.config import (
     AgentConfig,
     buffer_directory,
@@ -28,6 +25,10 @@ from topo_agent.config import (
     load_config,
     save_config,
     store_agent_token,
+)
+from topo_agent.plugin_registry import (
+    available_plugins,
+    build_plugin_manager,
 )
 from topo_agent.runner import (
     AgentRunner,
@@ -41,6 +42,19 @@ app = typer.Typer(
         "discovery agent."
     ),
     no_args_is_help=True,
+)
+
+plugins_app = typer.Typer(
+    help=(
+        "Inspect and diagnose "
+        "discovery plugins."
+    ),
+    no_args_is_help=True,
+)
+
+app.add_typer(
+    plugins_app,
+    name="plugins",
 )
 
 console = Console()
@@ -89,10 +103,14 @@ def _client(
     )
 
 
-def _runtime() -> tuple[
+def _runtime(
+    *,
+    selected_plugins:
+        list[str] | None = None,
+) -> tuple[
     AgentConfig,
     AgentApiClient,
-    KubernetesCollector,
+    object,
     SnapshotBuffer,
 ]:
     config = load_config()
@@ -110,9 +128,19 @@ def _runtime() -> tuple[
         token,
     )
 
-    collector = KubernetesCollector(
-        config
-    )
+    try:
+        manager = (
+            build_plugin_manager(
+                config,
+                selected_plugins=(
+                    selected_plugins
+                ),
+            )
+        )
+
+    except Exception:
+        client.close()
+        raise
 
     buffer = SnapshotBuffer(
         buffer_directory(),
@@ -124,7 +152,7 @@ def _runtime() -> tuple[
     return (
         config,
         client,
-        collector,
+        manager,
         buffer,
     )
 
@@ -158,6 +186,14 @@ def enroll(
         [],
         "--namespace",
         "-n",
+    ),
+    plugin: list[str] = typer.Option(
+        [],
+        "--plugin",
+        help=(
+            "Enabled plugin. Repeat for "
+            "multiple plugins."
+        ),
     ),
     kube_context: str | None = typer.Option(
         None,
@@ -205,6 +241,25 @@ def enroll(
             "be empty."
         )
 
+    enabled_plugins = (
+        plugin
+        if plugin
+        else ["kubernetes"]
+    )
+
+    unknown_plugins = sorted(
+        set(enabled_plugins)
+        - set(available_plugins())
+    )
+
+    if unknown_plugins:
+        raise typer.BadParameter(
+            "Unknown plugins: "
+            + ", ".join(
+                unknown_plugins
+            )
+        )
+
     config = AgentConfig(
         backend_url=server.rstrip("/"),
         agent_id=None,
@@ -220,6 +275,10 @@ def enroll(
         heartbeat_interval_seconds=(
             heartbeat_interval
         ),
+        enabled_plugins=[
+            value.lower()
+            for value in enabled_plugins
+        ],
     )
 
     client = _client(
@@ -234,7 +293,7 @@ def enroll(
                     token_value,
                 "name": name,
                 "agent_type":
-                    "kubernetes",
+                    "plugin",
                 "cluster_name":
                     cluster_name,
                 "environment":
@@ -247,13 +306,13 @@ def enroll(
                     heartbeat_interval,
                 "namespace_scope":
                     namespace,
-                "capabilities": [
-                    "kubernetes.discovery",
-                ],
+                "capabilities": [],
                 "labels": {},
                 "metadata": {
                     "kube_context":
                         kube_context,
+                    "enabled_plugins":
+                        enabled_plugins,
                 },
             }
         )
@@ -263,6 +322,7 @@ def enroll(
             f"[red]Enrollment failed:"
             f"[/red] {exc}"
         )
+
         raise typer.Exit(1)
 
     finally:
@@ -291,13 +351,109 @@ def enroll(
     )
 
     console.print(
-        f"Config: {config_path()}"
+        "Plugins: "
+        + ", ".join(
+            config.enabled_plugins
+        )
     )
 
     console.print(
-        "Credentials: "
-        f"{credentials_path()}"
+        f"Config: {config_path()}"
     )
+
+
+@plugins_app.command("list")
+def list_plugins() -> None:
+    config = load_config()
+
+    table = Table(
+        title="Topo Agent Plugins"
+    )
+
+    table.add_column("Plugin")
+    table.add_column("Enabled")
+    table.add_column(
+        "Available"
+    )
+
+    available = (
+        available_plugins()
+    )
+
+    for name in available:
+        table.add_row(
+            name,
+            (
+                "yes"
+                if name
+                in config.enabled_plugins
+                else "no"
+            ),
+            "yes",
+        )
+
+    console.print(table)
+
+
+@plugins_app.command("doctor")
+def plugin_doctor(
+    plugin: list[str] = typer.Option(
+        [],
+        "--plugin",
+    ),
+) -> None:
+    config = load_config()
+
+    selected = (
+        plugin
+        if plugin
+        else config.enabled_plugins
+    )
+
+    try:
+        manager = (
+            build_plugin_manager(
+                config,
+                selected_plugins=selected,
+            )
+        )
+
+    except ValueError as exc:
+        console.print(
+            f"[red]{exc}[/red]"
+        )
+
+        raise typer.Exit(1)
+
+    try:
+        results = (
+            manager.diagnostics()
+        )
+
+    finally:
+        manager.close()
+
+    table = Table(
+        title="Plugin Diagnostics"
+    )
+
+    table.add_column("Plugin")
+    table.add_column("Status")
+    table.add_column("Message")
+    table.add_column("Details")
+
+    for result in results:
+        table.add_row(
+            result.name,
+            result.status,
+            result.message or "-",
+            json.dumps(
+                result.details,
+                default=str,
+            ),
+        )
+
+    console.print(table)
 
 
 @app.command("doctor")
@@ -313,6 +469,8 @@ def doctor() -> None:
             config.cluster_name,
         "namespace_scope":
             config.namespaces,
+        "enabled_plugins":
+            config.enabled_plugins,
         "config_file":
             str(config_path()),
         "credentials_file":
@@ -325,8 +483,8 @@ def doctor() -> None:
             ),
         "backend":
             "unknown",
-        "kubernetes":
-            "unknown",
+        "plugins":
+            [],
     }
 
     client = _client(
@@ -348,6 +506,7 @@ def doctor() -> None:
         result["backend"] = (
             "failed"
         )
+
         result["backend_error"] = (
             str(exc)
         )
@@ -356,24 +515,24 @@ def doctor() -> None:
         client.close()
 
     try:
-        collector = (
-            KubernetesCollector(
+        manager = (
+            build_plugin_manager(
                 config
             )
         )
 
-        probe = collector.doctor()
+        try:
+            result["plugins"] = [
+                item.to_dict()
+                for item in
+                manager.diagnostics()
+            ]
 
-        result["kubernetes"] = (
-            "available"
-        )
-        result.update(probe)
+        finally:
+            manager.close()
 
     except Exception as exc:
-        result["kubernetes"] = (
-            "failed"
-        )
-        result["kubernetes_error"] = (
+        result["plugin_error"] = (
             str(exc)
         )
 
@@ -389,7 +548,10 @@ def doctor() -> None:
     ):
         table.add_row(
             str(key),
-            json.dumps(value)
+            json.dumps(
+                value,
+                default=str,
+            )
             if isinstance(
                 value,
                 (dict, list),
@@ -405,40 +567,58 @@ def heartbeat() -> None:
     (
         config,
         client,
-        collector,
+        manager,
         buffer,
     ) = _runtime()
 
     runner = AgentRunner(
         config=config,
         client=client,
-        collector=collector,
+        plugin_manager=manager,
         buffer=buffer,
     )
 
     try:
         response = runner.heartbeat()
+
         console.print_json(
             data=response
         )
 
     finally:
-        client.close()
+        runner.close()
 
 
 @app.command("collect")
-def collect() -> None:
+def collect(
+    plugin: list[str] = typer.Option(
+        [],
+        "--plugin",
+        help=(
+            "Collect only from the selected "
+            "plugin. Repeat to select more."
+        ),
+    ),
+) -> None:
+    selected = (
+        plugin
+        if plugin
+        else None
+    )
+
     (
         config,
         client,
-        collector,
+        manager,
         buffer,
-    ) = _runtime()
+    ) = _runtime(
+        selected_plugins=selected
+    )
 
     runner = AgentRunner(
         config=config,
         client=client,
-        collector=collector,
+        plugin_manager=manager,
         buffer=buffer,
     )
 
@@ -453,17 +633,23 @@ def collect() -> None:
 
         console.print_json(
             data={
+                "plugins":
+                    manager
+                    .plugin_names(),
                 "replayed":
                     replayed,
                 "receipt":
                     receipt,
                 "buffered":
                     buffer.size(),
+                "plugin_status":
+                    manager
+                    .status_snapshot(),
             }
         )
 
     finally:
-        client.close()
+        runner.close()
 
 
 @app.command("run")
@@ -474,21 +660,19 @@ def run(
         "-v",
     ),
 ) -> None:
-    _configure_logging(
-        verbose
-    )
+    _configure_logging(verbose)
 
     (
         config,
         client,
-        collector,
+        manager,
         buffer,
     ) = _runtime()
 
     runner = AgentRunner(
         config=config,
         client=client,
-        collector=collector,
+        plugin_manager=manager,
         buffer=buffer,
     )
 
@@ -503,4 +687,4 @@ def run(
         )
 
     finally:
-        client.close()
+        runner.close()

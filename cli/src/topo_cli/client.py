@@ -1131,6 +1131,30 @@ class TopoClient:
             )
 
         return value
+    
+    def get_agent_plugins(
+     self,
+     agent_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+         "GET",
+         (
+             "/api/v1/agents/"
+             + self._encode_identifier(
+                 agent_id
+                )
+             + "/plugins"
+            ),
+        )
+
+        if not isinstance(value, dict):
+          raise ApiFailure(
+             "Agent plugin endpoint "
+             "returned an invalid response."
+            )
+
+        return value
+
 
 
         
