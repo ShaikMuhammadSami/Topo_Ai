@@ -1,2 +1,3 @@
 [console_scripts]
 topo-agent = topo_agent.main:app
+topo-sensor = topo_agent.sensor_main:app

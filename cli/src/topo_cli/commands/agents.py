@@ -317,3 +317,216 @@ def plugins(
             ),
         ],
     )
+
+@app.command("sensors")
+def sensors(
+    context: typer.Context,
+    agent_id: str = typer.Argument(
+        ...,
+        help="Topo Agent ID.",
+    ),
+) -> None:
+    runtime = get_runtime(context)
+
+    values = api_call(
+        lambda:
+            runtime.client
+            .list_agent_sensors(
+                agent_id
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(values)
+        return
+
+    render_records(
+        values,
+        title="Runtime Sensors",
+        columns=[
+            ColumnSpec(
+                "STATUS",
+                ("status",),
+            ),
+            ColumnSpec(
+                "NODE",
+                ("node_name",),
+            ),
+            ColumnSpec(
+                "SOURCE",
+                ("source",),
+            ),
+            ColumnSpec(
+                "VERSION",
+                ("version",),
+            ),
+            ColumnSpec(
+                "EVENTS",
+                (
+                    "processed_event_count",
+                ),
+            ),
+            ColumnSpec(
+                "DROPPED",
+                (
+                    "dropped_event_count",
+                ),
+            ),
+            ColumnSpec(
+                "PARSER ERRORS",
+                (
+                    "parser_error_count",
+                ),
+            ),
+            ColumnSpec(
+                "BUFFERED",
+                (
+                    "buffered_batch_count",
+                ),
+            ),
+            ColumnSpec(
+                "LAST HEARTBEAT",
+                (
+                    "last_heartbeat_at",
+                ),
+            ),
+            ColumnSpec(
+                "SENSOR ID",
+                ("sensor_id",),
+                max_width=60,
+            ),
+        ],
+    )
+
+
+@app.command("runtime-dependencies")
+def runtime_dependencies(
+    context: typer.Context,
+    agent_id: str = typer.Argument(
+        ...,
+        help="Topo Agent ID.",
+    ),
+    window_minutes: int = typer.Option(
+        15,
+        "--window-minutes",
+        min=1,
+        max=10080,
+    ),
+    limit: int = typer.Option(
+        1000,
+        "--limit",
+        min=1,
+        max=5000,
+    ),
+    all_pages: bool = typer.Option(
+        False,
+        "--all",
+    ),
+    page_size: int = typer.Option(
+        500,
+        "--page-size",
+        min=1,
+        max=5000,
+    ),
+) -> None:
+    runtime = get_runtime(context)
+
+    if all_pages:
+        values = collect_pages(
+            lambda offset, size:
+                runtime.client
+                .list_agent_runtime_dependencies(
+                    agent_id=agent_id,
+                    window_minutes=(
+                        window_minutes
+                    ),
+                    limit=size,
+                    offset=offset,
+                ),
+            page_size=page_size,
+        )
+
+    else:
+        values = api_call(
+            lambda:
+                runtime.client
+                .list_agent_runtime_dependencies(
+                    agent_id=agent_id,
+                    window_minutes=(
+                        window_minutes
+                    ),
+                    limit=limit,
+                    offset=0,
+                )
+        )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(values)
+        return
+
+    render_records(
+        values,
+        title=(
+            "eBPF Runtime Dependencies"
+        ),
+        columns=[
+            ColumnSpec(
+                "NAMESPACE",
+                (
+                    "source_namespace",
+                ),
+            ),
+            ColumnSpec(
+                "POD",
+                ("source_pod_name",),
+                max_width=35,
+            ),
+            ColumnSpec(
+                "BINARY",
+                ("source_binary",),
+                max_width=45,
+            ),
+            ColumnSpec(
+                "DESTINATION",
+                (
+                    "destination_name",
+                    "destination_address",
+                ),
+                max_width=45,
+            ),
+            ColumnSpec(
+                "PORT",
+                (
+                    "destination_port",
+                ),
+            ),
+            ColumnSpec(
+                "PROTOCOL",
+                ("protocol",),
+            ),
+            ColumnSpec(
+                "DIRECTION",
+                ("direction",),
+            ),
+            ColumnSpec(
+                "COUNT",
+                (
+                    "observation_count",
+                ),
+            ),
+            ColumnSpec(
+                "FAILURES",
+                ("failure_count",),
+            ),
+            ColumnSpec(
+                "LAST SEEN",
+                ("last_seen_at",),
+            ),
+        ],
+    )

@@ -1,0 +1,113 @@
+tetragon:
+  clusterName: docker-desktop
+
+  enableK8sAPI: true
+  enablePolicyFilter: true
+
+  exportFilename: tetragon.log
+  exportFilePerm: "644"
+  exportFileMaxSizeMB: 25
+  exportFileMaxBackups: 5
+  exportFileCompress: false
+
+  exportAllowList: |
+    {
+      "event_set": [
+        "PROCESS_EXEC",
+        "PROCESS_EXIT",
+        "PROCESS_KPROBE"
+      ]
+    }
+
+  exportDenyList: |
+    {"health_check": true}
+    {"namespace": ["kube-system"]}
+
+  redactionFilters: |
+    {
+      "redact": [
+        "--password(?:\\s+|=)(\\S*)",
+        "--token(?:\\s+|=)(\\S*)",
+        "--api-key(?:\\s+|=)(\\S*)",
+        "Authorization:\\s*Bearer\\s+(\\S+)"
+      ]
+    }
+
+  prometheus:
+    enabled: true
+
+exportDirectory: /var/log/tetragon
+
+export:
+  mode: stdout
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+
+  stdout:
+    enabledCommand: true
+    enabledArgs: true
+
+    commandOverride:
+      - topo-sensor
+
+    argsOverride:
+      - run
+
+    image:
+      repository: topo-agent
+      tag: "0.3.1"
+
+    extraEnv:
+      - name: TOPO_BACKEND_URL
+        value: http://host.docker.internal:8000
+
+      - name: TOPO_AGENT_TOKEN
+        valueFrom:
+          secretKeyRef:
+            name: topo-sensor-credentials
+            key: agent-token
+
+      - name: TOPO_CLUSTER_NAME
+        value: docker-desktop
+
+      - name: TOPO_SENSOR_NODE_NAME
+        valueFrom:
+          fieldRef:
+            fieldPath: spec.nodeName
+
+      - name: TOPO_SENSOR_SOURCE_FILE
+        value: /var/log/tetragon/tetragon.log
+
+      - name: TOPO_SENSOR_STATE_DIR
+        value: /tmp/topo-sensor
+
+      - name: TOPO_SENSOR_BATCH_INTERVAL
+        value: "15"
+
+      - name: TOPO_SENSOR_HEARTBEAT_INTERVAL
+        value: "30"
+
+      - name: TOPO_SENSOR_MAX_LINES
+        value: "10000"
+
+      - name: TOPO_SENSOR_MAX_BUFFER_BATCHES
+        value: "200"
+
+      - name: TOPO_VERIFY_TLS
+        value: "false"
+
+    resources:
+      requests:
+        cpu: 25m
+        memory: 64Mi
+
+      limits:
+        cpu: 250m
+        memory: 256Mi

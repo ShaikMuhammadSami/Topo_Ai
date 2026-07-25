@@ -30,7 +30,7 @@ class AgentApiClient:
         headers = {
             "Accept": "application/json",
             "User-Agent":
-                "topo-ai-agent/0.1.0",
+                "topo-ai-agent/0.3.0",
         }
 
         if token:
@@ -206,4 +206,30 @@ class AgentApiClient:
             "POST",
             "/api/v1/agent/snapshots",
             json_body=submission,
+        )
+    def sensor_heartbeat(
+    self,
+    request: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._request(
+         "POST",
+         (
+             "/api/v1/agent/"
+             "runtime/heartbeat"
+            ),
+            json_body=request,
+        )
+
+
+    def submit_runtime_batch(
+    self,
+    request: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._request(
+         "POST",
+         (
+             "/api/v1/agent/"
+             "runtime/batches"
+            ),
+         json_body=request,
         )

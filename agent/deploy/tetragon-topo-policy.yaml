@@ -1,0 +1,46 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: topo-runtime-network
+spec:
+  kprobes:
+    - call: tcp_connect
+      syscall: false
+      message: topo-runtime-tcp-connect
+      tags:
+        - topo
+        - runtime
+        - network
+      args:
+        - index: 0
+          type: sock
+
+    - call: tcp_close
+      syscall: false
+      message: topo-runtime-tcp-close
+      tags:
+        - topo
+        - runtime
+        - network
+      args:
+        - index: 0
+          type: sock
+
+    - call: udp_sendmsg
+      syscall: false
+      message: topo-runtime-dns-send
+      tags:
+        - topo
+        - runtime
+        - dns
+      args:
+        - index: 0
+          type: sock
+        - index: 2
+          type: size_t
+      selectors:
+        - matchArgs:
+            - index: 0
+              operator: DPort
+              values:
+                - "53"

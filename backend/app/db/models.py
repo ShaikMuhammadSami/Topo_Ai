@@ -2187,3 +2187,435 @@ class TopoAgentRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class RuntimeSensorRecord(Base):
+    __tablename__ = "runtime_sensors"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "agent_id",
+            "node_name",
+            "source",
+            name="uq_runtime_sensor_agent_node_source",
+        ),
+    )
+
+    sensor_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    agent_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    node_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    cluster_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        default="tetragon",
+        index=True,
+    )
+
+    version: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        default="enrolled",
+        index=True,
+    )
+
+    heartbeat_interval_seconds: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=30,
+    )
+
+    processed_event_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    dropped_event_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    parser_error_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    buffered_batch_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    submitted_batch_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    source_file: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
+
+    source_file_offset: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    capabilities_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    metadata_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    last_seen_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    last_heartbeat_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    last_batch_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class RuntimeDependencyRecord(Base):
+    __tablename__ = "runtime_dependencies"
+
+    runtime_dependency_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    agent_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    sensor_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    cluster_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    node_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    source_namespace: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    source_pod_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    source_pod_uid: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    source_workload_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    source_container_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    source_binary: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+        index=True,
+    )
+
+    source_pid: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    destination_name: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+        index=True,
+    )
+
+    destination_address: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    destination_port: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+    )
+
+    protocol: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        index=True,
+    )
+
+    direction: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default="outbound",
+        index=True,
+    )
+
+    observation_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    success_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    failure_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    first_seen_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    last_seen_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    metadata_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class RuntimeProcessRecord(Base):
+    __tablename__ = "runtime_processes"
+
+    runtime_process_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    agent_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    sensor_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    cluster_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    node_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    exec_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    pid: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    binary: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+
+    namespace: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    pod_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    pod_uid: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    container_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    parent_exec_id: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+
+    exec_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    exit_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    last_exit_code: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    last_signal: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    first_seen_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    last_seen_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    metadata_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

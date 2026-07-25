@@ -1155,6 +1155,65 @@ class TopoClient:
 
         return value
 
+    def list_agent_sensors(
+     self,
+     agent_id: str,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+         "GET",
+           (
+             "/api/v1/agents/"
+             + self._encode_identifier(
+                 agent_id
+                )
+             + "/sensors"
+            ),
+        )
+
+        return self._collection(
+         value,
+         keys=(
+             "items",
+             "sensors",
+             "records",
+            ),
+        )
+
+
+    def list_agent_runtime_dependencies(
+     self,
+     *,
+     agent_id: str,
+     window_minutes: int,
+     limit: int,
+     offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+         "GET",
+          (
+             "/api/v1/agents/"
+             + self._encode_identifier(
+                 agent_id
+                )
+             + "/runtime-dependencies"
+            ),
+         params={
+             "window_minutes":
+                 window_minutes,
+             "limit": limit,
+             "offset": offset,
+            },
+        )
+
+        return self._collection(
+         value,
+         keys=(
+             "items",
+             "dependencies",
+             "records",
+            ),
+        )
+
 
 
         

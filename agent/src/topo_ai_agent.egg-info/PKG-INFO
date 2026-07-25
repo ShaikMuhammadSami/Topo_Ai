@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: topo-ai-agent
-Version: 0.2.0
+Version: 0.3.1
 Summary: Infrastructure discovery agent for Topo AI
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown

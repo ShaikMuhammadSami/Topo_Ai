@@ -11,6 +11,11 @@ src/topo_agent/plugin.py
 src/topo_agent/plugin_manager.py
 src/topo_agent/plugin_registry.py
 src/topo_agent/runner.py
+src/topo_agent/runtime_buffer.py
+src/topo_agent/sensor.py
+src/topo_agent/sensor_main.py
+src/topo_agent/tetragon_parser.py
+src/topo_agent/tetragon_tailer.py
 src/topo_agent/plugins/__init__.py
 src/topo_agent/plugins/docker.py
 src/topo_agent/plugins/host.py
@@ -23,3 +28,4 @@ src/topo_ai_agent.egg-info/entry_points.txt
 src/topo_ai_agent.egg-info/requires.txt
 src/topo_ai_agent.egg-info/top_level.txt
 tests/test_plugin_manager.py
+tests/test_tetragon_parser.py

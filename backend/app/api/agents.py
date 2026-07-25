@@ -47,7 +47,20 @@ from app.security.agent_tokens import (
 from app.services.agent_snapshot_ingest import (
     persist_agent_snapshot,
 )
-
+from app.models.runtime_observability import (
+    RuntimeDependencyView,
+    RuntimeEventBatchReceipt,
+    RuntimeEventBatchRequest,
+    RuntimeSensorHeartbeatRequest,
+    RuntimeSensorHeartbeatResponse,
+    RuntimeSensorView,
+)
+from app.repositories.runtime_observability_repository import (
+    ingest_runtime_event_batch,
+    list_runtime_dependencies,
+    list_runtime_sensors,
+    record_sensor_heartbeat,
+)
 
 admin_router = APIRouter(
     prefix="/api/v1/agents",
@@ -368,3 +381,131 @@ def get_agent_plugins(
         )
 
     return result
+
+@agent_router.post(
+    "/runtime/heartbeat",
+    response_model=(
+        RuntimeSensorHeartbeatResponse
+    ),
+)
+def runtime_sensor_heartbeat(
+    request:
+        RuntimeSensorHeartbeatRequest,
+    agent: TopoAgentRecord = Depends(
+        require_agent
+    ),
+    session: Session = Depends(
+        get_session
+    ),
+) -> RuntimeSensorHeartbeatResponse:
+    return record_sensor_heartbeat(
+        session=session,
+        agent=agent,
+        request=request,
+    )
+
+
+@agent_router.post(
+    "/runtime/batches",
+    response_model=(
+        RuntimeEventBatchReceipt
+    ),
+    status_code=status.HTTP_201_CREATED,
+)
+def runtime_event_batch(
+    request:
+        RuntimeEventBatchRequest,
+    agent: TopoAgentRecord = Depends(
+        require_agent
+    ),
+    session: Session = Depends(
+        get_session
+    ),
+) -> RuntimeEventBatchReceipt:
+    try:
+        return ingest_runtime_event_batch(
+            session=session,
+            agent=agent,
+            request=request,
+        )
+
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+
+@admin_router.get(
+    "/{agent_id}/sensors",
+    response_model=list[
+        RuntimeSensorView
+    ],
+)
+def get_runtime_sensors(
+    agent_id: str,
+    session: Session = Depends(
+        get_session
+    ),
+) -> list[RuntimeSensorView]:
+    existing = load_agent(
+        session=session,
+        agent_id=agent_id,
+    )
+
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found.",
+        )
+
+    return list_runtime_sensors(
+        session=session,
+        agent_id=agent_id,
+    )
+
+
+@admin_router.get(
+    "/{agent_id}/runtime-dependencies",
+    response_model=list[
+        RuntimeDependencyView
+    ],
+)
+def get_runtime_dependencies(
+    agent_id: str,
+    window_minutes: int = Query(
+        default=15,
+        ge=1,
+        le=10080,
+    ),
+    limit: int = Query(
+        default=1000,
+        ge=1,
+        le=5000,
+    ),
+    offset: int = Query(
+        default=0,
+        ge=0,
+    ),
+    session: Session = Depends(
+        get_session
+    ),
+) -> list[RuntimeDependencyView]:
+    existing = load_agent(
+        session=session,
+        agent_id=agent_id,
+    )
+
+    if existing is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found.",
+        )
+
+    return list_runtime_dependencies(
+        session=session,
+        agent_id=agent_id,
+        window_minutes=window_minutes,
+        limit=limit,
+        offset=offset,
+    )

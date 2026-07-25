@@ -28,6 +28,9 @@ from app.repositories.agent_repository import (
 from app.services.agent_runtime_enrichment import (
     enrich_runtime_inventory,
 )
+from app.services.runtime_snapshot_enrichment import (
+    enrich_snapshot_with_runtime_dependencies,
+)
 
 
 def _enum_member(
@@ -772,6 +775,14 @@ def persist_agent_snapshot(
       snapshot=snapshot,
       agent=agent,
       submission=submission,
+    )
+    snapshot = (
+     enrich_snapshot_with_runtime_dependencies(
+         session=session,
+         agent=agent,
+         snapshot=snapshot,
+         window_minutes=30,
+        )
     )
 
     existing = session.get(
