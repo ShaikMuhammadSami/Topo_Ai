@@ -530,3 +530,29 @@ def runtime_dependencies(
             ),
         ],
     )
+
+@app.command("cloud-status")
+def cloud_status(
+    context: typer.Context,
+    agent_id: str = typer.Argument(
+        ...,
+        help="Topo Agent ID.",
+    ),
+) -> None:
+    runtime = get_runtime(context)
+
+    result = api_call(
+        lambda:
+            runtime.client
+            .get_agent_cloud_status(
+                agent_id
+            )
+    )
+
+    render_data(
+        result,
+        output_format=(
+            runtime.output_format
+        ),
+        title="Agent Cloud Status",
+    )

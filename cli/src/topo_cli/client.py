@@ -1213,6 +1213,120 @@ class TopoClient:
              "records",
             ),
         )
+    
+    def list_cloud_accounts(
+     self,
+     *,
+     provider: str | None = None,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+         "GET",
+         "/api/v1/clouds/accounts",
+         params={
+             "provider": provider,
+            },
+        )
+
+        return self._collection(
+           value,
+           keys=(
+             "items",
+             "accounts",
+             "records",
+            ),
+        )
+
+
+    def list_cloud_resources(
+     self,
+     *,
+     provider: str | None,
+     account_id: str | None,
+     region: str | None,
+     resource_type: str | None,
+     tag_key: str | None,
+     tag_value: str | None,
+     limit: int,
+     offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+         "GET",
+         "/api/v1/clouds/resources",
+          params={
+             "provider": provider,
+             "account_id":
+                 account_id,
+             "region": region,
+             "resource_type":
+                 resource_type,
+             "tag_key": tag_key,
+             "tag_value": tag_value,
+             "limit": limit,
+             "offset": offset,
+            },
+        )
+
+        return self._collection(
+         value,
+         keys=(
+             "items",
+             "resources",
+             "records",
+            ),
+        )
+
+
+    def get_cloud_topology(
+     self,
+     *,
+     provider: str,
+     account_id: str | None,
+     region: str | None,
+    ) -> dict[str, Any]:
+        value = self._request(
+         "GET",
+         "/api/v1/clouds/topology",
+         params={
+             "provider": provider,
+             "account_id":
+                 account_id,
+             "region": region,
+            },
+        )
+
+        if not isinstance(value, dict):
+         raise ApiFailure(
+             "Cloud topology endpoint "
+             "returned an invalid response."
+            )
+
+        return value
+
+
+    def get_agent_cloud_status(
+     self,
+     agent_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+         "GET",
+         (
+             "/api/v1/agents/"
+             + self._encode_identifier(
+                 agent_id
+                )
+             + "/cloud-status"
+            ),
+        )
+
+        if not isinstance(value, dict):
+          raise ApiFailure(
+             "Agent cloud-status endpoint "
+             "returned an invalid response."
+            )
+
+        return value
+
+
 
 
 

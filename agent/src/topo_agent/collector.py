@@ -26,6 +26,28 @@ def _utc_now_iso() -> str:
         timezone.utc
     ).isoformat()
 
+def _aws_annotations(
+    metadata: Any,
+) -> dict[str, str]:
+    values = getattr(
+        metadata,
+        "annotations",
+        None,
+    ) or {}
+
+    allowed_prefixes = (
+        "service.beta.kubernetes.io/"
+        "aws-",
+        "service.kubernetes.io/",
+    )
+
+    return {
+        str(key): str(value)
+        for key, value in values.items()
+        if str(key).startswith(
+            allowed_prefixes
+        )
+    }
 
 def _labels(
     metadata: Any,
@@ -296,6 +318,12 @@ class KubernetesCollector:
                             _labels(
                                 node.metadata
                             ),
+                        "provider_id":
+                            getattr(
+                             node.spec,
+                             "provider_id",
+                             None,
+                            ),    
                         "addresses": [
                             {
                                 "type":
@@ -588,6 +616,47 @@ class KubernetesCollector:
                             or []
                         )
                     ],
+                    "annotations":
+                         _aws_annotations(
+                             service.metadata
+                            ),
+                    "load_balancer_ingress": [
+                        {
+                          "hostname":
+                             getattr(
+                                 item,
+                                 "hostname",
+                                 None,
+                                ),
+                           "ip":
+                             getattr(
+                                 item,
+                                 "ip",
+                                 None,
+                                ),
+                        }
+                        for item in (
+                          getattr(
+                             service.status,
+                             "load_balancer",
+                             None,
+                            ).ingress
+                           if (
+                             getattr(
+                                 service.status,
+                                 "load_balancer",
+                                 None,
+                                )
+                                and getattr(
+                                    service.status
+                                    .load_balancer,
+                                    "ingress",
+                                    None,
+                                )
+                            )
+                            else []
+                        )
+                    ], 
                 }
             )
 

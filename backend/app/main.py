@@ -74,6 +74,9 @@ from app.api.agents import (
     admin_router as agents_router,
     agent_router as agent_runtime_router,
 )
+from app.api.clouds import (
+    router as clouds_router,
+)
 from dotenv import load_dotenv
 
 
@@ -165,6 +168,9 @@ app.include_router(
 
 app.include_router(
     agent_runtime_router
+)
+app.include_router(
+    clouds_router
 )
 # @app.get("/health")
 # def health_check() -> dict:

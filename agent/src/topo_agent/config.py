@@ -25,6 +25,17 @@ def _boolean(
         "on",
     }
 
+def _comma_values(
+    value: str | None,
+) -> list[str]:
+    if not value:
+        return []
+
+    return [
+        item.strip()
+        for item in value.split(",")
+        if item.strip()
+    ]
 
 def _integer(
     value: str | None,
@@ -193,6 +204,25 @@ class AgentConfig:
     retry_backoff_seconds: float = 1.0
 
     max_buffer_items: int = 100
+    aws_profile: str | None = None
+
+    aws_role_arn: str | None = None
+
+    aws_external_id: str | None = None
+
+    aws_role_session_name: str = (
+     "topo-agent-discovery"
+    )
+
+    aws_regions: list[str] = field(
+     default_factory=list
+    )
+
+    aws_discover_regions: bool = False
+
+    aws_cache_ttl_seconds: int = 300
+
+    aws_api_max_attempts: int = 5
 
     @classmethod
     def from_dict(
@@ -308,6 +338,46 @@ class AgentConfig:
                 value.get(
                     "max_buffer_items",
                     100,
+                )
+            ),
+            aws_profile=value.get(
+             "aws_profile"
+            ),
+            aws_role_arn=value.get(
+             "aws_role_arn"
+            ),
+            aws_external_id=value.get(
+             "aws_external_id"
+            ),
+            aws_role_session_name=str(
+             value.get(
+                 "aws_role_session_name",
+                 "topo-agent-discovery",
+                )
+            ),
+            aws_regions=[
+             str(item)
+             for item in value.get(
+                 "aws_regions",
+                  [],
+                )
+            ],
+            aws_discover_regions=bool(
+                value.get(
+                 "aws_discover_regions",
+                 False,
+                )
+            ),
+            aws_cache_ttl_seconds=int(
+             value.get(
+                 "aws_cache_ttl_seconds",
+                  300,
+                )
+            ),
+            aws_api_max_attempts=int(
+               value.get(
+                 "aws_api_max_attempts",
+                 5,
                 )
             ),
         )
@@ -435,6 +505,55 @@ class AgentConfig:
                 ),
              self.network_include_established,
             )
+        )
+        self.aws_profile = os.getenv(
+         "TOPO_AWS_PROFILE",
+         self.aws_profile,
+        )
+
+        self.aws_role_arn = os.getenv(
+         "TOPO_AWS_ROLE_ARN",
+         self.aws_role_arn,
+        )
+
+        self.aws_external_id = os.getenv(
+         "TOPO_AWS_EXTERNAL_ID",
+         self.aws_external_id,
+        )
+
+        self.aws_role_session_name = os.getenv(
+         "TOPO_AWS_ROLE_SESSION_NAME",
+         self.aws_role_session_name,
+        )
+
+        regions_value = os.getenv(
+         "TOPO_AWS_REGIONS"
+        )
+
+        if regions_value is not None:
+         self.aws_regions = _comma_values(
+             regions_value
+            )
+
+        self.aws_discover_regions = _boolean(
+         os.getenv(
+             "TOPO_AWS_DISCOVER_REGIONS"
+            ),
+         self.aws_discover_regions,
+        )
+
+        self.aws_cache_ttl_seconds = _integer(
+         os.getenv(
+             "TOPO_AWS_CACHE_TTL"
+            ),
+         self.aws_cache_ttl_seconds,
+        )
+
+        self.aws_api_max_attempts = _integer(
+          os.getenv(
+             "TOPO_AWS_API_MAX_ATTEMPTS"
+            ),
+          self.aws_api_max_attempts,
         )
 
         return self

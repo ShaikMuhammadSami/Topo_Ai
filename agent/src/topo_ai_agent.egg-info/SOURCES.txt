@@ -2,6 +2,7 @@ README.md
 pyproject.toml
 src/topo_agent/__init__.py
 src/topo_agent/__main__.py
+src/topo_agent/aws_cache.py
 src/topo_agent/buffer.py
 src/topo_agent/client.py
 src/topo_agent/collector.py
@@ -17,6 +18,7 @@ src/topo_agent/sensor_main.py
 src/topo_agent/tetragon_parser.py
 src/topo_agent/tetragon_tailer.py
 src/topo_agent/plugins/__init__.py
+src/topo_agent/plugins/aws.py
 src/topo_agent/plugins/docker.py
 src/topo_agent/plugins/host.py
 src/topo_agent/plugins/kubernetes.py
@@ -27,5 +29,6 @@ src/topo_ai_agent.egg-info/dependency_links.txt
 src/topo_ai_agent.egg-info/entry_points.txt
 src/topo_ai_agent.egg-info/requires.txt
 src/topo_ai_agent.egg-info/top_level.txt
+tests/test_aws_cache.py
 tests/test_plugin_manager.py
 tests/test_tetragon_parser.py

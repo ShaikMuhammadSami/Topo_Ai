@@ -2619,3 +2619,214 @@ class RuntimeProcessRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class CloudAccountRecord(Base):
+    __tablename__ = "cloud_accounts"
+
+    cloud_account_id: Mapped[str] = (
+        mapped_column(
+            String(255),
+            primary_key=True,
+        )
+    )
+
+    provider: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    account_number: Mapped[str] = (
+        mapped_column(
+            String(255),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    display_name: Mapped[str] = (
+        mapped_column(
+            String(255),
+            nullable=False,
+        )
+    )
+
+    principal_arn: Mapped[
+        str | None
+    ] = mapped_column(
+        String(1000),
+        nullable=True,
+    )
+
+    metadata_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="{}",
+        )
+    )
+
+    last_seen_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    created_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+    updated_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+
+class CloudResourceRecord(Base):
+    __tablename__ = "cloud_resources"
+
+    cloud_resource_id: Mapped[str] = (
+        mapped_column(
+            String(1000),
+            primary_key=True,
+        )
+    )
+
+    provider: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    account_id: Mapped[str] = (
+        mapped_column(
+            String(255),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    region: Mapped[str] = (
+        mapped_column(
+            String(100),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    resource_type: Mapped[str] = (
+        mapped_column(
+            String(100),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    resource_id: Mapped[str] = (
+        mapped_column(
+            String(1000),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    arn: Mapped[str | None] = (
+        mapped_column(
+            String(2000),
+            nullable=True,
+            index=True,
+        )
+    )
+
+    name: Mapped[str] = (
+        mapped_column(
+            String(1000),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    status: Mapped[str | None] = (
+        mapped_column(
+            String(100),
+            nullable=True,
+            index=True,
+        )
+    )
+
+    vpc_id: Mapped[str | None] = (
+        mapped_column(
+            String(255),
+            nullable=True,
+            index=True,
+        )
+    )
+
+    subnet_ids_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="[]",
+        )
+    )
+
+    tags_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="{}",
+        )
+    )
+
+    properties_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="{}",
+        )
+    )
+
+    observed_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    agent_id: Mapped[str] = (
+        mapped_column(
+            String(255),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    created_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+    updated_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )

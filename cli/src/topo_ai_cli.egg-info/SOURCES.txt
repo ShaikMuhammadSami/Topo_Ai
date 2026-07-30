@@ -18,6 +18,7 @@ src/topo_cli/runtime.py
 src/topo_cli/commands/_init__.py
 src/topo_cli/commands/agents.py
 src/topo_cli/commands/blast_radius.py
+src/topo_cli/commands/clouds.py
 src/topo_cli/commands/copilot.py
 src/topo_cli/commands/explanations.py
 src/topo_cli/commands/incidents.py

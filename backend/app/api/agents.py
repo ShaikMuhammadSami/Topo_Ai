@@ -61,7 +61,12 @@ from app.repositories.runtime_observability_repository import (
     list_runtime_sensors,
     record_sensor_heartbeat,
 )
-
+from app.models.clouds import (
+    AgentCloudStatusResponse,
+)
+from app.repositories.cloud_repository import (
+    agent_cloud_status,
+)
 admin_router = APIRouter(
     prefix="/api/v1/agents",
     tags=["agents"],
@@ -71,7 +76,30 @@ agent_router = APIRouter(
     prefix="/api/v1/agent",
     tags=["agent-runtime"],
 )
+@admin_router.get(
+    "/{agent_id}/cloud-status",
+    response_model=(
+        AgentCloudStatusResponse
+    ),
+)
+def get_agent_cloud_status(
+    agent_id: str,
+    session: Session = Depends(
+        get_session
+    ),
+) -> AgentCloudStatusResponse:
+    result = agent_cloud_status(
+        session=session,
+        agent_id=agent_id,
+    )
 
+    if result is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Agent not found.",
+        )
+
+    return result
 
 def _principal_subject(
     request: Request,

@@ -21,9 +21,13 @@ from topo_agent.plugins.kubernetes import (
 from topo_agent.plugins.network import (
     NetworkPlugin,
 )
-
+from topo_agent.plugins.aws import (
+    AwsPlugin,
+)
 
 PLUGIN_FACTORIES = {
+    "aws":
+        AwsPlugin,
     "kubernetes":
         KubernetesPlugin,
     "docker":

@@ -4,6 +4,7 @@ rich<15,>=14
 kubernetes<40,>=30
 docker<8,>=7
 psutil<8,>=6
+boto3<2,>=1.34
 
 [dev]
 pytest>=8

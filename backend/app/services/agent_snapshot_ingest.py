@@ -31,7 +31,12 @@ from app.services.agent_runtime_enrichment import (
 from app.services.runtime_snapshot_enrichment import (
     enrich_snapshot_with_runtime_dependencies,
 )
-
+from app.repositories.cloud_repository import (
+    persist_cloud_inventory,
+)
+from app.services.agent_cloud_enrichment import (
+    enrich_snapshot_with_aws,
+)
 
 def _enum_member(
     enum_type: type,
@@ -776,6 +781,11 @@ def persist_agent_snapshot(
       agent=agent,
       submission=submission,
     )
+    snapshot = enrich_snapshot_with_aws(
+     snapshot=snapshot,
+     agent=agent,
+     submission=submission,
+    )
     snapshot = (
      enrich_snapshot_with_runtime_dependencies(
          session=session,
@@ -788,6 +798,11 @@ def persist_agent_snapshot(
     existing = session.get(
         SnapshotRecord,
         snapshot.snapshot_id,
+    )
+    persist_cloud_inventory(
+     session=session,
+     agent=agent,
+     submission=submission,
     )
 
     if existing is None:
@@ -805,7 +820,7 @@ def persist_agent_snapshot(
             == 1
             else None
         )
-
+    
         record = SnapshotRecord(
             snapshot_id=(
                 snapshot.snapshot_id

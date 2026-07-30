@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: topo-ai-agent
-Version: 0.3.1
+Version: 0.4.0
 Summary: Infrastructure discovery agent for Topo AI
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
@@ -10,6 +10,7 @@ Requires-Dist: rich<15,>=14
 Requires-Dist: kubernetes<40,>=30
 Requires-Dist: docker<8,>=7
 Requires-Dist: psutil<8,>=6
+Requires-Dist: boto3<2,>=1.34
 Provides-Extra: dev
 Requires-Dist: pytest>=8; extra == "dev"
 Requires-Dist: build>=1; extra == "dev"
