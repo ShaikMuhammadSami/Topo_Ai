@@ -224,6 +224,32 @@ class AgentConfig:
 
     aws_api_max_attempts: int = 5
 
+    azure_auth_mode: str = "default"
+
+    azure_tenant_id: str | None = None
+
+    azure_client_id: str | None = None
+
+    azure_federated_token_file: str | None = None
+
+    azure_subscription_ids: list[str] = field(
+     default_factory=list
+    )
+
+    azure_locations: list[str] = field(
+     default_factory=list
+    )
+
+    azure_resource_groups: list[str] = field(
+     default_factory=list
+    )
+
+    azure_cache_ttl_seconds: int = 300
+
+    azure_query_page_size: int = 1000
+
+    azure_api_max_attempts: int = 5
+
     @classmethod
     def from_dict(
         cls,
@@ -377,6 +403,60 @@ class AgentConfig:
             aws_api_max_attempts=int(
                value.get(
                  "aws_api_max_attempts",
+                 5,
+                )
+            ),
+            azure_auth_mode=str(
+             value.get(
+                 "azure_auth_mode",
+                 "default",
+                )
+            ).lower(),
+            azure_tenant_id=value.get(
+             "azure_tenant_id"
+            ),
+            azure_client_id=value.get(
+             "azure_client_id"
+            ),
+            azure_federated_token_file=value.get(
+             "azure_federated_token_file"
+            ),
+            azure_subscription_ids=[
+             str(item)
+             for item in value.get(
+                 "azure_subscription_ids",
+                 [],
+                )
+            ],
+            azure_locations=[
+             str(item).lower()
+             for item in value.get(
+                 "azure_locations",
+                 [],
+                )
+            ],
+            azure_resource_groups=[
+             str(item).lower()
+             for item in value.get(
+                 "azure_resource_groups",
+                 [],
+                )
+            ],
+            azure_cache_ttl_seconds=int(
+             value.get(
+                 "azure_cache_ttl_seconds",
+                 300,
+                )
+            ),
+            azure_query_page_size=int(
+             value.get(
+                 "azure_query_page_size",
+                 1000,
+                )
+            ),
+            azure_api_max_attempts=int(
+             value.get(
+                 "azure_api_max_attempts",
                  5,
                 )
             ),
@@ -554,6 +634,90 @@ class AgentConfig:
              "TOPO_AWS_API_MAX_ATTEMPTS"
             ),
           self.aws_api_max_attempts,
+        )
+
+        self.azure_auth_mode = os.getenv(
+         "TOPO_AZURE_AUTH_MODE",
+         self.azure_auth_mode,
+        ).strip().lower()
+
+        self.azure_tenant_id = os.getenv(
+         "TOPO_AZURE_TENANT_ID",
+         self.azure_tenant_id,
+        )
+
+        self.azure_client_id = os.getenv(
+          "TOPO_AZURE_CLIENT_ID",
+          self.azure_client_id,
+        )
+
+        self.azure_federated_token_file = (
+         os.getenv(
+             "TOPO_AZURE_FEDERATED_TOKEN_FILE",
+             self.azure_federated_token_file,
+            )
+        )
+
+        subscription_value = os.getenv(
+         "TOPO_AZURE_SUBSCRIPTIONS"
+        )
+
+        if subscription_value is not None:
+         self.azure_subscription_ids = (
+             _comma_values(
+                 subscription_value
+                )
+            )
+
+        location_value = os.getenv(
+         "TOPO_AZURE_LOCATIONS"
+        )
+
+        if location_value is not None:
+         self.azure_locations = [
+             item.lower()
+             for item in _comma_values(
+                 location_value
+                )
+            ]
+
+        resource_group_value = os.getenv(
+         "TOPO_AZURE_RESOURCE_GROUPS"
+        )
+
+        if resource_group_value is not None:
+         self.azure_resource_groups = [
+              item.lower()
+              for item in _comma_values(
+                  resource_group_value
+                )
+            ]
+
+        self.azure_cache_ttl_seconds = (
+         _integer(
+             os.getenv(
+                 "TOPO_AZURE_CACHE_TTL"
+                ),
+             self.azure_cache_ttl_seconds,
+            )
+        )
+
+        self.azure_query_page_size = (
+         _integer(
+             os.getenv(
+                 "TOPO_AZURE_QUERY_PAGE_SIZE"
+                ),
+             self.azure_query_page_size,
+            )
+        )
+
+        self.azure_api_max_attempts = (
+         _integer(
+             os.getenv(
+                 "TOPO_AZURE_API_MAX_ATTEMPTS"
+                ),
+             self.azure_api_max_attempts,
+            )
         )
 
         return self

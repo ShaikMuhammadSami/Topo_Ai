@@ -538,14 +538,38 @@ def cloud_status(
         ...,
         help="Topo Agent ID.",
     ),
+    provider: str = typer.Option(
+        "aws",
+        "--provider",
+        help=(
+            "Cloud provider: "
+            "aws or azure."
+        ),
+    ),
 ) -> None:
     runtime = get_runtime(context)
+
+    normalized_provider = (
+        provider.strip().lower()
+    )
+
+    if normalized_provider not in {
+        "aws",
+        "azure",
+    }:
+        raise typer.BadParameter(
+            "Provider must be "
+            "'aws' or 'azure'."
+        )
 
     result = api_call(
         lambda:
             runtime.client
             .get_agent_cloud_status(
-                agent_id
+                agent_id,
+                provider=(
+                    normalized_provider
+                ),
             )
     )
 
@@ -554,5 +578,8 @@ def cloud_status(
         output_format=(
             runtime.output_format
         ),
-        title="Agent Cloud Status",
+        title=(
+            f"{normalized_provider.upper()} "
+            "Agent Cloud Status"
+        ),
     )

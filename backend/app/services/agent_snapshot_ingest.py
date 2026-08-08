@@ -37,6 +37,9 @@ from app.repositories.cloud_repository import (
 from app.services.agent_cloud_enrichment import (
     enrich_snapshot_with_aws,
 )
+from app.services.agent_azure_enrichment import (
+    enrich_snapshot_with_azure,
+)
 
 def _enum_member(
     enum_type: type,
@@ -782,6 +785,11 @@ def persist_agent_snapshot(
       submission=submission,
     )
     snapshot = enrich_snapshot_with_aws(
+     snapshot=snapshot,
+     agent=agent,
+     submission=submission,
+    )
+    snapshot = enrich_snapshot_with_azure(
      snapshot=snapshot,
      agent=agent,
      submission=submission,

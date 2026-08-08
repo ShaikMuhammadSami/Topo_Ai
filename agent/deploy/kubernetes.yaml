@@ -11,6 +11,8 @@ metadata:
   annotations:
     eks.amazonaws.com/role-arn: >-
       arn:aws:iam::474668381122:role/TopoAwsDiscoveryRole
+    azure.workload.identity/client-id: "<AZURE_CLIENT_ID>"
+    azure.workload.identity/tenant-id: "<AZURE_TENANT_ID>"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -87,6 +89,7 @@ spec:
     metadata:
       labels:
         app.kubernetes.io/name: topo-agent
+        azure.workload.identity/use: "true"
 
     spec:
       serviceAccountName: topo-agent
@@ -118,10 +121,10 @@ spec:
                   key: agent-token
                   
             - name: TOPO_ENABLED_PLUGINS
-              value: kubernetes,aws
+              value: kubernetes,aws,azure
             
             - name: TOPO_ENABLED_PLUGINS
-              value: kubernetes,aws
+              value: kubernetes,aws,azure
 
             - name: TOPO_AWS_REGIONS
               value: us-east-1,us-west-2
@@ -158,6 +161,30 @@ spec:
 
             - name: TOPO_VERIFY_TLS
               value: "false"
+            
+            - name: TOPO_AZURE_AUTH_MODE
+              value: default
+
+            - name: TOPO_AZURE_TENANT_ID
+              value: "<AZURE_TENANT_ID>"
+
+            - name: TOPO_AZURE_CLIENT_ID
+              value: "<AZURE_CLIENT_ID>"
+
+            - name: TOPO_AZURE_SUBSCRIPTIONS
+              value: "<SUBSCRIPTION_ID>"
+
+            - name: TOPO_AZURE_LOCATIONS
+              value: eastus,eastus2,centralus
+
+            - name: TOPO_AZURE_CACHE_TTL
+              value: "300"
+
+            - name: TOPO_AZURE_QUERY_PAGE_SIZE
+              value: "1000"
+
+            - name: TOPO_AZURE_API_MAX_ATTEMPTS
+              value: "5"
 
           volumeMounts:
             - name: state

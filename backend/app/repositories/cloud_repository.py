@@ -65,102 +65,12 @@ def persist_cloud_inventory(
 ) -> None:
     inventory = submission.inventory
 
-    account_values = inventory.get(
-        "aws_accounts",
-        [],
-    )
+    account_resource_types = {
+        "aws_account",
+        "azure_subscription",
+    }
 
-    for value in account_values:
-        if not isinstance(value, dict):
-            continue
-
-        account_id = str(
-            value.get(
-                "account_id"
-            )
-            or value.get(
-                "resource_id"
-            )
-            or ""
-        )
-
-        if not account_id:
-            continue
-
-        properties = value.get(
-            "properties",
-            {},
-        )
-
-        if not isinstance(
-            properties,
-            dict,
-        ):
-            properties = {}
-
-        record_id = (
-            f"aws:{account_id}"
-        )
-
-        record = session.get(
-            CloudAccountRecord,
-            record_id,
-        )
-
-        now = utc_now_iso()
-
-        if record is None:
-            record = CloudAccountRecord(
-                cloud_account_id=(
-                    record_id
-                ),
-                provider="aws",
-                account_number=(
-                    account_id
-                ),
-                display_name=str(
-                    value.get("name")
-                    or account_id
-                ),
-                principal_arn=(
-                    properties.get(
-                        "principal_arn"
-                    )
-                ),
-                metadata_json=json.dumps(
-                    properties
-                ),
-                last_seen_at=(
-                    submission
-                    .collected_at
-                ),
-                created_at=now,
-                updated_at=now,
-            )
-
-            session.add(record)
-
-        else:
-            record.display_name = str(
-                value.get("name")
-                or account_id
-            )
-
-            record.principal_arn = (
-                properties.get(
-                    "principal_arn"
-                )
-            )
-
-            record.metadata_json = (
-                json.dumps(properties)
-            )
-
-            record.last_seen_at = (
-                submission.collected_at
-            )
-
-            record.updated_at = now
+    now = utc_now_iso()
 
     for values in inventory.values():
         if not isinstance(values, list):
@@ -178,7 +88,7 @@ def persist_cloud_inventory(
                     "provider",
                     "",
                 )
-            )
+            ).lower()
 
             resource_type = str(
                 value.get(
@@ -187,16 +97,138 @@ def persist_cloud_inventory(
                 )
             )
 
-            if (
-                provider != "aws"
-                or resource_type
-                == "aws_account"
-            ):
-                continue
-
             account_id = str(
                 value.get(
                     "account_id",
+                    "",
+                )
+            )
+
+            if (
+                provider
+                not in {
+                    "aws",
+                    "azure",
+                }
+                or not account_id
+            ):
+                continue
+
+            properties = value.get(
+                "properties",
+                {},
+            )
+
+            if not isinstance(
+                properties,
+                dict,
+            ):
+                properties = {}
+
+            if (
+                resource_type
+                in account_resource_types
+            ):
+                record_id = (
+                    f"{provider}:"
+                    f"{account_id}"
+                )
+
+                record = session.get(
+                    CloudAccountRecord,
+                    record_id,
+                )
+
+                metadata = {
+                    **properties,
+                    "status":
+                        value.get(
+                            "status"
+                        ),
+                    "provider_resource_id":
+                        value.get(
+                            "resource_id"
+                        ),
+                }
+
+                principal = (
+                    properties.get(
+                        "principal_arn"
+                    )
+                    or properties.get(
+                        "principal_id"
+                    )
+                )
+
+                if record is None:
+                    record = (
+                        CloudAccountRecord(
+                            cloud_account_id=(
+                                record_id
+                            ),
+                            provider=provider,
+                            account_number=(
+                                account_id
+                            ),
+                            display_name=str(
+                                value.get(
+                                    "name"
+                                )
+                                or account_id
+                            ),
+                            principal_arn=(
+                                str(principal)
+                                if principal
+                                else None
+                            ),
+                            metadata_json=(
+                                json.dumps(
+                                    metadata
+                                )
+                            ),
+                            last_seen_at=(
+                                submission
+                                .collected_at
+                            ),
+                            created_at=now,
+                            updated_at=now,
+                        )
+                    )
+
+                    session.add(record)
+
+                else:
+                    record.display_name = (
+                        str(
+                            value.get(
+                                "name"
+                            )
+                            or account_id
+                        )
+                    )
+
+                    record.principal_arn = (
+                        str(principal)
+                        if principal
+                        else None
+                    )
+
+                    record.metadata_json = (
+                        json.dumps(metadata)
+                    )
+
+                    record.last_seen_at = (
+                        submission
+                        .collected_at
+                    )
+
+                    record.updated_at = now
+
+                continue
+
+            resource_id = str(
+                value.get(
+                    "resource_id",
                     "",
                 )
             )
@@ -208,16 +240,8 @@ def persist_cloud_inventory(
                 )
             )
 
-            resource_id = str(
-                value.get(
-                    "resource_id",
-                    "",
-                )
-            )
-
             if (
-                not account_id
-                or not resource_type
+                not resource_type
                 or not resource_id
             ):
                 continue
@@ -241,7 +265,26 @@ def persist_cloud_inventory(
                 record_id,
             )
 
-            now = utc_now_iso()
+            raw_properties = value.get(
+                "properties",
+                {},
+            )
+
+            if not isinstance(
+                raw_properties,
+                dict,
+            ):
+                raw_properties = {}
+
+            resource_group = value.get(
+                "resource_group"
+            )
+
+            enriched_properties = {
+                **raw_properties,
+                "resource_group":
+                    resource_group,
+            }
 
             fields = {
                 "provider": provider,
@@ -277,26 +320,24 @@ def persist_cloud_inventory(
                     ),
                 "properties_json":
                     json.dumps(
-                        value.get(
-                            "properties",
-                            {},
-                        )
+                        enriched_properties
                     ),
                 "observed_at":
-                    submission
-                    .collected_at,
+                    submission.collected_at,
                 "agent_id":
                     agent.agent_id,
                 "updated_at": now,
             }
 
             if record is None:
-                record = CloudResourceRecord(
-                    cloud_resource_id=(
-                        record_id
-                    ),
-                    created_at=now,
-                    **fields,
+                record = (
+                    CloudResourceRecord(
+                        cloud_resource_id=(
+                            record_id
+                        ),
+                        created_at=now,
+                        **fields,
+                    )
                 )
 
                 session.add(record)
@@ -616,6 +657,7 @@ def agent_cloud_status(
     session: Session,
     *,
     agent_id: str,
+    provider: str = "aws",
 ) -> AgentCloudStatusResponse | None:
     record = session.get(
         TopoAgentRecord,
@@ -624,6 +666,8 @@ def agent_cloud_status(
 
     if record is None:
         return None
+
+    provider = provider.lower()
 
     metadata = json.loads(
         record.metadata_json
@@ -634,7 +678,7 @@ def agent_cloud_status(
         [],
     )
 
-    aws_status: dict[
+    plugin_status: dict[
         str,
         Any,
     ] | None = None
@@ -643,7 +687,7 @@ def agent_cloud_status(
         raw_plugins,
         list,
     ):
-        aws_status = next(
+        plugin_status = next(
             (
                 item
                 for item in raw_plugins
@@ -651,19 +695,23 @@ def agent_cloud_status(
                     item,
                     dict,
                 )
-                and item.get("name")
-                == "aws"
+                and str(
+                    item.get("name")
+                    or ""
+                ).lower()
+                == provider
             ),
             None,
         )
 
-    if aws_status is None:
+    if plugin_status is None:
         return AgentCloudStatusResponse(
             agent_id=agent_id,
             enabled=False,
-            provider="aws",
+            provider=provider,
             status="not_enabled",
             account_id=None,
+            account_ids=[],
             regions=[],
             resource_count=0,
             errors=[],
@@ -675,37 +723,72 @@ def agent_cloud_status(
             ),
         )
 
+    if provider == "azure":
+        account_ids = [
+            str(item)
+            for item in plugin_status.get(
+                "subscription_ids",
+                [],
+            )
+        ]
+
+        regions = [
+            str(item)
+            for item in plugin_status.get(
+                "locations",
+                [],
+            )
+        ]
+
+    else:
+        account_value = (
+            plugin_status.get(
+                "account_id"
+            )
+        )
+
+        account_ids = (
+            [str(account_value)]
+            if account_value
+            else []
+        )
+
+        regions = [
+            str(item)
+            for item in plugin_status.get(
+                "regions",
+                [],
+            )
+        ]
+
+    account_id = (
+        account_ids[0]
+        if len(account_ids) == 1
+        else None
+    )
+
     return AgentCloudStatusResponse(
         agent_id=agent_id,
         enabled=True,
-        provider="aws",
+        provider=provider,
         status=str(
-            aws_status.get(
+            plugin_status.get(
                 "status",
                 "unknown",
             )
         ),
-        account_id=(
-            aws_status.get(
-                "account_id"
-            )
-        ),
-        regions=[
-            str(item)
-            for item in aws_status.get(
-                "regions",
-                [],
-            )
-        ],
+        account_id=account_id,
+        account_ids=account_ids,
+        regions=regions,
         resource_count=int(
-            aws_status.get(
+            plugin_status.get(
                 "resource_count",
                 0,
             )
         ),
         errors=[
             str(item)
-            for item in aws_status.get(
+            for item in plugin_status.get(
                 "errors",
                 [],
             )

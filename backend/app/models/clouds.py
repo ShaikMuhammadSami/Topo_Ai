@@ -96,11 +96,23 @@ class AgentCloudStatusResponse(BaseModel):
     provider: str
 
     status: str
+
     account_id: str | None
-    regions: list[str]
+
+    account_ids: list[str] = Field(
+        default_factory=list
+    )
+
+    regions: list[str] = Field(
+        default_factory=list
+    )
 
     resource_count: int
-    errors: list[str]
+
+    errors: list[str] = Field(
+        default_factory=list
+    )
 
     last_heartbeat_at: str | None
+
     updated_at: str

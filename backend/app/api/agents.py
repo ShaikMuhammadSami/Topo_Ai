@@ -76,6 +76,7 @@ agent_router = APIRouter(
     prefix="/api/v1/agent",
     tags=["agent-runtime"],
 )
+
 @admin_router.get(
     "/{agent_id}/cloud-status",
     response_model=(
@@ -84,6 +85,10 @@ agent_router = APIRouter(
 )
 def get_agent_cloud_status(
     agent_id: str,
+    provider: str = Query(
+        default="aws",
+        pattern="^(aws|azure)$",
+    ),
     session: Session = Depends(
         get_session
     ),
@@ -91,6 +96,7 @@ def get_agent_cloud_status(
     result = agent_cloud_status(
         session=session,
         agent_id=agent_id,
+        provider=provider,
     )
 
     if result is None:
