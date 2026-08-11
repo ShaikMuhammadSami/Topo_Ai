@@ -27,11 +27,16 @@ from topo_agent.plugins.aws import (
 from topo_agent.plugins.azure import (
     AzurePlugin,
 )
+from topo_agent.plugins.gcp import (
+    GcpPlugin,
+)
 PLUGIN_FACTORIES = {
     "aws":
         AwsPlugin,
     "azure":
-        AzurePlugin,    
+        AzurePlugin, 
+    "gcp":
+        GcpPlugin,       
     "kubernetes":
         KubernetesPlugin,
     "docker":

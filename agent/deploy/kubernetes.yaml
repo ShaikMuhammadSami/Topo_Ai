@@ -124,7 +124,7 @@ spec:
               value: kubernetes,aws,azure
             
             - name: TOPO_ENABLED_PLUGINS
-              value: kubernetes,aws,azure
+              value: kubernetes,aws,azure,gcp
 
             - name: TOPO_AWS_REGIONS
               value: us-east-1,us-west-2
@@ -184,6 +184,27 @@ spec:
               value: "1000"
 
             - name: TOPO_AZURE_API_MAX_ATTEMPTS
+              value: "5"
+            
+            - name: TOPO_GCP_PROJECTS
+              value: "<GCP_PROJECT_ID>"
+
+            - name: TOPO_GCP_LOCATIONS
+              value: us-central1,us-east1
+
+            - name: TOPO_GCP_QUOTA_PROJECT
+              value: "<GCP_PROJECT_ID>"
+
+            - name: TOPO_GCP_INCLUDE_HIERARCHY
+              value: "true"
+
+            - name: TOPO_GCP_CACHE_TTL
+              value: "300"
+
+            - name: TOPO_GCP_ASSET_PAGE_SIZE
+              value: "500"
+
+            - name: TOPO_GCP_API_MAX_ATTEMPTS
               value: "5"
 
           volumeMounts:

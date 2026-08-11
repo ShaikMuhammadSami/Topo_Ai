@@ -87,7 +87,7 @@ def get_agent_cloud_status(
     agent_id: str,
     provider: str = Query(
         default="aws",
-        pattern="^(aws|azure)$",
+        pattern="^(aws|azure|gcp)$",
     ),
     session: Session = Depends(
         get_session

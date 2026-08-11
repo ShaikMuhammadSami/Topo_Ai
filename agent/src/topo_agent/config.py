@@ -249,6 +249,37 @@ class AgentConfig:
     azure_query_page_size: int = 1000
 
     azure_api_max_attempts: int = 5
+    gcp_project_ids: list[str] = field(
+     default_factory=list
+    )
+
+    gcp_organization_ids: list[str] = field(
+     default_factory=list
+    )
+
+    gcp_folder_ids: list[str] = field(
+     default_factory=list
+    )
+
+    gcp_locations: list[str] = field(
+     default_factory=list
+    )
+
+    gcp_discover_projects: bool = False
+
+    gcp_include_hierarchy: bool = True
+
+    gcp_impersonate_service_account: (
+     str | None
+    ) = None
+
+    gcp_quota_project: str | None = None
+
+    gcp_cache_ttl_seconds: int = 300
+
+    gcp_asset_page_size: int = 500
+
+    gcp_api_max_attempts: int = 5
 
     @classmethod
     def from_dict(
@@ -458,6 +489,73 @@ class AgentConfig:
              value.get(
                  "azure_api_max_attempts",
                  5,
+                )
+            ),
+            gcp_project_ids=[
+             str(item)
+             for item in value.get(
+                 "gcp_project_ids",
+                 [],
+                )
+            ],
+            gcp_organization_ids=[
+             str(item)
+             for item in value.get(
+                 "gcp_organization_ids",
+                 [],
+                )
+            ],
+            gcp_folder_ids=[
+             str(item)
+             for item in value.get(
+                 "gcp_folder_ids",
+                 [],
+                )
+            ],
+            gcp_locations=[
+             str(item).lower()
+             for item in value.get(
+                 "gcp_locations",
+                 [],
+                )
+            ],
+            gcp_discover_projects=bool(
+                value.get(
+                    "gcp_discover_projects",
+                    False,
+                )
+            ),
+
+            gcp_include_hierarchy=bool(
+             value.get(
+                 "gcp_include_hierarchy",
+                 True,
+                )
+            ),
+            gcp_impersonate_service_account=(
+             value.get(
+                  "gcp_impersonate_service_account"
+                )
+            ),
+            gcp_quota_project=value.get(
+             "gcp_quota_project"
+            ),
+            gcp_cache_ttl_seconds=int(
+             value.get(
+                 "gcp_cache_ttl_seconds",
+                 300,
+                )
+            ),
+            gcp_asset_page_size=int(
+             value.get(
+                 "gcp_asset_page_size",
+                 500,
+                )
+            ),
+            gcp_api_max_attempts=int(
+             value.get(
+                   "gcp_api_max_attempts",
+                    5,
                 )
             ),
         )
@@ -717,6 +815,108 @@ class AgentConfig:
                  "TOPO_AZURE_API_MAX_ATTEMPTS"
                 ),
              self.azure_api_max_attempts,
+            )
+        )
+        
+        project_value = os.getenv(
+          "TOPO_GCP_PROJECTS"
+        )
+
+        if project_value is not None:
+         self.gcp_project_ids = (
+             _comma_values(project_value)
+            )
+
+        organization_value = os.getenv(
+         "TOPO_GCP_ORGANIZATIONS"
+        )
+
+        if organization_value is not None:
+         self.gcp_organization_ids = (
+              _comma_values(
+                 organization_value
+                )
+            )
+
+        folder_value = os.getenv(
+           "TOPO_GCP_FOLDERS"
+        )
+
+        if folder_value is not None:
+         self.gcp_folder_ids = (
+             _comma_values(folder_value)
+            )
+
+        location_value = os.getenv(
+         "TOPO_GCP_LOCATIONS"
+        )
+
+        if location_value is not None:
+         self.gcp_locations = [
+             item.lower()
+             for item in _comma_values(
+                 location_value
+                )
+            ]
+
+        self.gcp_discover_projects = (
+         _boolean(
+             os.getenv(
+                 "TOPO_GCP_DISCOVER_PROJECTS"
+                ),
+             self.gcp_discover_projects,
+            )
+        )
+
+        self.gcp_include_hierarchy = (
+         _boolean(
+              os.getenv(
+                 "TOPO_GCP_INCLUDE_HIERARCHY"
+                ),
+              self.gcp_include_hierarchy,
+            )
+        )
+
+        self.gcp_impersonate_service_account = (
+          os.getenv(
+             (
+                 "TOPO_GCP_IMPERSONATE_"
+                 "SERVICE_ACCOUNT"
+                ),
+             self
+             .gcp_impersonate_service_account,
+            )
+        )
+
+        self.gcp_quota_project = os.getenv(
+         "TOPO_GCP_QUOTA_PROJECT",
+         self.gcp_quota_project,
+        )
+
+        self.gcp_cache_ttl_seconds = (
+         _integer(
+             os.getenv(
+                 "TOPO_GCP_CACHE_TTL"
+                ),
+             self.gcp_cache_ttl_seconds,
+            )
+        )
+
+        self.gcp_asset_page_size = (
+         _integer(
+             os.getenv(
+                 "TOPO_GCP_ASSET_PAGE_SIZE"
+                ),
+             self.gcp_asset_page_size,
+            )
+        )
+
+        self.gcp_api_max_attempts = (
+         _integer(
+             os.getenv(
+                 "TOPO_GCP_API_MAX_ATTEMPTS"
+                ),
+             self.gcp_api_max_attempts,
             )
         )
 

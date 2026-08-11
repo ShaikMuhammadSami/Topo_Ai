@@ -1,0 +1,25 @@
+title: Topo GCP Discovery
+description: Read-only GCP topology discovery for Topo AI
+stage: GA
+
+includedPermissions:
+  - cloudasset.assets.searchAllResources
+
+  - resourcemanager.projects.get
+  - resourcemanager.projects.list
+  - resourcemanager.folders.get
+  - resourcemanager.organizations.get
+
+  - compute.networks.list
+  - compute.subnetworks.list
+  - compute.firewalls.list
+  - compute.routes.list
+  - compute.instances.list
+  - compute.instanceGroupManagers.list
+  - compute.addresses.list
+  - compute.forwardingRules.list
+  - compute.backendServices.list
+  - compute.healthChecks.list
+
+  - container.clusters.get
+  - container.clusters.list

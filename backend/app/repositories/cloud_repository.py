@@ -68,6 +68,7 @@ def persist_cloud_inventory(
     account_resource_types = {
         "aws_account",
         "azure_subscription",
+        "gcp_project",
     }
 
     now = utc_now_iso()
@@ -109,6 +110,7 @@ def persist_cloud_inventory(
                 not in {
                     "aws",
                     "azure",
+                    "gcp",
                 }
                 or not account_id
             ):
@@ -729,6 +731,26 @@ def agent_cloud_status(
             for item in plugin_status.get(
                 "subscription_ids",
                 [],
+            )
+        ]
+
+        regions = [
+            str(item)
+            for item in plugin_status.get(
+                "locations",
+                [],
+            )
+        ]
+    
+    elif provider == "gcp":
+        account_ids = [
+            str(item)
+            for item in plugin_status.get(
+                "project_ids",
+                plugin_status.get(
+                    "account_ids",
+                    [],
+                )
             )
         ]
 

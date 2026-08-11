@@ -556,10 +556,11 @@ def cloud_status(
     if normalized_provider not in {
         "aws",
         "azure",
+        "gcp",
     }:
         raise typer.BadParameter(
             "Provider must be "
-            "'aws' or 'azure'."
+            "'aws', 'azure', or 'gcp'."
         )
 
     result = api_call(

@@ -40,6 +40,9 @@ from app.services.agent_cloud_enrichment import (
 from app.services.agent_azure_enrichment import (
     enrich_snapshot_with_azure,
 )
+from app.services.agent_gcp_enrichment import (
+    enrich_snapshot_with_gcp,
+)
 
 def _enum_member(
     enum_type: type,
@@ -784,6 +787,14 @@ def persist_agent_snapshot(
       agent=agent,
       submission=submission,
     )
+    snapshot = (
+     enrich_snapshot_with_runtime_dependencies(
+         session=session,
+         agent=agent,
+         snapshot=snapshot,
+         window_minutes=30,
+        )
+    )
     snapshot = enrich_snapshot_with_aws(
      snapshot=snapshot,
      agent=agent,
@@ -794,14 +805,12 @@ def persist_agent_snapshot(
      agent=agent,
      submission=submission,
     )
-    snapshot = (
-     enrich_snapshot_with_runtime_dependencies(
-         session=session,
-         agent=agent,
-         snapshot=snapshot,
-         window_minutes=30,
-        )
+    snapshot = enrich_snapshot_with_gcp(
+     snapshot=snapshot,
+     agent=agent,
+     submission=submission,
     )
+
 
     existing = session.get(
         SnapshotRecord,

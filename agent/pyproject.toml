@@ -1,6 +1,6 @@
 [project]
 name = "topo-ai-agent"
-version = "0.5.0"
+version = "0.6.0"
 description = "Infrastructure discovery agent for Topo AI"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,6 +15,11 @@ dependencies = [
     "azure-identity>=1.17,<2",
     "azure-mgmt-resourcegraph>=8,<9",
     "azure-mgmt-subscription>=3,<4",
+    "google-auth>=2.30,<3",
+    "google-cloud-resource-manager>=1.14,<2",
+    "google-cloud-asset>=3.26,<5",
+    "google-cloud-compute>=1.20,<2",
+    "google-cloud-container>=2.45,<3",
 ]
 
 [project.optional-dependencies]
