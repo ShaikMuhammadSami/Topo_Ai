@@ -262,3 +262,237 @@ def explain_incident(
             force_regenerate
         ),
     )
+
+@app.command("change-events")
+def incident_change_events(
+    context: typer.Context,
+
+    incident_id: str = typer.Argument(
+        ...,
+    ),
+
+    lookback_minutes: int = typer.Option(
+        120,
+        "--lookback-minutes",
+        min=1,
+        max=10080,
+    ),
+
+    after_minutes: int = typer.Option(
+        10,
+        "--after-minutes",
+        min=0,
+        max=1440,
+    ),
+
+    limit: int = typer.Option(
+        100,
+        "--limit",
+        min=1,
+        max=1000,
+    ),
+) -> None:
+    runtime = get_runtime(
+        context
+    )
+
+    result = api_call(
+        lambda:
+            runtime.client
+            .get_incident_change_events(
+                incident_id=incident_id,
+                lookback_minutes=(
+                    lookback_minutes
+                ),
+                after_minutes=(
+                    after_minutes
+                ),
+                limit=limit,
+            )
+    )
+
+    render_data(
+        result,
+        output_format=(
+            runtime.output_format
+        ),
+        title=(
+            "Incident Change Events"
+        ),
+    )
+
+
+@app.command("suspected-changes")
+def suspected_changes(
+    context: typer.Context,
+
+    incident_id: str = typer.Argument(
+        ...,
+    ),
+
+    lookback_minutes: int = typer.Option(
+        120,
+        "--lookback-minutes",
+        min=1,
+        max=10080,
+    ),
+
+    after_minutes: int = typer.Option(
+        10,
+        "--after-minutes",
+        min=0,
+        max=1440,
+    ),
+
+    minimum_score: float = typer.Option(
+        25,
+        "--minimum-score",
+        min=0,
+        max=100,
+    ),
+
+    limit: int = typer.Option(
+        20,
+        "--limit",
+        min=1,
+        max=100,
+    ),
+) -> None:
+    runtime = get_runtime(
+        context
+    )
+
+    result = api_call(
+        lambda:
+            runtime.client
+            .get_suspected_change_events(
+                incident_id=incident_id,
+                lookback_minutes=(
+                    lookback_minutes
+                ),
+                after_minutes=(
+                    after_minutes
+                ),
+                minimum_score=(
+                    minimum_score
+                ),
+                limit=limit,
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    raw_values = result.get(
+     "candidates",
+     [],
+    )
+
+    values = []
+
+    for candidate in raw_values:
+        event = candidate.get(
+          "event",
+          {},
+        )
+        if not isinstance(
+           event,
+           dict,
+        ):event = {}
+
+        values.append(
+         {
+             "score":
+                 candidate.get(
+                     "score"
+                    ),
+
+             "minutes":
+                 candidate.get(
+                     "minutes_before_incident"
+                    ),
+
+             "source":
+                 event.get(
+                     "source"
+                    ),
+
+             "kind":
+                 event.get(
+                     "kind"
+                    ),
+
+             "risk_score":
+                 event.get(
+                     "risk_score"
+                    ),
+
+             "risk_level":
+                 event.get(
+                     "risk_level"
+                    ),
+
+             "title":
+                 event.get(
+                     "title"
+                    ),
+
+             "event_id":
+                 event.get(
+                     "event_id"
+                ),
+            }
+        )
+
+    render_records(
+        values,
+        title="Suspected Changes",
+        columns=[
+            ColumnSpec(
+                "SCORE",
+                ("score",),
+            ),
+            ColumnSpec(
+                "MINUTES",
+                (
+                    "minutes",
+                ),
+            ),
+            ColumnSpec(
+                "SOURCE",
+                (
+                    "source",
+                ),
+            ),
+            ColumnSpec(
+                "KIND",
+                (
+                    "kind",
+                ),
+            ),
+            ColumnSpec(
+                "RISK",
+                (
+                    "risk_score",
+                ),
+            ),
+            ColumnSpec(
+                "TITLE",
+                (
+                    "title",
+                ),
+                max_width=55,
+            ),
+            ColumnSpec(
+                "EVENT ID",
+                (
+                    "event_id",
+                ),
+                max_width=55,
+            ),
+        ],
+    )

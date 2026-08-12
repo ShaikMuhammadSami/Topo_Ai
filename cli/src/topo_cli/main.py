@@ -17,6 +17,8 @@ from topo_cli.commands import (
     profiles,
     reports,
     snapshots,
+    changes,
+    change_events,
 )
 from topo_cli.config import (
     config_file_path,
@@ -107,7 +109,15 @@ app.add_typer(
     clouds.app,
     name="clouds",
 )
+app.add_typer(
+    changes.app,
+    name="changes",
+)
 
+app.add_typer(
+    change_events.app,
+    name="change-events",
+)
 @app.callback()
 def initialize(
     context: typer.Context,

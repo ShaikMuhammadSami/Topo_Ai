@@ -28,7 +28,9 @@ from app.repositories.snapshot_repository import (
 from app.services.change_normalizer import (
     normalize_snapshot_changes,
 )
-
+from app.services.change_event_bridge import (
+    promote_normalized_changes,
+)
 
 router = APIRouter(
     prefix="/api/v1/changes",
@@ -126,7 +128,13 @@ def ingest_snapshot_changes(
             changes=changes,
         )
     )
-
+    event_summary = (
+     promote_normalized_changes(
+         session,
+         changes=changes,
+        )
+    )
+    
     type_counts = Counter(
         change.change_type.value
         for change in changes

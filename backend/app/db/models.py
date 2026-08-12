@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    Float,
     Boolean,
     Integer,
     String,
@@ -2829,4 +2830,578 @@ class CloudResourceRecord(Base):
             nullable=False,
             default=utc_now_iso,
         )
+    )
+
+class ChangeEventRecord(Base):
+    __tablename__ = "change_events"
+
+    event_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    event_fingerprint: Mapped[str] = (
+        mapped_column(
+            String(128),
+            nullable=False,
+            unique=True,
+            index=True,
+        )
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    kind: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    external_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(1000),
+        nullable=True,
+        index=True,
+    )
+
+    origin_change_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    title: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+    )
+
+    summary: Mapped[
+        str | None
+    ] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    actor: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    occurred_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    received_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+            index=True,
+        )
+    )
+
+    environment: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    provider: Mapped[
+        str | None
+    ] = mapped_column(
+        String(100),
+        nullable=True,
+        index=True,
+    )
+
+    account_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    region: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    cluster_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    namespace: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    repository: Mapped[
+        str | None
+    ] = mapped_column(
+        String(1000),
+        nullable=True,
+        index=True,
+    )
+
+    commit_sha: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    pipeline_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    release_version: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    terraform_workspace: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+        index=True,
+    )
+
+    risk_score: Mapped[int] = (
+        mapped_column(
+            Integer,
+            nullable=False,
+            default=0,
+            index=True,
+        )
+    )
+
+    risk_level: Mapped[str] = (
+        mapped_column(
+            String(30),
+            nullable=False,
+            default="low",
+            index=True,
+        )
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="observed",
+        index=True,
+    )
+
+    observation_count: Mapped[int] = (
+        mapped_column(
+            Integer,
+            nullable=False,
+            default=1,
+        )
+    )
+
+    metadata_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="{}",
+        )
+    )
+
+    raw_payload_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="{}",
+        )
+    )
+
+    agent_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    created_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+    updated_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+
+class ChangeEntityLinkRecord(Base):
+    __tablename__ = "change_entity_links"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "event_id",
+            "entity_id",
+            "link_type",
+            name=(
+                "uq_change_event_entity_link"
+            ),
+        ),
+    )
+
+    link_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    event_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    entity_id: Mapped[str] = (
+        mapped_column(
+            String(1000),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    link_type: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            index=True,
+        )
+    )
+
+    confidence: Mapped[float] = (
+        mapped_column(
+            Float,
+            nullable=False,
+            default=0.0,
+        )
+    )
+
+    reason: Mapped[
+        str | None
+    ] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    snapshot_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    created_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+    updated_at: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+            default=utc_now_iso,
+        )
+    )
+
+class IntegrationRecord(Base):
+    __tablename__ = "integrations"
+
+    integration_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    integration_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        index=True,
+    )
+
+    secret_ref: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    config_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    filters_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="configured",
+        index=True,
+    )
+
+    delivery_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    failure_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    last_event_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    last_success_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    last_error_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    last_error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class IntegrationDeliveryRecord(Base):
+    __tablename__ = "integration_deliveries"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "delivery_key",
+            name="uq_integration_delivery_key",
+        ),
+    )
+
+    delivery_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    integration_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    delivery_key: Mapped[str] = mapped_column(
+        String(128),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    source_delivery_id: Mapped[str | None] = mapped_column(
+        String(1000),
+        nullable=True,
+        index=True,
+    )
+
+    event_type: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="received",
+        index=True,
+    )
+
+    payload_sha256: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        index=True,
+    )
+
+    headers_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    event_ids_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+
+    error: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+
+    received_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+        index=True,
+    )
+
+    processed_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+
+class ChangeDeadLetterRecord(Base):
+    __tablename__ = "change_dead_letters"
+
+    dead_letter_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    integration_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    delivery_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    event_type: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    reason: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default="pending",
+        index=True,
+    )
+
+    last_attempt_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    replayed_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
     )

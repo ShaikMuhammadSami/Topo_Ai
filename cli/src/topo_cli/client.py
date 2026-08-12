@@ -134,12 +134,22 @@ class TopoClient:
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
     ) -> JsonValue:
+        clean_params = (
+                {
+                 key: value
+                 for key, value
+                 in params.items()
+                 if value is not None
+                }
+                if params
+                else None
+        )
         try:
             response = execute_request(
                 lambda: self._client.request(
                   method=method,
                   url=path,
-                  params=params,
+                  params=clean_params,
                   json=json_body,
                 ),
                 max_retries=(
@@ -487,7 +497,7 @@ class TopoClient:
             )
 
         return value
-
+    
     # ------------------------------------------------------------------
     # Copilot
     # ------------------------------------------------------------------
@@ -1325,6 +1335,317 @@ class TopoClient:
             )
 
         return value
+     # ------------------------------------------------------------------
+     # Snapshot-derived changes
+     # ------------------------------------------------------------------
+
+    def list_changes(
+        self,
+        *,
+        cluster_name: str | None,
+        namespace: str | None,
+        category: str | None,
+        importance: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+            "GET",
+            "/api/v1/changes",
+            params={
+                "cluster_name":
+                    cluster_name,
+                "namespace":
+                    namespace,
+                "category":
+                    category,
+                "importance":
+                    importance,
+                "limit":
+                    limit,
+            },
+        )
+
+        return self._collection(
+            value,
+            keys=(
+                "items",
+                "changes",
+                "records",
+            ),
+        )
+
+
+    def get_change(
+        self,
+        change_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/changes/"
+                + self._encode_identifier(
+                    change_id
+                )
+            ),
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Change endpoint returned "
+                "an invalid response."
+            )
+
+        return value
+
+
+    def create_changes_from_diff(
+        self,
+        *,
+        from_snapshot_id: str,
+        to_snapshot_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            "/api/v1/changes/from-diff",
+            params={
+                "from_snapshot_id":
+                    from_snapshot_id,
+                "to_snapshot_id":
+                    to_snapshot_id,
+            },
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Change diff endpoint "
+                "returned an invalid "
+                "response."
+            )
+
+        return value
+ 
+    # ------------------------------------------------------------------
+    # Unified change events
+    # ------------------------------------------------------------------
+
+    def list_change_events(
+        self,
+        *,
+        source: str | None,
+        kind: str | None,
+        environment: str | None,
+        cluster_name: str | None,
+        namespace: str | None,
+        minimum_risk_score: int,
+        limit: int,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+            "GET",
+            "/api/v1/change-events",
+            params={
+                "source":
+                    source,
+                "kind":
+                    kind,
+                "environment":
+                    environment,
+                "cluster_name":
+                    cluster_name,
+                "namespace":
+                    namespace,
+                "minimum_risk_score":
+                    minimum_risk_score,
+                "limit":
+                    limit,
+                "offset":
+                    offset,
+            },
+        )
+
+        return self._collection(
+            value,
+            keys=(
+                "items",
+                "events",
+                "records",
+            ),
+        )
+
+
+    def get_change_event(
+        self,
+        event_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/change-events/"
+                + self._encode_identifier(
+                    event_id
+                )
+            ),
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Change-event endpoint "
+                "returned an invalid "
+                "response."
+            )
+
+        return value
+
+
+    def ingest_change_event(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            "/api/v1/change-events",
+            json_body=payload,
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Change-event ingestion "
+                "returned an invalid "
+                "response."
+            )
+
+        return value
+
+
+    def correlate_change_event(
+        self,
+        *,
+        event_id: str,
+        snapshot_id: str | None,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            (
+                "/api/v1/change-events/"
+                + self._encode_identifier(
+                    event_id
+                )
+                + "/correlate"
+            ),
+            json_body={
+                "snapshot_id":
+                    snapshot_id,
+            },
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Change-event correlation "
+                "returned an invalid "
+                "response."
+            )
+
+        return value
+
+
+    def get_incident_change_events(
+        self,
+        *,
+        incident_id: str,
+        lookback_minutes: int,
+        after_minutes: int,
+        limit: int,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/incidents/"
+                + self._encode_identifier(
+                    incident_id
+                )
+                + "/change-events"
+            ),
+            params={
+                "lookback_minutes":
+                    lookback_minutes,
+                "after_minutes":
+                    after_minutes,
+                "limit":
+                    limit,
+            },
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Incident change-events "
+                "endpoint returned an "
+                "invalid response."
+            )
+
+        return value
+
+
+    def get_suspected_change_events(
+        self,
+        *,
+        incident_id: str,
+        lookback_minutes: int,
+        after_minutes: int,
+        minimum_score: float,
+        limit: int,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/incidents/"
+                + self._encode_identifier(
+                    incident_id
+                )
+                + "/suspected-change-events"
+            ),
+            params={
+                "lookback_minutes":
+                    lookback_minutes,
+                "after_minutes":
+                    after_minutes,
+                "minimum_score":
+                    minimum_score,
+                "limit":
+                    limit,
+            },
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Suspected-change endpoint "
+                "returned an invalid "
+                "response."
+            )
+
+        return value
+
+
 
 
 
