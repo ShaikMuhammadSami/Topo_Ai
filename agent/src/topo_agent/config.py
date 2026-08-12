@@ -280,6 +280,17 @@ class AgentConfig:
     gcp_asset_page_size: int = 500
 
     gcp_api_max_attempts: int = 5
+    change_watch_interval_seconds: int = 30
+
+    change_watch_overlap_seconds: int = 60
+
+    change_watch_kubernetes: bool = True
+
+    change_watch_aws: bool = False
+
+    change_watch_azure: bool = False
+
+    change_watch_gcp: bool = False
 
     @classmethod
     def from_dict(

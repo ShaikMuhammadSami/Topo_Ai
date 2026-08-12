@@ -11,6 +11,7 @@ from topo_cli.commands import (
     blast_radius,
     clouds,
     copilot,
+    change_sources,
     explanations,
     incidents,
     investigations,
@@ -118,6 +119,12 @@ app.add_typer(
     change_events.app,
     name="change-events",
 )
+
+app.add_typer(
+    change_sources.app,
+    name="change-sources",
+)
+
 @app.callback()
 def initialize(
     context: typer.Context,

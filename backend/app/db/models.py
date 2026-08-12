@@ -3156,10 +3156,10 @@ class ChangeEntityLinkRecord(Base):
         )
     )
 
-class IntegrationRecord(Base):
-    __tablename__ = "integrations"
+class ChangeSourceRecord(Base):
+    __tablename__ = "change_sources"
 
-    integration_id: Mapped[str] = mapped_column(
+    source_id: Mapped[str] = mapped_column(
         String(255),
         primary_key=True,
     )
@@ -3170,7 +3170,7 @@ class IntegrationRecord(Base):
         index=True,
     )
 
-    integration_type: Mapped[str] = mapped_column(
+    source_type: Mapped[str] = mapped_column(
         String(100),
         nullable=False,
         index=True,
@@ -3252,22 +3252,15 @@ class IntegrationRecord(Base):
     )
 
 
-class IntegrationDeliveryRecord(Base):
-    __tablename__ = "integration_deliveries"
-
-    __table_args__ = (
-        UniqueConstraint(
-            "delivery_key",
-            name="uq_integration_delivery_key",
-        ),
-    )
+class ChangeSourceDeliveryRecord(Base):
+    __tablename__ = "change_source_deliveries"
 
     delivery_id: Mapped[str] = mapped_column(
         String(255),
         primary_key=True,
     )
 
-    integration_id: Mapped[str] = mapped_column(
+    source_id: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
         index=True,
@@ -3341,15 +3334,15 @@ class IntegrationDeliveryRecord(Base):
     )
 
 
-class ChangeDeadLetterRecord(Base):
-    __tablename__ = "change_dead_letters"
+class ChangeSourceDeadLetterRecord(Base):
+    __tablename__ = "change_source_dead_letters"
 
     dead_letter_id: Mapped[str] = mapped_column(
         String(255),
         primary_key=True,
     )
 
-    integration_id: Mapped[str] = mapped_column(
+    source_id: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
         index=True,

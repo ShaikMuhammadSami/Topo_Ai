@@ -10,7 +10,7 @@ from pydantic import (
 )
 
 
-class IntegrationType(str, Enum):
+class ChangeSourceType(str, Enum):
     GITHUB = "github"
     GITLAB = "gitlab"
     JENKINS = "jenkins"
@@ -18,7 +18,7 @@ class IntegrationType(str, Enum):
     TERRAFORM_CLOUD = "terraform_cloud"
 
 
-class IntegrationCreate(BaseModel):
+class ChangeSourceCreate(BaseModel):
     model_config = ConfigDict(
         extra="forbid"
     )
@@ -28,7 +28,7 @@ class IntegrationCreate(BaseModel):
         max_length=255,
     )
 
-    integration_type: IntegrationType
+    source_type: ChangeSourceType
 
     secret_ref: str
 
@@ -43,27 +43,33 @@ class IntegrationCreate(BaseModel):
     )
 
 
-class IntegrationUpdate(BaseModel):
+class ChangeSourceUpdate(BaseModel):
     model_config = ConfigDict(
         extra="forbid"
     )
 
     enabled: bool | None = None
+
     secret_ref: str | None = None
 
-    config: dict[str, Any] | None = None
-    filters: dict[str, Any] | None = None
+    config: (
+        dict[str, Any] | None
+    ) = None
+
+    filters: (
+        dict[str, Any] | None
+    ) = None
 
 
-class IntegrationView(BaseModel):
+class ChangeSourceView(BaseModel):
     model_config = ConfigDict(
         extra="forbid"
     )
 
-    integration_id: str
+    source_id: str
     name: str
 
-    integration_type: IntegrationType
+    source_type: ChangeSourceType
 
     enabled: bool
 
@@ -72,6 +78,7 @@ class IntegrationView(BaseModel):
     status: str
 
     config: dict[str, Any]
+
     filters: dict[str, Any]
 
     delivery_count: int
@@ -82,32 +89,63 @@ class IntegrationView(BaseModel):
     last_error_at: str | None
     last_error: str | None
 
-    webhook_path: str
+    receiver_path: str
 
     created_at: str
     updated_at: str
 
 
-class IntegrationDoctorResponse(BaseModel):
+class ChangeSourceDoctorResponse(
+    BaseModel
+):
     model_config = ConfigDict(
         extra="forbid"
     )
 
-    integration_id: str
+    source_id: str
 
     ready: bool
 
     checks: dict[str, Any]
 
 
-class WebhookDeliveryReceipt(BaseModel):
+class ChangeSourceDeliveryView(
+    BaseModel
+):
     model_config = ConfigDict(
         extra="forbid"
     )
 
     delivery_id: str
+    source_id: str
 
-    integration_id: str
+    source_delivery_id: str | None
+
+    event_type: str | None
+
+    status: str
+
+    payload_sha256: str
+
+    event_ids: list[str] = Field(
+        default_factory=list
+    )
+
+    error: str | None
+
+    received_at: str
+    processed_at: str | None
+
+
+class ChangeSourceDeliveryReceipt(
+    BaseModel
+):
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    delivery_id: str
+    source_id: str
 
     event_type: str | None
 
@@ -120,14 +158,16 @@ class WebhookDeliveryReceipt(BaseModel):
     )
 
 
-class DeadLetterView(BaseModel):
+class ChangeSourceDeadLetterView(
+    BaseModel
+):
     model_config = ConfigDict(
         extra="forbid"
     )
 
     dead_letter_id: str
 
-    integration_id: str
+    source_id: str
     delivery_id: str
 
     event_type: str | None
@@ -144,11 +184,19 @@ class DeadLetterView(BaseModel):
     created_at: str
 
 
-class ReplayResponse(BaseModel):
+class ChangeSourceReplayResponse(
+    BaseModel
+):
     model_config = ConfigDict(
         extra="forbid"
     )
 
-    attempted: int
-    succeeded: int
-    failed: int
+    dead_letter_id: str
+
+    succeeded: bool
+
+    event_ids: list[str] = Field(
+        default_factory=list
+    )
+
+    error: str | None = None

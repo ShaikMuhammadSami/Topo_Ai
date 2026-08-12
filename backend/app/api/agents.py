@@ -67,6 +67,13 @@ from app.models.clouds import (
 from app.repositories.cloud_repository import (
     agent_cloud_status,
 )
+from app.models.change_events import (
+    AgentChangeEventBatch,
+    AgentChangeEventBatchReceipt,
+)
+from app.repositories.change_event_repository import (
+    ingest_change_event,
+)
 admin_router = APIRouter(
     prefix="/api/v1/agents",
     tags=["agents"],
@@ -542,4 +549,101 @@ def get_runtime_dependencies(
         window_minutes=window_minutes,
         limit=limit,
         offset=offset,
+    )
+
+@agent_router.post(
+    "/change-events",
+    response_model=(
+        AgentChangeEventBatchReceipt
+    ),
+    status_code=(
+        status.HTTP_201_CREATED
+    ),
+)
+def submit_change_events(
+    request: AgentChangeEventBatch,
+
+    agent: TopoAgentRecord = Depends(
+        require_agent
+    ),
+
+    session: Session = Depends(
+        get_session
+    ),
+) -> AgentChangeEventBatchReceipt:
+    event_ids: list[str] = []
+
+    try:
+        for event in request.events:
+            # Kubernetes-originated events
+            # must not claim to belong to
+            # another cluster.
+            if (
+                event.source.value
+                == "kubernetes"
+            ):
+                if (
+                    event.cluster_name
+                    and event.cluster_name
+                    != agent.cluster_name
+                ):
+                    raise ValueError(
+                        "Kubernetes change "
+                        "event cluster does "
+                        "not match the "
+                        "enrolled agent."
+                    )
+
+                if not event.cluster_name:
+                    event = event.model_copy(
+                        update={
+                            "cluster_name":
+                                agent.cluster_name
+                        }
+                    )
+
+            receipt = (
+                ingest_change_event(
+                    session,
+                    request=event,
+
+                    # This is the important
+                    # project-specific part.
+                    agent_id=(
+                        agent.agent_id
+                    ),
+
+                    auto_correlate=True,
+
+                    # Commit the complete
+                    # batch atomically.
+                    commit=False,
+                )
+            )
+
+            event_ids.append(
+                receipt.event_id
+            )
+
+        session.commit()
+
+    except ValueError as exc:
+        session.rollback()
+
+        raise HTTPException(
+            status_code=400,
+            detail=str(exc),
+        ) from exc
+
+    except Exception:
+        session.rollback()
+        raise
+
+    return (
+        AgentChangeEventBatchReceipt(
+            received_count=len(
+                request.events
+            ),
+            event_ids=event_ids,
+        )
     )

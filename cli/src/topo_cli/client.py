@@ -1644,7 +1644,191 @@ class TopoClient:
             )
 
         return value
+    # ---------------------------------------------------------------
+    # Native change sources
+    # ---------------------------------------------------------------
 
+    def create_change_source(
+        self,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            "/api/v1/change-sources",
+            json_body=payload,
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Invalid change-source "
+                "response."
+            )
+
+        return value
+
+
+    def list_change_sources(
+        self,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+            "GET",
+            "/api/v1/change-sources",
+        )
+
+        return self._collection(
+            value,
+            keys=(
+                "items",
+                "sources",
+                "records",
+            ),
+        )
+
+
+    def get_change_source(
+        self,
+        source_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/change-sources/"
+                + self._encode_identifier(
+                    source_id
+                )
+            ),
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Invalid change-source "
+                "response."
+            )
+
+        return value
+
+
+    def doctor_change_source(
+        self,
+        source_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/change-sources/"
+                + self._encode_identifier(
+                    source_id
+                )
+                + "/doctor"
+            ),
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Invalid change-source "
+                "doctor response."
+            )
+
+        return value
+
+
+    def list_change_source_deliveries(
+        self,
+        *,
+        source_id: str | None,
+        status: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/"
+                "change-sources/deliveries"
+            ),
+            params={
+                "source_id": source_id,
+                "status": status,
+                "limit": limit,
+            },
+        )
+
+        return self._collection(
+            value,
+            keys=(
+                "items",
+                "deliveries",
+                "records",
+            ),
+        )
+
+
+    def list_change_source_dead_letters(
+        self,
+        *,
+        source_id: str | None,
+        status: str | None,
+        limit: int,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/"
+                "change-sources/"
+                "dead-letters"
+            ),
+            params={
+                "source_id": source_id,
+                "status": status,
+                "limit": limit,
+            },
+        )
+
+        return self._collection(
+            value,
+            keys=(
+                "items",
+                "dead_letters",
+                "records",
+            ),
+        )
+
+
+    def replay_change_source_dead_letter(
+        self,
+        dead_letter_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            (
+                "/api/v1/"
+                "change-sources/"
+                "dead-letters/"
+                + self._encode_identifier(
+                    dead_letter_id
+                )
+                + "/replay"
+            ),
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Invalid dead-letter "
+                "replay response."
+            )
+
+        return value
 
 
 

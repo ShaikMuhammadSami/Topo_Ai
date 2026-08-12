@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: topo-ai-agent
-Version: 0.6.0
+Version: 0.7.0
 Summary: Infrastructure discovery agent for Topo AI
 Requires-Python: >=3.11
 Description-Content-Type: text/markdown
@@ -19,6 +19,7 @@ Requires-Dist: google-cloud-resource-manager<2,>=1.14
 Requires-Dist: google-cloud-asset<5,>=3.26
 Requires-Dist: google-cloud-compute<2,>=1.20
 Requires-Dist: google-cloud-container<3,>=2.45
+Requires-Dist: google-cloud-logging<4,>=3
 Provides-Extra: dev
 Requires-Dist: pytest>=8; extra == "dev"
 Requires-Dist: build>=1; extra == "dev"

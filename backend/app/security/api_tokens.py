@@ -221,6 +221,10 @@ class ApiTokenAuthMiddleware(
        "/api/v1/agent/",
     )
 
+    CHANGE_SOURCE_WEBHOOK_PREFIXES = (
+     "/api/v1/change-source-webhooks/",
+    )
+
     async def dispatch(
         self,
         request: Request,
@@ -245,6 +249,11 @@ class ApiTokenAuthMiddleware(
                 for prefix
                 in self.AGENT_PREFIXES
             )            
+            or any(
+               path.startswith(prefix)
+               for prefix
+               in self.CHANGE_SOURCE_WEBHOOK_PREFIXES
+            )
             or not path.startswith(
                 "/api/"
             )

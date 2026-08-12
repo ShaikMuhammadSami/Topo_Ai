@@ -81,6 +81,12 @@ from app.api.change_events import (
     incident_router as incident_change_events_router,
     router as change_events_router,
 )
+from app.api.change_sources import (
+    router as change_sources_router,
+)
+from app.api.change_source_webhooks import (
+    router as change_source_webhooks_router,
+)
 from dotenv import load_dotenv
 
 
@@ -182,6 +188,14 @@ app.include_router(
 
 app.include_router(
     incident_change_events_router
+)
+
+app.include_router(
+    change_sources_router
+)
+
+app.include_router(
+    change_source_webhooks_router
 )
 # @app.get("/health")
 # def health_check() -> dict:

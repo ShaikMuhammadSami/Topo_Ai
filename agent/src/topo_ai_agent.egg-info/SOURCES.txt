@@ -5,6 +5,12 @@ src/topo_agent/__main__.py
 src/topo_agent/aws_cache.py
 src/topo_agent/azure_cache.py
 src/topo_agent/buffer.py
+src/topo_agent/change_watch.py
+src/topo_agent/change_watch_aws.py
+src/topo_agent/change_watch_azure.py
+src/topo_agent/change_watch_gcp.py
+src/topo_agent/change_watch_kubernetes.py
+src/topo_agent/change_watch_state.py
 src/topo_agent/client.py
 src/topo_agent/collector.py
 src/topo_agent/config.py

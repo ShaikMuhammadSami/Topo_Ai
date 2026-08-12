@@ -332,3 +332,29 @@ class IncidentChangeAnalysisResponse(
     candidates: list[
         IncidentChangeCandidate
     ]
+
+class AgentChangeEventBatch(BaseModel):
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    events: list[
+        ChangeEventCreate
+    ] = Field(
+        min_length=1,
+        max_length=500,
+    )
+
+
+class AgentChangeEventBatchReceipt(
+    BaseModel
+):
+    model_config = ConfigDict(
+        extra="forbid"
+    )
+
+    received_count: int
+
+    event_ids: list[str] = Field(
+        default_factory=list
+    )

@@ -33,6 +33,21 @@ from topo_agent.plugin_registry import (
 from topo_agent.runner import (
     AgentRunner,
 )
+from topo_agent.change_watch import (
+    ChangeWatchRunner,
+)
+from topo_agent.change_watch_aws import (
+    AwsCloudTrailChangePoller,
+)
+from topo_agent.change_watch_azure import (
+    AzureActivityChangePoller,
+)
+from topo_agent.change_watch_gcp import (
+    GcpAuditChangePoller,
+)
+from topo_agent.change_watch_kubernetes import (
+    KubernetesChangePoller,
+)
 
 
 app = typer.Typer(
@@ -688,3 +703,119 @@ def run(
 
     finally:
         runner.close()
+
+@app.command("watch-changes")
+def watch_changes(
+    once: bool = typer.Option(
+        False,
+        "--once",
+    ),
+) -> None:
+    config = load_config()
+
+    token = load_agent_token()
+
+    if not token:
+        raise typer.BadParameter(
+            "Topo Agent is not enrolled."
+        )
+
+    client = AgentApiClient(
+        backend_url=(
+            config.backend_url
+        ),
+        token=token,
+        timeout_seconds=(
+            config.timeout_seconds
+        ),
+        verify_tls=(
+            config.verify_tls
+        ),
+    )
+
+    runner = ChangeWatchRunner(
+        client=client,
+        interval_seconds=(
+            config
+            .change_watch_interval_seconds
+        ),
+    )
+
+    if (
+        config
+        .change_watch_kubernetes
+    ):
+        runner.register(
+            "kubernetes",
+            KubernetesChangePoller(
+                cluster_name=(
+                    config.cluster_name
+                ),
+                overlap_seconds=(
+                    config
+                    .change_watch_overlap_seconds
+                ),
+            ),
+        )
+
+    if config.change_watch_aws:
+        runner.register(
+            "aws",
+            AwsCloudTrailChangePoller(
+                regions=(
+                    config.aws_regions
+                ),
+                profile=(
+                    config.aws_profile
+                ),
+                overlap_seconds=(
+                    config
+                    .change_watch_overlap_seconds
+                ),
+            ),
+        )
+
+    if config.change_watch_azure:
+        runner.register(
+            "azure",
+            AzureActivityChangePoller(
+                subscription_ids=(
+                    config
+                    .azure_subscription_ids
+                ),
+                overlap_seconds=(
+                    config
+                    .change_watch_overlap_seconds
+                ),
+            ),
+        )
+
+    if config.change_watch_gcp:
+        runner.register(
+            "gcp",
+            GcpAuditChangePoller(
+                project_ids=(
+                    config.gcp_project_ids
+                ),
+                overlap_seconds=(
+                    config
+                    .change_watch_overlap_seconds
+                ),
+            ),
+        )
+
+    try:
+        if once:
+            result = (
+                runner.run_once()
+            )
+
+            console.print_json(
+                data=result
+            )
+
+        else:
+            runner.run_forever()
+
+    finally:
+        client.close()

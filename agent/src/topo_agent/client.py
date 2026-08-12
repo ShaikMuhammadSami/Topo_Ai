@@ -233,3 +233,26 @@ class AgentApiClient:
             ),
          json_body=request,
         )
+
+def submit_change_events(
+    self,
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    value = self._request(
+        "POST",
+        "/api/v1/agent/change-events",
+        json_body={
+            "events": events,
+        },
+    )
+
+    if not isinstance(
+        value,
+        dict,
+    ):
+        raise RuntimeError(
+            "Invalid change-event "
+            "batch response."
+        )
+
+    return value
