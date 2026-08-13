@@ -87,6 +87,10 @@ from app.api.change_sources import (
 from app.api.change_source_webhooks import (
     router as change_source_webhooks_router,
 )
+from app.api.causal_rca import (
+    incident_router as causal_incident_router,
+    router as causal_analysis_router,
+)
 from dotenv import load_dotenv
 
 
@@ -196,6 +200,14 @@ app.include_router(
 
 app.include_router(
     change_source_webhooks_router
+)
+
+app.include_router(
+    causal_incident_router
+)
+
+app.include_router(
+    causal_analysis_router
 )
 # @app.get("/health")
 # def health_check() -> dict:

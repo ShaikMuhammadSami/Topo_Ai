@@ -1829,7 +1829,113 @@ class TopoClient:
             )
 
         return value
+    # ---------------------------------------------------------------
+    # Causal RCA
+    # ---------------------------------------------------------------
 
+    def analyze_causal_rca(
+        self,
+        *,
+        incident_id: str,
+        lookback_minutes: int,
+        after_minutes: int,
+        minimum_change_score: float,
+        max_topology_hops: int,
+        max_hypotheses: int,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            (
+                "/api/v1/incidents/"
+                + self._encode_identifier(
+                    incident_id
+                )
+                + "/causal-rca"
+            ),
+            json_body={
+                "lookback_minutes":
+                    lookback_minutes,
+
+                "after_minutes":
+                    after_minutes,
+
+                "minimum_change_score":
+                    minimum_change_score,
+
+                "max_topology_hops":
+                    max_topology_hops,
+
+                "max_hypotheses":
+                    max_hypotheses,
+            },
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Invalid causal RCA "
+                "response."
+            )
+
+        return value
+
+
+    def latest_causal_rca(
+        self,
+        *,
+        incident_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/incidents/"
+                + self._encode_identifier(
+                    incident_id
+                )
+                + "/causal-rca/latest"
+            ),
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Invalid causal RCA "
+                "response."
+            )
+
+        return value
+
+
+    def get_causal_analysis(
+        self,
+        *,
+        analysis_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "GET",
+            (
+                "/api/v1/"
+                "causal-analyses/"
+                + self._encode_identifier(
+                    analysis_id
+                )
+            ),
+        )
+
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise ApiFailure(
+                "Invalid causal "
+                "analysis response."
+            )
+
+        return value
 
 
 

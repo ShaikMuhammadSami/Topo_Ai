@@ -18,6 +18,7 @@ src/topo_cli/runtime.py
 src/topo_cli/commands/_init__.py
 src/topo_cli/commands/agents.py
 src/topo_cli/commands/blast_radius.py
+src/topo_cli/commands/causal_rca.py
 src/topo_cli/commands/change_events.py
 src/topo_cli/commands/change_sources.py
 src/topo_cli/commands/changes.py

@@ -3398,3 +3398,73 @@ class ChangeSourceDeadLetterRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+class CausalAnalysisRecord(Base):
+    __tablename__ = "causal_analyses"
+
+    analysis_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+
+    generated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    algorithm_version: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+
+    candidate_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    hypothesis_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    top_hypothesis_score: Mapped[
+        float | None
+    ] = mapped_column(
+        Float,
+        nullable=True,
+        index=True,
+    )
+
+    top_root_event_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )

@@ -49,7 +49,9 @@ from topo_cli.runtime import (
     api_call,
     get_runtime,
 )
-
+from topo_cli.commands import (
+    causal_rca,
+)
 
 app = typer.Typer(
     name="topo",
@@ -123,6 +125,11 @@ app.add_typer(
 app.add_typer(
     change_sources.app,
     name="change-sources",
+)
+
+app.add_typer(
+    causal_rca.app,
+    name="causal-rca",
 )
 
 @app.callback()
