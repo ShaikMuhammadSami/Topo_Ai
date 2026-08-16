@@ -342,6 +342,31 @@ class TopoClient:
 
         return value
 
+    def incident_response_plan(
+        self,
+        incident_id: str,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/response-plan"
+        )
+
+        value = self._request(
+            "GET",
+            path,
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Response-plan endpoint "
+                "returned an invalid response."
+            )
+
+        return value
+
     # ------------------------------------------------------------------
     # Explanations
     # ------------------------------------------------------------------

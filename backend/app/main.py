@@ -94,6 +94,9 @@ from app.api.causal_rca import (
 from app.api.incident_context import (
     router as incident_context_router,
 )
+from app.api.response_plan import (
+    router as response_plan_router,
+)
 from dotenv import load_dotenv
 
 
@@ -215,6 +218,9 @@ app.include_router(
 
 app.include_router(
     incident_context_router
+)
+app.include_router(
+    response_plan_router
 )
 # @app.get("/health")
 # def health_check() -> dict:

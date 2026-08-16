@@ -1,0 +1,21 @@
+{
+  "ref": "refs/heads/main",
+  "before": "111111",
+  "after": "abc123",
+  "repository": {
+    "full_name": "company/payment-service"
+  },
+  "sender": {
+    "login": "topo-test"
+  },
+  "head_commit": {
+    "id": "abc123",
+    "message": "Deploy payment service v2",
+    "timestamp": "2026-08-12T18:00:00Z"
+  },
+  "commits": [
+    {
+      "id": "abc123"
+    }
+  ]
+}
