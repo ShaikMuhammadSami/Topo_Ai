@@ -6,11 +6,11 @@ import { useRouter,
  } from "next/navigation"
 import {
   useEffect,
-  useMemo,
   useState,
 } from "react"
 import {
   AlertCircle,
+  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   ChevronRight,
@@ -270,24 +270,18 @@ function openAnalysisFromIncident(
     }
   }
 
-useEffect(() => {
-  if (requestedIncidentId) {
-    setSelectedIncidentId(
-      requestedIncidentId,
-    )
-  }
-
-  void loadWorkspace()
-}, [
-  requestedSignalId,
-  requestedAnalysisId,
-  requestedIncidentId,
-])
   useEffect(() => {
+    if (requestedIncidentId) {
+      setSelectedIncidentId(
+        requestedIncidentId,
+      )
+    }
+
     void loadWorkspace()
   }, [
     requestedSignalId,
     requestedAnalysisId,
+    requestedIncidentId,
   ])
 
 
@@ -397,21 +391,23 @@ useEffect(() => {
 }, [selectedIncidentId]);
 
   return (
-    <div className="mx-auto w-full max-w-[1750px] space-y-6 p-5">
+    <div className="mx-auto w-full max-w-[1600px] space-y-5 p-5">
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="mb-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
-            evidence-based incident analysis
-          </p>
+          <Link
+            href="/app"
+            className="mb-3 inline-flex items-center gap-2 font-mono text-[10px] text-muted-foreground hover:text-foreground"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Incident home
+          </Link>
 
-          <h2 className="font-heading text-4xl font-black tracking-tight">
-            Incident workspace
+          <h2 className="font-heading text-2xl font-black tracking-tight sm:text-3xl">
+            Advanced incident analysis
           </h2>
 
-          <p className="mt-2 max-w-3xl leading-relaxed text-muted-foreground">
-            Rank infrastructure changes that
-            may explain a failure using temporal,
-            topological and categorical evidence.
+          <p className="mt-2 max-w-3xl text-sm leading-relaxed text-muted-foreground">
+            Tune the deterministic causal-analysis window, review stored analyses and access the original expert investigation tools.
           </p>
         </div>
 
@@ -422,8 +418,8 @@ useEffect(() => {
       </header>
 
 
-      <section className="rounded-md border border-border bg-card p-5">
-        <div className="grid gap-4 xl:grid-cols-[minmax(300px,1fr)_180px_150px_150px_150px_auto]">
+      <section id="custom-analysis" className="rounded-md border border-border bg-card p-5">
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[minmax(300px,1fr)_180px_150px_150px_150px_auto]">
           <label>
             <FieldLabel>
               Failure signal
@@ -522,7 +518,7 @@ useEffect(() => {
 
 
       {analyses.length > 0 && (
-        <section className="rounded-md border border-border bg-card p-5">
+        <section id="analysis-history" className="rounded-md border border-border bg-card p-5">
           <label>
             <FieldLabel>
               Previous analysis

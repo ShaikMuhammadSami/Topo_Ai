@@ -1,5 +1,6 @@
 import type {
   BriefingAffectedEntity,
+  BriefingCausalPathStep,
   BriefingRemediationAction,
   IncidentBriefing,
 } from "@/lib/topo-types"
@@ -23,6 +24,42 @@ export const TECHNICAL_SECTION_ORDER = [
   "outcome",
   "evidence",
 ] as const
+
+export function compactDependencyPath(
+  steps: BriefingCausalPathStep[],
+  limit = 5,
+): BriefingCausalPathStep[] {
+  if (steps.length <= limit) {
+    return steps
+  }
+
+  const leadingCount = Math.max(
+    1,
+    Math.ceil(limit / 2),
+  )
+  const trailingCount = Math.max(
+    1,
+    limit - leadingCount,
+  )
+
+  return [
+    ...steps.slice(0, leadingCount),
+    ...steps.slice(-trailingCount),
+  ]
+}
+
+export function partitionRemediationActions(
+  actions: BriefingRemediationAction[],
+  primaryLimit = 3,
+): {
+  primary: BriefingRemediationAction[]
+  additional: BriefingRemediationAction[]
+} {
+  return {
+    primary: actions.slice(0, primaryLimit),
+    additional: actions.slice(primaryLimit),
+  }
+}
 
 export function incidentWorkspaceMode(
   value: string | null | undefined,

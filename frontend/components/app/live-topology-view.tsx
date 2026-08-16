@@ -93,15 +93,15 @@ if (!selectedSnapshot) {
         const previous = results.find(
           (candidate) =>
             candidate.snapshot_id !==
-              newest.snapshot_id &&
+              selectedSnapshot.snapshot_id &&
             candidate.cluster_name ===
-              newest.cluster_name &&
+              selectedSnapshot.cluster_name &&
             candidate.namespace ===
-              newest.namespace,
+              selectedSnapshot.namespace,
         )
 
         setToSnapshotId(
-          newest.snapshot_id,
+          selectedSnapshot.snapshot_id,
         )
 
         setFromSnapshotId(

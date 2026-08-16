@@ -116,33 +116,7 @@ export function IncidentBriefingWorkspace({
   }
 
   return (
-    <main className="mx-auto w-full max-w-[1540px] px-4 py-5 sm:px-5 lg:py-7">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <Link
-          href="/app"
-          className="inline-flex items-center gap-2 font-mono text-[11px] text-muted-foreground transition-colors hover:text-foreground"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Incident inbox
-        </Link>
-
-        <div
-          className="inline-flex rounded-md border border-border bg-card p-1"
-          aria-label="Incident workspace view"
-        >
-          <ModeButton
-            label="Technical"
-            active={mode === "technical"}
-            onClick={() => selectMode("technical")}
-          />
-          <ModeButton
-            label="Business"
-            active={mode === "business"}
-            onClick={() => selectMode("business")}
-          />
-        </div>
-      </div>
-
+    <main className="mx-auto w-full max-w-[1480px] px-3 py-3 sm:px-5 sm:py-4">
       {error && (
         <div className="mb-4 flex items-start gap-3 rounded-md border border-warn/30 bg-warn/5 p-3 text-warn">
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -152,7 +126,11 @@ export function IncidentBriefingWorkspace({
         </div>
       )}
 
-      <IncidentHeader briefing={briefing} />
+      <IncidentHeader
+        briefing={briefing}
+        mode={mode}
+        onSelectMode={selectMode}
+      />
       {mode === "technical" ? (
         <TechnicalWorkspace briefing={briefing} />
       ) : (
@@ -161,7 +139,6 @@ export function IncidentBriefingWorkspace({
     </main>
   )
 }
-
 function ModeButton({
   label,
   active,
@@ -177,7 +154,7 @@ function ModeButton({
       aria-pressed={active}
       onClick={onClick}
       className={cn(
-        "rounded-sm px-4 py-1.5 text-xs font-semibold transition-colors",
+        "flex-1 rounded-sm px-4 py-1.5 text-xs font-semibold transition-colors sm:flex-none",
         active
           ? "bg-primary text-primary-foreground"
           : "text-muted-foreground hover:bg-secondary hover:text-foreground",
@@ -190,8 +167,14 @@ function ModeButton({
 
 function IncidentHeader({
   briefing,
+  mode,
+  onSelectMode,
 }: {
   briefing: IncidentBriefing
+  mode: IncidentWorkspaceMode
+  onSelectMode: (
+    mode: IncidentWorkspaceMode,
+  ) => void
 }) {
   const elapsed = formatBriefingDuration(
     briefing.outcome
@@ -208,9 +191,20 @@ function IncidentHeader({
       ?.business_capabilities[0] ??
     null
 
+  const owner =
+    briefing.operational_context?.ownership
+
   return (
-    <header className="border-y border-border bg-card/60 px-4 py-5 sm:px-6">
-      <div className="flex flex-wrap items-start justify-between gap-5">
+    <header className="rounded-md border border-border bg-background/95 px-3 py-3 shadow-lg shadow-black/10 backdrop-blur sm:px-4 lg:sticky lg:top-16 lg:z-20">
+      <div className="grid grid-cols-[32px_minmax(0,1fr)] items-start gap-2 sm:grid-cols-[32px_minmax(0,1fr)_auto] sm:items-center sm:gap-3 xl:grid-cols-[32px_minmax(0,1fr)_auto_auto]">
+        <Link
+          href="/app"
+          aria-label="Back to incidents"
+          className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-sm border border-border text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" />
+        </Link>
+
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <StatusBadge
@@ -221,52 +215,58 @@ function IncidentHeader({
               value={briefing.incident.severity}
               tone="danger"
             />
-            {impact && (
-              <StatusBadge
-                value={`${impact.business_impact_level} business impact`}
-                tone="warn"
-              />
-            )}
+            <span className="inline-flex items-center gap-1 font-mono text-[10px] text-muted-foreground">
+              <Clock3 className="h-3 w-3" />
+              {elapsed
+                ? isActiveIncident(briefing)
+                  ? `${elapsed} active`
+                  : `${elapsed} duration`
+                : "duration unavailable"}
+            </span>
           </div>
 
-          <h1 className="mt-3 max-w-5xl font-heading text-2xl font-black tracking-tight sm:text-3xl">
+          <h1 className="mt-1.5 truncate font-heading text-lg font-black tracking-tight sm:text-xl">
             {briefing.incident.title}
           </h1>
 
-          <div className="mt-3 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[11px] text-muted-foreground">
+          <div className="mt-1 hidden flex-wrap gap-x-4 gap-y-1 font-mono text-[9px] text-muted-foreground sm:flex sm:text-[10px]">
             <span>
               {briefing.incident.environment ?? briefing.incident.cluster_name}
             </span>
             {briefing.incident.namespace && (
               <span>namespace {briefing.incident.namespace}</span>
             )}
-            <span>
-              first observed {formatDateTime(briefing.incident.first_observed_at)}
-            </span>
-            {elapsed && (
-              <span className="inline-flex items-center gap-1.5">
-                <Clock3 className="h-3.5 w-3.5" />
-                {isActiveIncident(briefing)
-                  ? `active for ${elapsed}`
-                  : `duration ${elapsed}`}
-              </span>
+            {owner?.resolved && owner.owner_team && (
+              <span>{owner.owner_team}</span>
             )}
+            {capability && <span>{capability}</span>}
           </div>
         </div>
 
-        {capability && (
-          <div className="min-w-[220px] border-l-2 border-primary pl-4">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              Primary capability
+        <div
+          className="col-span-2 row-start-2 inline-flex w-full rounded-md border border-border bg-card p-0.5 sm:col-span-1 sm:col-start-3 sm:row-start-1 sm:w-auto"
+          aria-label="Incident workspace view"
+        >
+          <ModeButton
+            label="Technical"
+            active={mode === "technical"}
+            onClick={() => onSelectMode("technical")}
+          />
+          <ModeButton
+            label="Business"
+            active={mode === "business"}
+            onClick={() => onSelectMode("business")}
+          />
+        </div>
+
+        {impact?.highest_criticality && (
+          <div className="hidden border-l border-border pl-3 xl:block">
+            <p className="font-mono text-[9px] uppercase text-muted-foreground">
+              Criticality
             </p>
-            <p className="mt-1 font-heading text-lg font-bold">
-              {capability}
+            <p className="mt-0.5 font-mono text-[10px] uppercase text-warn">
+              {humanizeToken(impact.highest_criticality)}
             </p>
-            {impact?.highest_criticality && (
-              <p className="mt-1 font-mono text-[10px] uppercase text-warn">
-                {humanizeToken(impact.highest_criticality)}
-              </p>
-            )}
           </div>
         )}
       </div>
@@ -327,17 +327,4 @@ function BriefingError({
       </section>
     </main>
   )
-}
-
-function formatDateTime(value: string): string {
-  const date = new Date(value)
-
-  if (Number.isNaN(date.getTime())) {
-    return value
-  }
-
-  return date.toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  })
 }

@@ -18,19 +18,33 @@ import { cn } from "@/lib/utils"
 import { TopoLogo } from "@/components/topo-logo"
 import { incident } from "@/lib/topo-data"
 
-const nav = [
-  { href: "/app", label: "Incident workspace", icon: CircleAlert },
-  { href: "/app/topology", label: "Topology", icon: Network },
-   { href: "/app/live-cluster", label: "Live cluster", icon: Server },
-   {href: "/app/code-to-runtime",label: "Code to runtime",icon: GitBranch,},
-  { href: "/app/change-impact", label: "Change impact", icon: GitPullRequestArrow },
-  { href: "/app/signals", label: "Signals & changes", icon: Activity },
-  { href: "/app/identities", label: "Identities", icon: Fingerprint },
-  { href: "/app/cli", label: "CLI", icon: TerminalSquare },
-  { href: "/app/ask", label: "Ask topo", icon: Sparkles },
-  { href: "/app/integrations", label: "Integrations", icon: Workflow },
-  { href: "/app/network-dependencies", label: "Network dependencies", icon: Network },
- 
+const navGroups = [
+  {
+    label: "Operations",
+    items: [
+      { href: "/app", label: "Incidents", icon: CircleAlert },
+      { href: "/app/topology", label: "Topology", icon: Network },
+      { href: "/app/live-cluster", label: "Live infrastructure", icon: Server },
+    ],
+  },
+  {
+    label: "Intelligence",
+    items: [
+      { href: "/app/signals", label: "Changes", icon: Activity },
+      { href: "/app/change-impact", label: "Change impact", icon: GitPullRequestArrow },
+      { href: "/app/network-dependencies", label: "Dependencies", icon: Network },
+      { href: "/app/code-to-runtime", label: "Code → runtime", icon: GitBranch },
+      { href: "/app/identities", label: "Identities", icon: Fingerprint },
+    ],
+  },
+  {
+    label: "Tools",
+    items: [
+      { href: "/app/ask", label: "Ask Topo", icon: Sparkles },
+      { href: "/app/cli", label: "CLI", icon: TerminalSquare },
+      { href: "/app/integrations", label: "Integrations", icon: Workflow },
+    ],
+  },
 ]
 
 export function AppSidebar() {
@@ -44,12 +58,14 @@ export function AppSidebar() {
         </Link>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-3 py-5">
-        <p className="px-3 pb-2 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-          Workspace
-        </p>
-        <ul className="flex flex-col gap-0.5">
-          {nav.map((item) => {
+      <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-5">
+        {navGroups.map((group) => (
+          <section key={group.label}>
+            <p className="px-3 pb-1.5 font-mono text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+              {group.label}
+            </p>
+            <ul className="flex flex-col gap-0.5">
+              {group.items.map((item) => {
             const active =
               item.href === "/app"
                 ? pathname === "/app" ||
@@ -57,8 +73,8 @@ export function AppSidebar() {
                     "/app/incidents/",
                   )
                 : pathname.startsWith(item.href)
-            return (
-              <li key={item.href}>
+                return (
+                  <li key={item.href}>
                 <Link
                   href={item.href}
                   className={cn(
@@ -69,12 +85,14 @@ export function AppSidebar() {
                   )}
                 >
                   <item.icon className="h-4 w-4" strokeWidth={1.75} />
-                  {item.label}
+                      {item.label}
                 </Link>
-              </li>
-            )
-          })}
-        </ul>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        ))}
       </nav>
       <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
           Demo context

@@ -16,6 +16,7 @@ import {
 
 import {
   buildIncidentWorkspaceModel,
+  compactDependencyPath,
   formatConfidence,
   humanizeToken,
 } from "@/lib/incident-briefing"
@@ -49,7 +50,7 @@ export function TechnicalWorkspace({
     briefing.remediation?.actions[0] ?? null
 
   return (
-    <div className="space-y-8 py-6">
+    <div className="space-y-4 py-4">
       <section
         aria-labelledby="immediate-answer-title"
         className="overflow-hidden rounded-md border border-border bg-card"
@@ -57,23 +58,23 @@ export function TechnicalWorkspace({
         <h2 id="immediate-answer-title" className="sr-only">
           Immediate incident answer
         </h2>
-        <div className="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(360px,0.85fr)]">
+        <div className="grid lg:grid-cols-[minmax(0,1.08fr)_minmax(340px,0.92fr)]">
           <div
             id="what-happened"
-            className="border-b border-border p-5 sm:p-6 lg:border-b-0 lg:border-r"
+            className="border-b border-border p-4 sm:p-5 lg:border-b-0 lg:border-r"
           >
             <Eyebrow icon={Activity}>What happened</Eyebrow>
-            <p className="mt-3 max-w-3xl text-lg font-medium leading-relaxed sm:text-xl">
+            <p className="mt-2 max-w-3xl text-base font-medium leading-relaxed sm:text-lg">
               {model.immediate.whatHappened}
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-2 text-xs leading-relaxed text-muted-foreground sm:text-sm">
               {briefing.incident.current_state}
             </p>
           </div>
 
           <div
             id="root-cause"
-            className="border-l-2 border-l-primary p-5 sm:p-6"
+            className="border-l-2 border-l-primary p-4 sm:p-5"
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Eyebrow icon={FileSearch}>Likely root cause</Eyebrow>
@@ -81,10 +82,10 @@ export function TechnicalWorkspace({
                 {formatConfidence(root.causal_confidence)}
               </span>
             </div>
-            <h3 className="mt-3 font-heading text-xl font-bold">
+            <h3 className="mt-2 font-heading text-lg font-bold">
               {model.immediate.rootCause}
             </h3>
-            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground sm:text-sm">
               {model.immediate.rootCauseSummary}
             </p>
             <p className="mt-3 font-mono text-[10px] uppercase text-muted-foreground">
@@ -116,77 +117,39 @@ export function TechnicalWorkspace({
       </section>
 
       {briefing.ai_summary && (
-        <section className="flex items-start gap-3 border-l-2 border-info bg-info/5 px-4 py-3">
-          <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-info" />
-          <div>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-info">
-              Responder narrative · AI-assisted
-            </p>
-            <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-              {briefing.ai_summary}
-            </p>
-          </div>
-        </section>
+        <details className="border-l-2 border-info bg-info/5 px-4 py-2.5">
+          <summary className="cursor-pointer list-none font-mono text-[10px] uppercase tracking-widest text-info">
+            <span className="inline-flex items-center gap-2">
+              <Sparkles className="h-3.5 w-3.5" />
+              AI-assisted responder narrative
+            </span>
+          </summary>
+          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+            {briefing.ai_summary}
+          </p>
+        </details>
       )}
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,0.82fr)_minmax(0,1.18fr)]">
-        {briefing.recent_relevant_changes.length > 0 && (
-          <section
-            id="what-changed"
-            className="rounded-md border border-border bg-card p-5"
-          >
-            <SectionHeading
-              icon={GitCommitHorizontal}
-              eyebrow="Pre-incident context"
-              title="What changed"
-            />
-            <div className="mt-4 divide-y divide-border">
-              {briefing.recent_relevant_changes.map((change) => (
-                <article
-                  key={change.event_id}
-                  className="py-4 first:pt-0 last:pb-0"
-                >
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge
-                      value={change.change_type ?? change.role}
-                      tone="info"
-                    />
-                    {change.minutes_before_incident !== null && (
-                      <span className="font-mono text-[10px] text-muted-foreground">
-                        {formatMinutes(change.minutes_before_incident)} before symptoms
-                      </span>
-                    )}
-                  </div>
-                  <h3 className="mt-2 text-sm font-semibold">
-                    {change.title}
-                  </h3>
-                  <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-                    {[
-                      change.source,
-                      change.pipeline_name,
-                      change.release_version,
-                      change.commit_sha,
-                    ].filter(Boolean).join(" · ")}
-                  </p>
-                </article>
-              ))}
-            </div>
-          </section>
-        )}
-        <FailurePath briefing={briefing} />
-      </div>
+      <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="space-y-4">
+          <div className="grid gap-4 lg:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.28fr)]">
+            <WhatChanged briefing={briefing} />
+            <FailurePath briefing={briefing} />
+          </div>
 
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
-        <BlastRadiusSection briefing={briefing} />
-        <OwnershipSection briefing={briefing} />
-      </div>
+          <ResponseGuidance briefing={briefing} firstAction={firstAction} />
+          <VerificationPlan briefing={briefing} />
+        </div>
 
-      <ResponseGuidance briefing={briefing} firstAction={firstAction} />
-      <VerificationPlan briefing={briefing} />
-
-      <div className="grid gap-6 xl:grid-cols-2">
-        <HistoricalContext briefing={briefing} />
-        <OutcomeSummary briefing={briefing} />
+        <aside
+          aria-label="Incident context"
+          className="space-y-4 xl:sticky xl:top-[172px]"
+        >
+          <BlastRadiusSection briefing={briefing} />
+          <OwnershipSection briefing={briefing} />
+          <HistoricalContext briefing={briefing} compact />
+          <OutcomeSummary briefing={briefing} compact />
+        </aside>
       </div>
 
       <EvidenceAndWarnings briefing={briefing} />
@@ -200,17 +163,91 @@ export function TechnicalWorkspace({
   )
 }
 
+function WhatChanged({
+  briefing,
+}: {
+  briefing: IncidentBriefing
+}) {
+  const changes =
+    briefing.recent_relevant_changes
+  const primary = changes[0]
+
+  return (
+    <section
+      id="what-changed"
+      className="rounded-md border border-border bg-card p-4"
+    >
+      <SectionHeading
+        icon={GitCommitHorizontal}
+        eyebrow="Before symptoms"
+        title="What changed"
+      />
+      {!primary ? (
+        <DegradedState
+          icon={GitCommitHorizontal}
+          text="No durable pre-incident change is linked to this briefing."
+        />
+      ) : (
+        <>
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <StatusBadge
+              value={primary.change_type ?? primary.role}
+              tone="info"
+            />
+            {primary.minutes_before_incident !== null && (
+              <span className="font-mono text-[9px] text-muted-foreground">
+                {formatMinutes(primary.minutes_before_incident)} before symptoms
+              </span>
+            )}
+          </div>
+          <h3 className="mt-2 text-sm font-semibold leading-snug">
+            {primary.title}
+          </h3>
+          <p className="mt-2 line-clamp-2 font-mono text-[9px] text-muted-foreground">
+            {[
+              primary.source,
+              primary.release_version,
+              primary.commit_sha,
+            ].filter(Boolean).join(" · ")}
+          </p>
+
+          {changes.length > 1 && (
+            <details className="mt-3 border-t border-border pt-2">
+              <summary className="cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+                View {changes.length - 1} additional relevant change{changes.length === 2 ? "" : "s"}
+              </summary>
+              <div className="mt-2 divide-y divide-border">
+                {changes.slice(1).map((change) => (
+                  <div key={change.event_id} className="py-2 text-xs">
+                    <p className="font-medium">{change.title}</p>
+                    <p className="mt-1 font-mono text-[9px] text-muted-foreground">
+                      {change.source ?? change.role}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </>
+      )}
+    </section>
+  )
+}
+
 function FailurePath({
   briefing,
 }: {
   briefing: IncidentBriefing
 }) {
   const model = buildIncidentWorkspaceModel(briefing)
+  const visiblePath = compactDependencyPath(
+    model.technical.dependencyPath,
+  )
 
   return (
     <section
       id="dependency-path"
-      className="rounded-md border border-border bg-card p-5"
+      className="rounded-md border border-border bg-card p-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <SectionHeading
@@ -236,16 +273,16 @@ function FailurePath({
         />
       ) : (
         <>
-          <ol className="mt-5 flex flex-col gap-2 lg:flex-row lg:items-stretch">
-            {model.technical.dependencyPath.map((step, index) => (
+          <ol className="mt-4 flex flex-col gap-2 md:flex-row md:items-stretch">
+            {visiblePath.map((step, index) => (
               <li
                 key={`${step.node_id}-${step.order}`}
                 className="flex min-w-0 flex-1 items-center gap-2"
               >
                 {index > 0 && (
-                  <ArrowRight className="hidden h-4 w-4 shrink-0 text-muted-foreground lg:block" />
+                  <ArrowRight className="hidden h-3.5 w-3.5 shrink-0 text-muted-foreground md:block" />
                 )}
-                <div className="min-w-0 flex-1 rounded-sm border border-border bg-background px-3 py-3">
+                <div className="min-w-0 flex-1 rounded-sm border border-border bg-background px-2.5 py-2.5">
                   <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
                     {humanizeToken(step.node_type)}
                   </p>
@@ -262,9 +299,11 @@ function FailurePath({
             ))}
           </ol>
 
-          <details className="mt-4 border-t border-border pt-3">
+          <details className="mt-3 border-t border-border pt-2.5">
             <summary className="cursor-pointer font-mono text-[10px] uppercase text-muted-foreground hover:text-foreground">
-              View path evidence and IDs
+              {model.technical.dependencyPath.length > visiblePath.length
+                ? `View full ${model.technical.dependencyPath.length}-step path and evidence`
+                : "View path evidence and IDs"}
             </summary>
             <div className="mt-3 space-y-2 font-mono text-[10px] text-muted-foreground">
               <p>
@@ -296,7 +335,7 @@ function BlastRadiusSection({
   return (
     <section
       id="blast-radius"
-      className="rounded-md border border-border bg-card p-5"
+      className="rounded-md border border-border bg-card p-4"
     >
       <SectionHeading
         icon={Network}
@@ -310,11 +349,11 @@ function BlastRadiusSection({
         />
       ) : (
         <>
-          <div className="mt-5 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border bg-border sm:grid-cols-4">
+          <div className="mt-4 grid grid-cols-2 gap-px overflow-hidden rounded-sm border border-border bg-border">
             <Metric label="Affected" value={blast.affected_entity_count} />
+            <Metric label="Services" value={blast.affected_services.length} />
+            <Metric label="Teams" value={blast.affected_teams.length} />
             <Metric label="Direct" value={blast.direct_impact_count} />
-            <Metric label="Indirect" value={blast.indirect_impact_count} />
-            <Metric label="Potential" value={blast.potential_impact_count} />
           </div>
           <div className="mt-4 flex flex-wrap gap-2">
             {blast.affected_services.map((service) => (
@@ -324,8 +363,11 @@ function BlastRadiusSection({
               <StatusBadge key={capability} value={capability} tone="warn" />
             ))}
           </div>
+          <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+            {blast.indirect_impact_count} indirect and {blast.potential_impact_count} potential impacts are included in the total.
+          </p>
           {blast.important_affected_entities.length > 0 && (
-            <details className="mt-4 border-t border-border pt-3">
+            <details className="mt-3 border-t border-border pt-2.5">
               <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
                 View {blast.returned_entity_count} important affected entities
                 {blast.omitted_entity_count > 0
@@ -373,7 +415,7 @@ function OwnershipSection({
   return (
     <section
       id="ownership"
-      className="rounded-md border border-border bg-card p-5"
+      className="rounded-md border border-border bg-card p-4"
     >
       <SectionHeading
         icon={Users}
@@ -386,38 +428,45 @@ function OwnershipSection({
           text="Root-cause ownership is unresolved. No owner has been inferred."
         />
       ) : (
-        <dl className="mt-5 grid gap-4 sm:grid-cols-2">
+        <dl className="mt-4 grid gap-3">
           <Datum label="Owner team" value={ownership.owner_team} />
           <Datum label="On-call" value={ownership.oncall_contact} />
           <Datum label="Technical service" value={ownership.service_name} />
           <Datum label="Capability" value={ownership.business_capability} />
-          <Datum label="Criticality" value={humanizeToken(ownership.criticality)} />
-          <Datum label="Repository" value={ownership.repository_url} link />
         </dl>
       )}
 
       {impact && (
-        <div className="mt-5 border-t border-border pt-4">
-          <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-            Routing recommendation
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-            {impact.routing_recommendation}
-          </p>
-          {context.escalation_targets.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-2">
-              {context.escalation_targets.map((target) => (
-                <span
-                  key={target}
-                  className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-background px-2 py-1 font-mono text-[10px]"
-                >
-                  <PhoneCall className="h-3 w-3 text-info" />
-                  {target}
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
+        <details className="mt-4 border-t border-border pt-3">
+          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+            Routing and owner details
+          </summary>
+          <div className="mt-3">
+            {ownership?.resolved && (
+              <dl className="grid gap-3">
+                <Datum label="Criticality" value={humanizeToken(ownership.criticality)} />
+                <Datum label="Owner email" value={ownership.owner_email} />
+                <Datum label="Repository" value={ownership.repository_url} link />
+              </dl>
+            )}
+            <p className="mt-3 text-xs leading-relaxed text-muted-foreground">
+              {impact.routing_recommendation}
+            </p>
+            {context.escalation_targets.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {context.escalation_targets.map((target) => (
+                  <span
+                    key={target}
+                    className="inline-flex items-center gap-1.5 rounded-sm border border-border bg-background px-2 py-1 font-mono text-[9px]"
+                  >
+                    <PhoneCall className="h-3 w-3 text-info" />
+                    {target}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </details>
       )}
     </section>
   )
