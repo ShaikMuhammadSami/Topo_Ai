@@ -52,7 +52,10 @@ export function AppSidebar() {
           {nav.map((item) => {
             const active =
               item.href === "/app"
-                ? pathname === "/app"
+                ? pathname === "/app" ||
+                  pathname.startsWith(
+                    "/app/incidents/",
+                  )
                 : pathname.startsWith(item.href)
             return (
               <li key={item.href}>

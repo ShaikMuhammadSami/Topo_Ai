@@ -1485,3 +1485,386 @@ export type PostIncidentReportDetail =
     evidence_count: number
     warnings: string[]
   }
+
+export type HistoricalSupportLevel =
+  | "none"
+  | "limited"
+  | "moderate"
+  | "strong"
+
+export type HistoricalAiStatus =
+  | "not_requested"
+  | "available"
+  | "unavailable"
+  | "failed"
+
+export type RcaVerdict =
+  | "confirmed"
+  | "partially_confirmed"
+  | "not_confirmed"
+  | "inconclusive"
+
+export type ActionEffectiveness =
+  | "effective"
+  | "ineffective"
+  | "unknown"
+
+export type BriefingRecommendationRisk =
+  | "low"
+  | "medium"
+  | "high"
+
+export type BriefingResponsePriority =
+  | "critical"
+  | "high"
+  | "medium"
+  | "low"
+
+export type BriefingActionCategory =
+  | "investigate"
+  | "validate"
+  | "mitigate"
+  | "rollback_candidate"
+  | "escalate"
+  | "communicate"
+  | "monitor"
+  | "runbook"
+
+export type BriefingActionSemantics =
+  | "mitigation"
+  | "investigation"
+  | "validation"
+  | "coordination"
+  | "monitoring"
+  | "runbook"
+
+export type BriefingActionFamily =
+  | "rollback"
+  | "configuration_revert"
+  | "pipeline_revert"
+  | "infrastructure_revert"
+  | "restart"
+  | "scale"
+  | "traffic_shift"
+  | "other_mitigation"
+  | "investigate"
+  | "validate"
+  | "escalate"
+  | "communicate"
+  | "monitor"
+  | "runbook"
+
+export type BriefingCurrentEvidenceStrength =
+  | "low"
+  | "moderate"
+  | "high"
+
+export type BriefingHistoricalActionSupportLevel =
+  | "limited"
+  | "supported"
+  | "strongly_supported"
+  | "conflicting"
+  | "insufficient_history"
+  | "not_applicable"
+
+export type BriefingCombinedDecisionSupport =
+  | "current_only"
+  | "historically_limited"
+  | "historically_supported"
+  | "historically_strongly_supported"
+  | "historically_conflicting"
+  | "insufficient_history"
+  | "not_applicable"
+
+export type BriefingIncident = {
+  incident_id: string
+  title: string
+  summary: string
+  status: IncidentStatus
+  severity: IncidentSeverity
+  cluster_name: string
+  namespace: string | null
+  environment: string | null
+  affected_entity_id: string | null
+  affected_object_kind: string | null
+  affected_object_name: string | null
+  first_observed_at: string
+  last_observed_at: string
+  current_state: string
+  recovery_status: string | null
+}
+
+export type BriefingSummary = {
+  text: string
+  evidence_references: string[]
+}
+
+export type BriefingEvidenceReference = {
+  evidence_id: string
+  evidence_type: string
+  source: string
+  title: string
+  detail: string
+  observed_at: string | null
+  event_id: string | null
+  entity_id: string | null
+  weight: number
+}
+
+export type BriefingCausalPathStep = {
+  order: number
+  node_id: string
+  node_type: string
+  label: string
+  event_id: string | null
+  entity_id: string | null
+  relation_from_previous: string | null
+  relation_confidence: number | null
+  topology_relationship_id: string | null
+  topology_relationship_type: string | null
+  topology_relationship_direction: string | null
+  evidence_references: string[]
+}
+
+export type BriefingRootCause = {
+  causal_analysis_id: string
+  topology_snapshot_id: string | null
+  root_event_id: string
+  root_event_title: string
+  root_event_source: string
+  root_event_kind: string | null
+  root_entity_id: string | null
+  causal_confidence: number
+  confidence_level: string
+  causal_change_event_id: string
+  causal_change_title: string
+  causal_change_source: string | null
+  causal_change_type: string | null
+  causal_change_occurred_at: string | null
+  summary: string
+  reasons: string[]
+  evidence_references: string[]
+}
+
+export type BriefingRelevantChange = {
+  event_id: string
+  title: string
+  role: string
+  source: string | null
+  change_type: string | null
+  occurred_at: string | null
+  repository: string | null
+  commit_sha: string | null
+  pipeline_name: string | null
+  release_version: string | null
+  minutes_before_incident: number | null
+  evidence_references: string[]
+}
+
+export type BriefingAffectedEntity = {
+  entity_id: string
+  entity_kind: string
+  entity_name: string
+  impact: string
+  distance: number
+  impact_score: number
+  service_name: string | null
+  owner_team: string | null
+  business_capability: string | null
+  criticality: ServiceCriticality | null
+}
+
+export type BriefingBlastRadius = {
+  topology_snapshot_id: string | null
+  root_entity_id: string | null
+  affected_entity_count: number
+  returned_entity_count: number
+  omitted_entity_count: number
+  direct_impact_count: number
+  indirect_impact_count: number
+  potential_impact_count: number
+  affected_services: string[]
+  affected_dependency_types: string[]
+  affected_teams: string[]
+  business_capabilities: string[]
+  important_affected_entities: BriefingAffectedEntity[]
+  evidence_references: string[]
+}
+
+export type BriefingOwnership = {
+  resolved: boolean
+  entity_id: string | null
+  owner_team: string | null
+  owner_email: string | null
+  oncall_contact: string | null
+  service_name: string | null
+  repository_url: string | null
+  business_capability: string | null
+  criticality: ServiceCriticality | null
+  confidence: number | null
+  evidence_references: string[]
+}
+
+export type BriefingBusinessImpact = {
+  business_impact_level: BusinessImpactLevel
+  affected_entity_count: number
+  resolved_entity_count: number
+  unresolved_entity_count: number
+  affected_team_count: number
+  affected_capability_count: number
+  highest_criticality: ServiceCriticality | null
+  owner_teams: string[]
+  business_capabilities: string[]
+  oncall_contacts: string[]
+  repositories: string[]
+  routing_recommendation: string
+  evidence_references: string[]
+}
+
+export type BriefingOperationalContext = {
+  ownership: BriefingOwnership
+  business_impact: BriefingBusinessImpact
+  escalation_targets: string[]
+}
+
+export type BriefingHistoricalActionSupport = {
+  level: BriefingHistoricalActionSupportLevel
+  score: number
+  similar_incident_count: number
+  action_observed_count: number
+  effective_count: number
+  ineffective_count: number
+  unknown_effect_count: number
+  supporting_incident_ids: string[]
+  contradicting_incident_ids: string[]
+  support_reasons: string[]
+  caution_reasons: string[]
+}
+
+export type BriefingRemediationAction = {
+  action_id: string
+  rank: number
+  category: BriefingActionCategory
+  semantics: BriefingActionSemantics
+  family: BriefingActionFamily
+  priority: BriefingResponsePriority
+  title: string
+  description: string
+  reason: string
+  risk: BriefingRecommendationRisk
+  requires_human_approval: boolean
+  entity_ids: string[]
+  evidence_event_ids: string[]
+  evidence_references: string[]
+  runbook_url: string | null
+  current_evidence_strength: BriefingCurrentEvidenceStrength
+  historical_support: BriefingHistoricalActionSupport
+  combined_decision_support: BriefingCombinedDecisionSupport
+}
+
+export type BriefingVerificationStep = {
+  step_id: string
+  source_action_id: string
+  title: string
+  description: string
+  expected_observation: string
+  entity_ids: string[]
+  evidence_references: string[]
+}
+
+export type BriefingRemediationTarget = {
+  entity_ids: string[]
+  change_event_ids: string[]
+}
+
+export type BriefingRemediationPreview = {
+  action_id: string
+  action_title: string
+  intended_effect: string
+  affected_target: BriefingRemediationTarget
+  potentially_impacted_entities: BriefingAffectedEntity[]
+  potential_impact_scope_note: string
+  risk: BriefingRecommendationRisk
+  expected_observation_if_successful: string
+  possible_failure_modes: string[]
+  verification_steps: BriefingVerificationStep[]
+  rollback_or_recovery_considerations: string[]
+  historical_observations: string[]
+  evidence_references: string[]
+}
+
+export type BriefingRunbookReference = {
+  runbook_id: string
+  title: string
+  url: string
+  source: string
+  entity_id: string | null
+}
+
+export type BriefingRemediation = {
+  response_priority: BriefingResponsePriority
+  response_priority_reason: string
+  actions: BriefingRemediationAction[]
+  previews: BriefingRemediationPreview[]
+  runbooks: BriefingRunbookReference[]
+  overall_historical_support: BriefingHistoricalActionSupportLevel
+  read_only: boolean
+}
+
+export type BriefingHistoricalIncident = {
+  incident_id: string
+  incident_title: string
+  similarity: number
+  why_it_matches: string[]
+  important_differences: string[]
+  rca_verdict: RcaVerdict
+  resolution_summary: string
+  primary_resolution_action: string | null
+  primary_action_effectiveness: ActionEffectiveness | null
+  time_to_mitigation_seconds: number | null
+  time_to_resolution_seconds: number | null
+  evidence_references: string[]
+}
+
+export type BriefingHistoricalContext = {
+  support_level: HistoricalSupportLevel
+  similar_incident_count: number
+  similar_incidents: BriefingHistoricalIncident[]
+  resolution_patterns: Record<string, unknown>[]
+  summary: string
+}
+
+export type BriefingOutcome = {
+  outcome_id: string
+  status: IncidentStatus
+  mitigated_at: string | null
+  resolved_at: string | null
+  time_to_mitigation_seconds: number | null
+  time_to_resolution_seconds: number | null
+  final_rca_verdict: RcaVerdict
+  rca_confidence: number
+  final_root_cause: string | null
+  primary_resolution_action: string | null
+  resolution_summary: string
+  evidence_references: string[]
+}
+
+export type IncidentBriefing = {
+  incident: BriefingIncident
+  summary: BriefingSummary
+  root_cause: BriefingRootCause
+  causal_evidence: BriefingEvidenceReference[]
+  recent_relevant_changes: BriefingRelevantChange[]
+  dependency_path: BriefingCausalPathStep[]
+  blast_radius: BriefingBlastRadius | null
+  operational_context: BriefingOperationalContext | null
+  remediation: BriefingRemediation | null
+  historical_context: BriefingHistoricalContext
+  verification_plan: BriefingVerificationStep[]
+  outcome: BriefingOutcome | null
+  warnings: string[]
+  ai_summary: string | null
+  ai_status: HistoricalAiStatus
+  ai_provider: string | null
+  ai_model: string | null
+}

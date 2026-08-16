@@ -8,13 +8,10 @@ import {
 } from "react"
 import {
   AlertCircle,
-  CheckCircle2,
-  CircleDot,
   ExternalLink,
   LoaderCircle,
   RefreshCw,
   Server,
-  ShieldAlert,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -31,6 +28,9 @@ import type {
   IncidentStatus,
   SignalSummary,
 } from "@/lib/topo-types"
+import {
+  incidentWorkspaceHref,
+} from "@/lib/incident-briefing"
 import {
   IncidentOwnershipImpactPanel,
 } from "@/components/app/incident-ownership-impact"
@@ -553,6 +553,18 @@ function IncidentDetail({
             </p>
           </div>
 
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild>
+              <Link
+                href={incidentWorkspaceHref(
+                  incident.incident_id,
+                )}
+              >
+                Open unified briefing
+                <ExternalLink className="h-4 w-4" />
+              </Link>
+            </Button>
+
           {topologyUrl && (
             <Link
               href={topologyUrl}
@@ -563,6 +575,7 @@ function IncidentDetail({
               <ExternalLink className="h-4 w-4" />
             </Link>
           )}
+          </div>
         </div>
       </section>
 
