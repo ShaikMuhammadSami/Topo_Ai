@@ -1176,6 +1176,265 @@ def response_intelligence(
         )
 
 
+@app.command("execution-readiness")
+def execution_readiness(
+    context: typer.Context,
+    incident_id: str = typer.Argument(
+        help="Stable incident ID.",
+    ),
+    history_limit: int = typer.Option(
+        5,
+        "--history-limit",
+        min=1,
+        max=20,
+        help="Maximum historical matches.",
+    ),
+    min_similarity: float = typer.Option(
+        0.5,
+        "--min-similarity",
+        min=0.0,
+        max=1.0,
+        help=(
+            "Minimum deterministic similarity "
+            "score."
+        ),
+    ),
+    include_ai: bool = typer.Option(
+        False,
+        "--ai/--no-ai",
+        help=(
+            "Add one optional OpenAI explanation "
+            "after deterministic policy evaluation."
+        ),
+    ),
+) -> None:
+    runtime = get_runtime(context)
+    result = api_call(
+        lambda:
+            runtime.client
+            .incident_execution_readiness(
+                incident_id,
+                history_limit=history_limit,
+                min_similarity=(
+                    min_similarity
+                ),
+                include_ai=include_ai,
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    render_data(
+        {
+            "Incident": result.get(
+                "incident_id"
+            ),
+            "Policy Version": result.get(
+                "policy_version"
+            ),
+            "Overall Execution Posture": (
+                result.get(
+                    "overall_execution_posture"
+                )
+            ),
+            "Deterministic Summary": result.get(
+                "deterministic_summary"
+            ),
+            "AI Summary": result.get(
+                "ai_summary"
+            ),
+            "AI Status": result.get(
+                "ai_status"
+            ),
+            "Warnings": result.get(
+                "warnings",
+                [],
+            ),
+        },
+        output_format=(
+            runtime.output_format
+        ),
+        title="Incident Execution Readiness",
+    )
+
+    rows = []
+    raw_actions = result.get("actions", [])
+
+    if isinstance(raw_actions, list):
+        for action in raw_actions:
+            if not isinstance(action, dict):
+                continue
+
+            support = action.get(
+                "historical_support"
+            )
+            target = action.get("target")
+            approval = action.get(
+                "approval_context"
+            )
+
+            if not isinstance(support, dict):
+                support = {}
+
+            if not isinstance(target, dict):
+                target = {}
+
+            if not isinstance(approval, dict):
+                approval = {}
+
+            entity_ids = target.get(
+                "entity_ids",
+                [],
+            )
+            target_values = [
+                *(
+                    entity_ids
+                    if isinstance(
+                        entity_ids,
+                        list,
+                    )
+                    else []
+                ),
+                target.get("change_event_id"),
+            ]
+
+            rows.append(
+                {
+                    "rank": action.get(
+                        "baseline_rank"
+                    ),
+                    "action": action.get(
+                        "title"
+                    ),
+                    "family": action.get(
+                        "action_family"
+                    ),
+                    "risk": action.get("risk"),
+                    "mutation": action.get(
+                        "mutation"
+                    ),
+                    "status": action.get(
+                        "readiness_status"
+                    ),
+                    "current_evidence": (
+                        action.get(
+                            "current_evidence_strength"
+                        )
+                    ),
+                    "historical_support": (
+                        support.get("level")
+                    ),
+                    "human_approval": (
+                        approval.get("required")
+                    ),
+                    "target": [
+                        value
+                        for value in target_values
+                        if value
+                    ],
+                    "satisfied": action.get(
+                        "satisfied_preconditions",
+                        [],
+                    ),
+                    "missing": action.get(
+                        "missing_preconditions",
+                        [],
+                    ),
+                    "blockers": action.get(
+                        "blockers",
+                        [],
+                    ),
+                    "cautions": action.get(
+                        "cautions",
+                        [],
+                    ),
+                    "owner": approval.get(
+                        "owner_team"
+                    ),
+                    "oncall": approval.get(
+                        "oncall_contact"
+                    ),
+                }
+            )
+
+    if rows:
+        render_records(
+            rows,
+            title="Action Execution Readiness",
+            columns=[
+                ColumnSpec("#", ("rank",)),
+                ColumnSpec(
+                    "ACTION",
+                    ("action",),
+                    max_width=48,
+                ),
+                ColumnSpec(
+                    "FAMILY",
+                    ("family",),
+                ),
+                ColumnSpec("RISK", ("risk",)),
+                ColumnSpec(
+                    "MUTATION",
+                    ("mutation",),
+                ),
+                ColumnSpec(
+                    "READINESS",
+                    ("status",),
+                ),
+                ColumnSpec(
+                    "CURRENT EVIDENCE",
+                    ("current_evidence",),
+                ),
+                ColumnSpec(
+                    "HISTORICAL SUPPORT",
+                    ("historical_support",),
+                ),
+                ColumnSpec(
+                    "HUMAN APPROVAL",
+                    ("human_approval",),
+                ),
+                ColumnSpec(
+                    "TARGET",
+                    ("target",),
+                    max_width=55,
+                ),
+                ColumnSpec(
+                    "SATISFIED",
+                    ("satisfied",),
+                    max_width=65,
+                ),
+                ColumnSpec(
+                    "MISSING",
+                    ("missing",),
+                    max_width=65,
+                ),
+                ColumnSpec(
+                    "BLOCKERS",
+                    ("blockers",),
+                    max_width=70,
+                ),
+                ColumnSpec(
+                    "CAUTIONS",
+                    ("cautions",),
+                    max_width=70,
+                ),
+                ColumnSpec(
+                    "OWNER",
+                    ("owner",),
+                ),
+                ColumnSpec(
+                    "ON-CALL",
+                    ("oncall",),
+                ),
+            ],
+        )
+
+
 @app.command("history")
 def incident_history(
     context: typer.Context,
