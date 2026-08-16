@@ -52,6 +52,7 @@ import type {
   PostIncidentReportStatus,
   PostIncidentReportSummary,
   ReportActionStatus,
+  IncidentBriefing,
 } from "@/lib/topo-types"
 
 
@@ -708,6 +709,29 @@ export function getIncidentOwnershipImpact(
     `/api/v1/incidents/${encodeURIComponent(
       incidentId,
     )}/ownership-impact`,
+  )
+}
+
+export function getIncidentBriefing(
+  incidentId: string,
+  options?: {
+    includeAi?: boolean
+    signal?: AbortSignal
+  },
+): Promise<IncidentBriefing> {
+  const query = new URLSearchParams({
+    include_ai: String(
+      options?.includeAi ?? false,
+    ),
+  })
+
+  return apiRequest<IncidentBriefing>(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/briefing?${query.toString()}`,
+    {
+      signal: options?.signal,
+    },
   )
 }
 export function createWebhookEndpoint(
