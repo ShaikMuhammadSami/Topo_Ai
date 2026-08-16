@@ -18,7 +18,7 @@ export function SectionHeading({
         <Icon className="h-3.5 w-3.5 text-info" />
         {eyebrow}
       </div>
-      <h2 className="mt-1 font-heading text-xl font-bold">
+      <h2 className="mt-1 font-heading text-lg font-bold">
         {title}
       </h2>
     </div>
@@ -56,7 +56,7 @@ export function ImmediateDatum({
   return (
     <div
       id={id}
-      className="border-b border-border p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
+      className="border-b border-border p-3.5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
     >
       <p className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
         <Icon className="h-3.5 w-3.5" />
@@ -108,11 +108,11 @@ export function Metric({
   value: string | number
 }) {
   return (
-    <div className="bg-card p-4 text-center">
+    <div className="bg-card p-3 text-center">
       <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
         {label}
       </p>
-      <p className="mt-1 font-heading text-xl font-bold">
+      <p className="mt-1 font-heading text-lg font-bold">
         {value}
       </p>
     </div>
@@ -182,7 +182,7 @@ export function BusinessDatum({
   detail: string
 }) {
   return (
-    <div className="border-b border-border p-5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+    <div className="border-b border-border p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
       <p className="font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
         {label}
       </p>
