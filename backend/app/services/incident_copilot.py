@@ -34,6 +34,11 @@ from app.repositories.incident_record_repository import (
 from app.services.incident_explanation import (
     build_incident_evidence,
 )
+from app.services.llm_client import (
+    configured_openai_model,
+    generate_openai_structured,
+    resolve_configured_provider,
+)
 
 
 COPILOT_PROMPT_VERSION = (
@@ -849,30 +854,68 @@ def _groq_answer(
 
     return result
 
+
+def _openai_answer(
+    *,
+    question: str,
+    history: list,
+    evidence: list[GroundingEvidence],
+    model_name: str,
+) -> CopilotGeneratedAnswer:
+    request_payload = {
+        "prompt_version": (
+            COPILOT_PROMPT_VERSION
+        ),
+        "question": question,
+        "conversation_history": [
+            {
+                "role": item.role.value,
+                "content": item.content,
+            }
+            for item in history[-10:]
+        ],
+        "allowed_evidence_ids": [
+            item.evidence_id
+            for item in evidence
+        ],
+        "evidence_catalog": [
+            item.model_dump(mode="json")
+            for item in evidence
+        ],
+    }
+
+    try:
+        result = generate_openai_structured(
+            system_prompt=(
+                COPILOT_SYSTEM_PROMPT
+            ),
+            evidence_payload=request_payload,
+            response_model=(
+                CopilotGeneratedAnswer
+            ),
+            model_name=model_name,
+        )
+
+    except Exception as exc:
+        raise CopilotGenerationError(
+            str(exc)
+        ) from exc
+
+    _validate_answer(
+        answer=result,
+        evidence=evidence,
+    )
+
+    return result
+
 def _resolve_provider(
     requested:
         ExplanationProvider,
 ) -> ExplanationProvider:
-    if (
-        requested
-        != ExplanationProvider.AUTO
-    ):
-        return requested
-
-    configured_provider = os.getenv(
-        "TOPO_AI_LLM_PROVIDER",
-        "groq",
-    ).lower()
-
-    if (
-        configured_provider == "groq"
-        and os.getenv("GROQ_API_KEY")
-    ):
-        return ExplanationProvider.GROQ
-
-    return (
-        ExplanationProvider
-        .DETERMINISTIC
+    return ExplanationProvider(
+        resolve_configured_provider(
+            requested.value
+        )
     )
 
 
@@ -897,13 +940,18 @@ def create_incident_copilot_session(
     )
 
     model_name = (
-        os.getenv(
-            "TOPO_AI_LLM_MODEL",
-            "openai/gpt-oss-120b",
-        )
+        configured_openai_model()
         if provider
-        == ExplanationProvider.GROQ
-        else None
+        == ExplanationProvider.OPENAI
+        else (
+            os.getenv(
+                "TOPO_AI_LLM_MODEL",
+                "openai/gpt-oss-120b",
+            )
+            if provider
+            == ExplanationProvider.GROQ
+            else None
+        )
     )
 
     incident_title = (
@@ -1030,6 +1078,41 @@ def answer_copilot_question(
     )
 
     if (
+        provider
+        == ExplanationProvider.OPENAI
+    ):
+        try:
+            generated = _openai_answer(
+                question=question,
+                history=previous_messages,
+                evidence=selected_evidence,
+                model_name=(
+                    session_record.model_name
+                    or configured_openai_model()
+                ),
+            )
+
+        except Exception as exc:
+            actual_provider = (
+                ExplanationProvider
+                .DETERMINISTIC
+            )
+            warning_parts.append(
+                "OpenAI generation failed; "
+                "deterministic fallback was "
+                "used: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            generated = (
+                _deterministic_answer(
+                    question=question,
+                    evidence=(
+                        selected_evidence
+                    ),
+                )
+            )
+
+    elif (
         provider
         == ExplanationProvider.GROQ
     ):

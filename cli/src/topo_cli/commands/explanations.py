@@ -30,6 +30,7 @@ app = typer.Typer(
 
 VALID_PROVIDERS = {
     "auto",
+    "openai",
     "groq",
     "deterministic",
 }
@@ -193,7 +194,8 @@ def generate_and_display(
         abort(
             InputValidationFailure(
                 "Provider must be one of: "
-                "auto, groq, deterministic."
+                "auto, openai, groq, "
+                "deterministic."
             )
         )
 
@@ -229,7 +231,7 @@ def generate_explanation(
         "auto",
         "--provider",
         help=(
-            "auto, groq, or "
+            "auto, openai, groq, or "
             "deterministic"
         ),
     ),

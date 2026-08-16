@@ -392,6 +392,43 @@ class TopoClient:
 
         return value
 
+    def incident_historical_intelligence(
+        self,
+        incident_id: str,
+        *,
+        limit: int = 5,
+        min_similarity: float = 0.25,
+        include_ai: bool = False,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/historical-intelligence"
+        )
+
+        value = self._request(
+            "GET",
+            path,
+            params={
+                "limit": limit,
+                "min_similarity": (
+                    min_similarity
+                ),
+                "include_ai": include_ai,
+            },
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Historical-intelligence "
+                "endpoint returned an invalid "
+                "response."
+            )
+
+        return value
+
     # ------------------------------------------------------------------
     # Explanations
     # ------------------------------------------------------------------

@@ -43,6 +43,11 @@ from app.services.business_impact import (
 from app.services.network_dependency_analysis import (
     analyze_network_dependencies,
 )
+from app.services.llm_client import (
+    configured_openai_model,
+    generate_openai_structured,
+    resolve_configured_provider,
+)
 
 
 PROMPT_VERSION = (
@@ -1380,6 +1385,57 @@ def _groq_explanation(
 
     return explanation
 
+
+def _openai_explanation(
+    *,
+    evidence: list[GroundingEvidence],
+    model_name: str,
+) -> GeneratedIncidentExplanation:
+    maximum_items = int(
+        os.getenv(
+            "TOPO_AI_LLM_MAX_EVIDENCE_ITEMS",
+            "50",
+        )
+    )
+    selected_evidence = evidence[
+        :maximum_items
+    ]
+    payload = {
+        "prompt_version": PROMPT_VERSION,
+        "allowed_evidence_ids": [
+            item.evidence_id
+            for item in selected_evidence
+        ],
+        "evidence_catalog": [
+            item.model_dump(mode="json")
+            for item in selected_evidence
+        ],
+    }
+
+    try:
+        explanation = (
+            generate_openai_structured(
+                system_prompt=SYSTEM_PROMPT,
+                evidence_payload=payload,
+                response_model=(
+                    GeneratedIncidentExplanation
+                ),
+                model_name=model_name,
+            )
+        )
+
+    except Exception as exc:
+        raise ExplanationGenerationError(
+            str(exc)
+        ) from exc
+
+    _validate_explanation(
+        explanation=explanation,
+        evidence=selected_evidence,
+    )
+
+    return explanation
+
 def generate_incident_explanation(
     session: Session,
     incident_id: str,
@@ -1399,39 +1455,29 @@ def generate_incident_explanation(
         evidence
     )
 
-    configured_model = os.getenv(
-        "TOPO_AI_LLM_MODEL",
-        "openai/gpt-oss-120b",
+    provider = ExplanationProvider(
+        resolve_configured_provider(
+            request.provider.value
+        )
     )
 
-    configured_provider = os.getenv(
-        "TOPO_AI_LLM_PROVIDER",
-        "groq",
-    ).lower()
-
-    if (
-        request.provider
-        == ExplanationProvider.AUTO
-    ):
-        if (
-            configured_provider == "groq"
-            and os.getenv("GROQ_API_KEY")
-        ):
-            provider = (
-                ExplanationProvider.GROQ
-            )
-        else:
-            provider = (
-                ExplanationProvider
-                .DETERMINISTIC
-            )
-    else:
-        provider = request.provider
+    configured_model = (
+        configured_openai_model()
+        if provider
+        == ExplanationProvider.OPENAI
+        else os.getenv(
+            "TOPO_AI_LLM_MODEL",
+            "openai/gpt-oss-120b",
+        )
+    )
 
     model_name = (
         configured_model
         if provider
-        == ExplanationProvider.GROQ
+        in {
+            ExplanationProvider.OPENAI,
+            ExplanationProvider.GROQ,
+        }
         else None
     )
 
@@ -1452,6 +1498,54 @@ def generate_incident_explanation(
             return cached
 
     if (
+        provider
+        == ExplanationProvider.OPENAI
+    ):
+        try:
+            explanation = (
+                _openai_explanation(
+                    evidence=evidence,
+                    model_name=(
+                        configured_model
+                    ),
+                )
+            )
+
+        except Exception as exc:
+            if (
+                request.provider
+                == ExplanationProvider.OPENAI
+            ):
+                raise (
+                    ExplanationGenerationError(
+                        str(exc)
+                    )
+                ) from exc
+
+            warnings.append(
+                "OpenAI generation failed; "
+                "deterministic fallback was "
+                "used: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            provider = (
+                ExplanationProvider
+                .DETERMINISTIC
+            )
+            model_name = None
+            explanation = (
+                _deterministic_explanation(
+                    evidence
+                )
+            )
+            explanation_id = _explanation_id(
+                incident_id=incident_id,
+                grounding_hash=grounding_hash,
+                provider=provider,
+                model_name=None,
+            )
+
+    elif (
         provider
         == ExplanationProvider.GROQ
     ):

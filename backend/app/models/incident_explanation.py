@@ -10,6 +10,7 @@ from pydantic import (
 
 class ExplanationProvider(str, Enum):
     AUTO = "auto"
+    OPENAI = "openai"
     GROQ = "groq"
     DETERMINISTIC = "deterministic"
 
