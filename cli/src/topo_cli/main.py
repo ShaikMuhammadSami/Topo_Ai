@@ -8,6 +8,7 @@ from topo_cli import __version__
 from topo_cli.client import TopoClient
 from topo_cli.commands import (
     agents,
+    approvals,
     blast_radius,
     clouds,
     copilot,
@@ -67,6 +68,11 @@ app = typer.Typer(
 app.add_typer(
     profiles.app,
     name="profiles",
+)
+
+incidents.app.add_typer(
+    approvals.app,
+    name="approvals",
 )
 
 app.add_typer(
