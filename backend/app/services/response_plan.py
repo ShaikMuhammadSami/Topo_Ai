@@ -17,6 +17,9 @@ from app.models.change_events import (
 from app.models.incident_context import (
     IncidentOperationalContext,
 )
+from app.models.incident_records import (
+    IncidentRecordView,
+)
 from app.models.ownership import (
     BusinessImpactLevel,
     IncidentOwnershipImpact,
@@ -1652,10 +1655,22 @@ def _recommended_actions(
 def build_incident_response_plan(
     session: Session,
     incident_id: str,
+    *,
+    incident_record: (
+        IncidentRecordView | None
+    ) = None,
+    causal_analysis: (
+        CausalAnalysisResponse | None
+    ) = None,
+    operational_context: (
+        IncidentOperationalContext | None
+    ) = None,
 ) -> IncidentResponsePlan:
-    incident = load_incident_record(
-        session=session,
-        incident_id=incident_id,
+    incident = incident_record or (
+        load_incident_record(
+            session=session,
+            incident_id=incident_id,
+        )
     )
 
     if incident is None:
@@ -1663,9 +1678,11 @@ def build_incident_response_plan(
             f"Incident not found: {incident_id}"
         )
 
-    analysis = latest_causal_analysis(
-        session,
-        incident_id=incident_id,
+    analysis = causal_analysis or (
+        latest_causal_analysis(
+            session,
+            incident_id=incident_id,
+        )
     )
 
     if analysis is None:
@@ -1685,9 +1702,11 @@ def build_incident_response_plan(
     # Block 14A remains the single owner of
     # root ownership, business impact, blast-radius
     # aggregation and escalation calculation.
-    context = build_incident_operational_context(
-        session=session,
-        incident_id=incident_id,
+    context = operational_context or (
+        build_incident_operational_context(
+            session=session,
+            incident_id=incident_id,
+        )
     )
 
     root_event = _load_event_context(

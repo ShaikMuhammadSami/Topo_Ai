@@ -106,6 +106,9 @@ from app.api.incident_memory import (
 from app.api.response_intelligence import (
     router as response_intelligence_router,
 )
+from app.api.incident_briefing import (
+    router as incident_briefing_router,
+)
 from app.api.execution_readiness import (
     router as execution_readiness_router,
 )
@@ -248,6 +251,9 @@ app.include_router(
 )
 app.include_router(
     response_intelligence_router
+)
+app.include_router(
+    incident_briefing_router
 )
 app.include_router(
     execution_readiness_router
