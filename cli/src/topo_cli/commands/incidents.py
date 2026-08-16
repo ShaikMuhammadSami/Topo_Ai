@@ -603,6 +603,246 @@ def response_plan(
         )
 
 
+@app.command("outcome")
+def incident_outcome(
+    context: typer.Context,
+    incident_id: str = typer.Argument(
+        help="Stable incident ID.",
+    ),
+) -> None:
+    runtime = get_runtime(context)
+
+    result = api_call(
+        lambda:
+            runtime.client.incident_outcome(
+                incident_id
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    original = result.get(
+        "original_root_cause"
+    )
+
+    if not isinstance(original, dict):
+        original = {}
+
+    final = result.get("final_root_cause")
+
+    if not isinstance(final, dict):
+        final = {}
+
+    primary = result.get(
+        "primary_resolution_action"
+    )
+
+    if not isinstance(primary, dict):
+        primary = {}
+
+    summary = {
+        "Incident": result.get(
+            "incident_id"
+        ),
+        "Outcome Status": result.get(
+            "status"
+        ),
+        "Started": result.get(
+            "started_at"
+        ),
+        "Mitigated": result.get(
+            "mitigated_at"
+        ),
+        "Resolved": result.get(
+            "resolved_at"
+        ),
+        "Time to Mitigation (seconds)": (
+            result.get(
+                "time_to_mitigation_seconds"
+            )
+        ),
+        "Time to Resolution (seconds)": (
+            result.get(
+                "time_to_resolution_seconds"
+            )
+        ),
+        "Original Root Cause": (
+            original.get("title")
+        ),
+        "Original Root Event": (
+            original.get("event_id")
+        ),
+        "Original Root Source": (
+            original.get("event_source")
+        ),
+        "Final Root Cause": final.get(
+            "title"
+        ),
+        "Final Root Event": final.get(
+            "event_id"
+        ),
+        "Final Root Source": final.get(
+            "event_source"
+        ),
+        "RCA Verdict": result.get(
+            "rca_verdict"
+        ),
+        "RCA Confidence": result.get(
+            "rca_confidence"
+        ),
+        "Primary Resolution Action": (
+            primary.get("title")
+        ),
+        "Recommendations Followed": (
+            result.get(
+                "recommendations_followed",
+                [],
+            )
+        ),
+        "Recommendations Not Followed": (
+            result.get(
+                "recommendations_not_followed",
+                [],
+            )
+        ),
+        "Recommendations Unknown": (
+            result.get(
+                "recommendations_unknown",
+                [],
+            )
+        ),
+        "Effective Actions": result.get(
+            "effective_action_ids",
+            [],
+        ),
+        "Ineffective Actions": result.get(
+            "ineffective_action_ids",
+            [],
+        ),
+        "Resolution Summary": result.get(
+            "resolution_summary"
+        ),
+        "Evidence Events": result.get(
+            "evidence_event_ids",
+            [],
+        ),
+        "Evidence": result.get(
+            "evidence_ids",
+            [],
+        ),
+        "Warnings": result.get(
+            "warnings",
+            [],
+        ),
+    }
+
+    render_data(
+        summary,
+        output_format=(
+            runtime.output_format
+        ),
+        title="Incident Outcome",
+    )
+
+    actions = result.get(
+        "actions_taken",
+        [],
+    )
+
+    if isinstance(actions, list) and actions:
+        render_records(
+            [
+                item
+                for item in actions
+                if isinstance(item, dict)
+            ],
+            title="Actions Taken",
+            columns=[
+                ColumnSpec(
+                    "ACTION",
+                    ("title",),
+                    max_width=55,
+                ),
+                ColumnSpec(
+                    "TYPE",
+                    ("action_type",),
+                ),
+                ColumnSpec(
+                    "ACTOR",
+                    ("actor",),
+                ),
+                ColumnSpec(
+                    "RESULT",
+                    ("result",),
+                ),
+                ColumnSpec(
+                    "EFFECTIVENESS",
+                    ("effectiveness",),
+                ),
+                ColumnSpec(
+                    "COMPLETED",
+                    ("completed_at",),
+                ),
+                ColumnSpec(
+                    "PLAN ACTION",
+                    (
+                        "response_plan_action_id",
+                    ),
+                    max_width=55,
+                ),
+            ],
+        )
+
+    plan_actions = result.get(
+        "response_plan_actions",
+        [],
+    )
+
+    if (
+        isinstance(plan_actions, list)
+        and plan_actions
+    ):
+        render_records(
+            [
+                item
+                for item in plan_actions
+                if isinstance(item, dict)
+            ],
+            title=(
+                "Response Plan Follow-through"
+            ),
+            columns=[
+                ColumnSpec(
+                    "ACTION",
+                    ("title",),
+                    max_width=55,
+                ),
+                ColumnSpec(
+                    "CATEGORY",
+                    ("category",),
+                ),
+                ColumnSpec(
+                    "FOLLOW-THROUGH",
+                    ("follow_through",),
+                ),
+                ColumnSpec(
+                    "EFFECTIVENESS",
+                    ("effectiveness",),
+                ),
+                ColumnSpec(
+                    "REASON",
+                    ("reason",),
+                    max_width=80,
+                ),
+            ],
+        )
+
+
 @app.command("explain")
 def explain_incident(
     context: typer.Context,

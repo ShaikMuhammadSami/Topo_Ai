@@ -1030,6 +1030,89 @@ class IncidentRecord(Base):
         default=utc_now_iso,
     )
 
+
+class IncidentOutcomeRecord(Base):
+    __tablename__ = "incident_outcomes"
+
+    outcome_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    incident_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    causal_analysis_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    response_plan_reference: Mapped[
+        str | None
+    ] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    rca_verdict: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    mitigated_at: Mapped[
+        str | None
+    ] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    resolved_at: Mapped[
+        str | None
+    ] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+
+    source_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="{}",
+    )
+
+    payload_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
 class OwnershipMappingRecord(Base):
     __tablename__ = "ownership_mappings"
 
