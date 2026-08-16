@@ -501,6 +501,180 @@ class TopoClient:
 
         return value
 
+    def request_action_approval(
+        self,
+        incident_id: str,
+        *,
+        action_id: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/approvals"
+        )
+        body: dict[str, Any] = {
+            "action_id": action_id,
+        }
+
+        if reason is not None:
+            body["reason"] = reason
+
+        value = self._request(
+            "POST",
+            path,
+            json_body=body,
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Approval-request endpoint returned "
+                "an invalid response."
+            )
+
+        return value
+
+    def list_action_approvals(
+        self,
+        incident_id: str,
+        *,
+        status: str | None = None,
+        action_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/approvals"
+        )
+        value = self._request(
+            "GET",
+            path,
+            params={
+                "status": status,
+                "action_id": action_id,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+        return self._collection(
+            value,
+            keys=("approvals", "items"),
+        )
+
+    def get_action_approval(
+        self,
+        incident_id: str,
+        approval_id: str,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/approvals/"
+            + self._encode_identifier(
+                approval_id
+            )
+        )
+        value = self._request(
+            "GET",
+            path,
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Approval endpoint returned an "
+                "invalid response."
+            )
+
+        return value
+
+    def decide_action_approval(
+        self,
+        incident_id: str,
+        approval_id: str,
+        *,
+        decision: str,
+        reason: str | None = None,
+    ) -> dict[str, Any]:
+        if decision not in {
+            "approve",
+            "reject",
+        }:
+            raise ApiFailure(
+                "Approval decision must be approve "
+                "or reject."
+            )
+
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/approvals/"
+            + self._encode_identifier(
+                approval_id
+            )
+            + f"/{decision}"
+        )
+        body: dict[str, Any] = {}
+
+        if reason is not None:
+            body["reason"] = reason
+
+        value = self._request(
+            "POST",
+            path,
+            json_body=body,
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Approval-decision endpoint returned "
+                "an invalid response."
+            )
+
+        return value
+
+    def revoke_action_approval(
+        self,
+        incident_id: str,
+        approval_id: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/approvals/"
+            + self._encode_identifier(
+                approval_id
+            )
+            + "/revoke"
+        )
+        value = self._request(
+            "POST",
+            path,
+            json_body={"reason": reason},
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Approval-revocation endpoint returned "
+                "an invalid response."
+            )
+
+        return value
+
     # ------------------------------------------------------------------
     # Explanations
     # ------------------------------------------------------------------

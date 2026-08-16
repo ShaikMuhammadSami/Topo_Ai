@@ -3551,3 +3551,308 @@ class CausalAnalysisRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
+
+class ActionApprovalRecord(Base):
+    __tablename__ = "action_approvals"
+
+    approval_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+    incident_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    action_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    action_family: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    risk: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+    requires_human_approval: Mapped[bool] = (
+        mapped_column(
+            Boolean,
+            nullable=False,
+        )
+    )
+    policy_version: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    readiness_status_at_request: Mapped[str] = (
+        mapped_column(
+            String(50),
+            nullable=False,
+        )
+    )
+
+    evidence_fingerprint: Mapped[str] = (
+        mapped_column(
+            String(64),
+            nullable=False,
+            index=True,
+        )
+    )
+    target_entity_ids_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="[]",
+        )
+    )
+    target_change_event_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(1000),
+        nullable=True,
+        index=True,
+    )
+    readiness_snapshot_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+        )
+    )
+
+    # SQLite and PostgreSQL both permit multiple
+    # NULL values in a UNIQUE column. The value is
+    # populated only while pending, preventing
+    # duplicate concurrent pending requests without
+    # preventing a new request after a terminal state.
+    pending_key: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+        unique=True,
+        index=True,
+    )
+
+    request_reason: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+    requested_by_subject: Mapped[str] = (
+        mapped_column(
+            String(500),
+            nullable=False,
+            index=True,
+        )
+    )
+    requested_by_display_name: Mapped[str] = (
+        mapped_column(
+            String(500),
+            nullable=False,
+        )
+    )
+    requested_by_roles_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="[]",
+        )
+    )
+    requested_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    decided_by_subject: Mapped[str | None] = (
+        mapped_column(
+            String(500),
+            nullable=True,
+            index=True,
+        )
+    )
+    decided_by_display_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    decided_by_roles_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="[]",
+        )
+    )
+    decided_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+    decision_reason: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+
+    expires_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    revoked_by_subject: Mapped[str | None] = (
+        mapped_column(
+            String(500),
+            nullable=True,
+            index=True,
+        )
+    )
+    revoked_by_display_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    revoked_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+    revocation_reason: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+
+    invalidated_at: Mapped[str | None] = (
+        mapped_column(
+            String(50),
+            nullable=True,
+            index=True,
+        )
+    )
+    invalidation_reason: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class ActionApprovalEventRecord(Base):
+    __tablename__ = "action_approval_events"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "approval_id",
+            "sequence",
+            name=(
+                "uq_action_approval_event_sequence"
+            ),
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+    sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    approval_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+    incident_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    action_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+    from_status: Mapped[str | None] = (
+        mapped_column(
+            String(30),
+            nullable=True,
+        )
+    )
+    to_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    actor_subject: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+    actor_display_name: Mapped[str] = (
+        mapped_column(
+            String(500),
+            nullable=False,
+        )
+    )
+    actor_roles_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+    authentication_type: Mapped[str] = (
+        mapped_column(
+            String(100),
+            nullable=False,
+        )
+    )
+
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    evidence_fingerprint: Mapped[str] = (
+        mapped_column(
+            String(64),
+            nullable=False,
+            index=True,
+        )
+    )
+    occurred_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
