@@ -3856,3 +3856,348 @@ class ActionApprovalEventRecord(Base):
         nullable=False,
         index=True,
     )
+
+
+class ExecutionIntentRecord(Base):
+    __tablename__ = "execution_intents"
+
+    execution_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+    incident_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    approval_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    action_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    action_family: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    approval_evidence_fingerprint: Mapped[str] = (
+        mapped_column(
+            String(64),
+            nullable=False,
+            index=True,
+        )
+    )
+    policy_version: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+    risk: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+    target_entity_ids_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="[]",
+        )
+    )
+    target_change_event_id: Mapped[
+        str | None
+    ] = mapped_column(
+        String(1000),
+        nullable=True,
+        index=True,
+    )
+    execution_snapshot_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+        )
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+
+    created_by_subject: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+    created_by_display_name: Mapped[str] = (
+        mapped_column(
+            String(500),
+            nullable=False,
+        )
+    )
+    created_by_roles_json: Mapped[str] = (
+        mapped_column(
+            Text,
+            nullable=False,
+            default="[]",
+        )
+    )
+    created_by_authentication_type: Mapped[str] = (
+        mapped_column(
+            String(100),
+            nullable=False,
+        )
+    )
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    claimed_by_subject: Mapped[str | None] = (
+        mapped_column(
+            String(500),
+            nullable=True,
+            index=True,
+        )
+    )
+    claimed_by_display_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    claimed_by_authentication_type: Mapped[
+        str | None
+    ] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+    claimed_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+    claim_expires_at: Mapped[str | None] = (
+        mapped_column(
+            String(50),
+            nullable=True,
+            index=True,
+        )
+    )
+    claim_token_hash: Mapped[str | None] = (
+        mapped_column(
+            String(64),
+            nullable=True,
+        )
+    )
+    claim_generation: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+    attempt_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    cancelled_by_subject: Mapped[str | None] = (
+        mapped_column(
+            String(500),
+            nullable=True,
+            index=True,
+        )
+    )
+    cancelled_by_display_name: Mapped[
+        str | None
+    ] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    cancelled_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+    cancellation_reason: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+
+    invalidated_at: Mapped[str | None] = (
+        mapped_column(
+            String(50),
+            nullable=True,
+            index=True,
+        )
+    )
+    invalidation_reason: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+    expired_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+    expiration_reason: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+
+    # Reserved receipt fields for a future adapter.
+    # Block 14H never populates them.
+    started_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    completed_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    failed_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+    last_error_code: Mapped[str | None] = (
+        mapped_column(
+            String(255),
+            nullable=True,
+        )
+    )
+    last_error_message: Mapped[str | None] = (
+        mapped_column(
+            Text,
+            nullable=True,
+        )
+    )
+    result_reference: Mapped[str | None] = (
+        mapped_column(
+            String(1000),
+            nullable=True,
+        )
+    )
+    execution_performed: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+    )
+
+    row_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
+class ExecutionIntentEventRecord(Base):
+    __tablename__ = "execution_intent_events"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "execution_id",
+            "sequence",
+            name=(
+                "uq_execution_intent_event_sequence"
+            ),
+        ),
+    )
+
+    event_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+    sequence: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    execution_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+    incident_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    approval_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+    action_id: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+    event_type: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+    from_status: Mapped[str | None] = mapped_column(
+        String(30),
+        nullable=True,
+    )
+    to_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+
+    actor_subject: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+    actor_display_name: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+    actor_roles_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
+    )
+    authentication_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    claim_generation: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+    reason: Mapped[str | None] = mapped_column(
+        Text,
+        nullable=True,
+    )
+    occurred_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )

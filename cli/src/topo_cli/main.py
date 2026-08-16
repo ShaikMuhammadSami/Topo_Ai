@@ -14,6 +14,7 @@ from topo_cli.commands import (
     copilot,
     change_sources,
     explanations,
+    execution_intents,
     incidents,
     investigations,
     profiles,
@@ -73,6 +74,11 @@ app.add_typer(
 incidents.app.add_typer(
     approvals.app,
     name="approvals",
+)
+
+incidents.app.add_typer(
+    execution_intents.app,
+    name="execution-intents",
 )
 
 app.add_typer(
