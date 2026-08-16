@@ -317,6 +317,31 @@ class TopoClient:
 
         return value
 
+    def incident_operational_context(
+        self,
+        incident_id: str,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/operational-context"
+        )
+
+        value = self._request(
+            "GET",
+            path,
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Operational-context endpoint "
+                "returned an invalid response."
+            )
+
+        return value
+
     # ------------------------------------------------------------------
     # Explanations
     # ------------------------------------------------------------------
@@ -1936,9 +1961,3 @@ class TopoClient:
             )
 
         return value
-
-
-
-
-
-        

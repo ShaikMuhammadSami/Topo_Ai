@@ -239,6 +239,125 @@ def incident_blast_radius(
     )
 
 
+@app.command("operational-context")
+def operational_context(
+    context: typer.Context,
+    incident_id: str = typer.Argument(
+        help="Stable incident ID.",
+    ),
+) -> None:
+    runtime = get_runtime(context)
+
+    result = api_call(
+        lambda:
+            runtime.client
+            .incident_operational_context(
+                incident_id
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    ownership = result.get(
+        "root_cause_ownership"
+    )
+
+    if not isinstance(ownership, dict):
+        ownership = {}
+
+    impact = result.get(
+        "overall_business_impact"
+    )
+
+    if not isinstance(impact, dict):
+        impact = {}
+
+    resolved_count = impact.get(
+        "resolved_entity_count"
+    )
+    unresolved_count = impact.get(
+        "unresolved_entity_count"
+    )
+
+    summary = {
+        "Root Cause": result.get(
+            "root_event_title"
+        ),
+        "Root Source": result.get(
+            "root_event_source"
+        ),
+        "Causal Confidence": result.get(
+            "causal_confidence"
+        ),
+        "Root Entity": result.get(
+            "root_entity_id"
+        ),
+        "Root Owner Team": ownership.get(
+            "owner_team"
+        ),
+        "Owner Email": ownership.get(
+            "owner_email"
+        ),
+        "On-call": ownership.get(
+            "oncall_contact"
+        ),
+        "Technical Service": ownership.get(
+            "service_name"
+        ),
+        "Repository": ownership.get(
+            "repository_url"
+        ),
+        "Business Capability": ownership.get(
+            "business_capability"
+        ),
+        "Criticality": ownership.get(
+            "criticality"
+        ),
+        "Overall Business Impact": impact.get(
+            "business_impact_level"
+        ),
+        "Affected Teams": impact.get(
+            "owner_teams",
+            [],
+        ),
+        "Affected Capabilities": impact.get(
+            "business_capabilities",
+            [],
+        ),
+        "Affected Entities": impact.get(
+            "affected_entity_count"
+        ),
+        "Ownership Resolved / Unresolved": (
+            f"{resolved_count} / "
+            f"{unresolved_count}"
+        ),
+        "Routing Recommendation": impact.get(
+            "routing_recommendation"
+        ),
+        "Escalation Targets": result.get(
+            "escalation_targets",
+            [],
+        ),
+        "Warnings": result.get(
+            "warnings",
+            [],
+        ),
+    }
+
+    render_data(
+        summary,
+        output_format=(
+            runtime.output_format
+        ),
+        title="Incident Operational Context",
+    )
+
+
 @app.command("explain")
 def explain_incident(
     context: typer.Context,
