@@ -429,6 +429,42 @@ class TopoClient:
 
         return value
 
+    def incident_response_intelligence(
+        self,
+        incident_id: str,
+        *,
+        history_limit: int = 5,
+        min_similarity: float = 0.5,
+        include_ai: bool = False,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/response-intelligence"
+        )
+
+        value = self._request(
+            "GET",
+            path,
+            params={
+                "history_limit": history_limit,
+                "min_similarity": (
+                    min_similarity
+                ),
+                "include_ai": include_ai,
+            },
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Response-intelligence endpoint "
+                "returned an invalid response."
+            )
+
+        return value
+
     # ------------------------------------------------------------------
     # Explanations
     # ------------------------------------------------------------------

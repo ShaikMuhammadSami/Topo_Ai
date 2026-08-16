@@ -843,6 +843,339 @@ def incident_outcome(
         )
 
 
+@app.command("response-intelligence")
+def response_intelligence(
+    context: typer.Context,
+    incident_id: str = typer.Argument(
+        help="Stable incident ID.",
+    ),
+    history_limit: int = typer.Option(
+        5,
+        "--history-limit",
+        min=1,
+        max=20,
+        help="Maximum historical matches.",
+    ),
+    min_similarity: float = typer.Option(
+        0.5,
+        "--min-similarity",
+        min=0.0,
+        max=1.0,
+        help=(
+            "Minimum deterministic similarity "
+            "score."
+        ),
+    ),
+    include_ai: bool = typer.Option(
+        False,
+        "--ai/--no-ai",
+        help=(
+            "Add one optional OpenAI explanation "
+            "after deterministic analysis."
+        ),
+    ),
+) -> None:
+    runtime = get_runtime(context)
+    result = api_call(
+        lambda:
+            runtime.client
+            .incident_response_intelligence(
+                incident_id,
+                history_limit=history_limit,
+                min_similarity=(
+                    min_similarity
+                ),
+                include_ai=include_ai,
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    plan = result.get(
+        "baseline_response_plan"
+    )
+
+    if not isinstance(plan, dict):
+        plan = {}
+
+    root = plan.get("root_cause")
+
+    if not isinstance(root, dict):
+        root = {}
+
+    render_data(
+        {
+            "Incident": result.get(
+                "incident_id"
+            ),
+            "Response Priority": result.get(
+                "response_priority"
+            ),
+            "Overall Historical Support": (
+                result.get(
+                    "overall_historical_support"
+                )
+            ),
+            "Root Cause": root.get(
+                "event_title"
+            ),
+            "Causal Confidence": root.get(
+                "causal_confidence"
+            ),
+            "Deterministic Summary": result.get(
+                "deterministic_summary"
+            ),
+            "AI Summary": result.get(
+                "ai_summary"
+            ),
+            "AI Status": result.get(
+                "ai_status"
+            ),
+            "Warnings": result.get(
+                "warnings",
+                [],
+            ),
+        },
+        output_format=(
+            runtime.output_format
+        ),
+        title=(
+            "Incident Response Intelligence"
+        ),
+    )
+
+    rows = []
+    raw_actions = result.get("actions", [])
+
+    if isinstance(raw_actions, list):
+        for action in raw_actions:
+            if not isinstance(action, dict):
+                continue
+
+            support = action.get(
+                "historical_support"
+            )
+
+            if not isinstance(support, dict):
+                support = {}
+
+            rows.append(
+                {
+                    "rank": action.get(
+                        "baseline_rank"
+                    ),
+                    "group": action.get(
+                        "baseline_group"
+                    ),
+                    "title": action.get("title"),
+                    "priority": action.get(
+                        "priority"
+                    ),
+                    "family": action.get(
+                        "action_family"
+                    ),
+                    "risk": action.get("risk"),
+                    "approval": action.get(
+                        "requires_human_approval"
+                    ),
+                    "current_evidence": (
+                        action.get(
+                            "current_evidence_strength"
+                        )
+                    ),
+                    "historical_support": (
+                        support.get("level")
+                    ),
+                    "similar_cases": support.get(
+                        "similar_incident_count"
+                    ),
+                    "observed": support.get(
+                        "action_observed_count"
+                    ),
+                    "effective": support.get(
+                        "effective_count"
+                    ),
+                    "ineffective": support.get(
+                        "ineffective_count"
+                    ),
+                    "support_reasons": support.get(
+                        "support_reasons",
+                        [],
+                    ),
+                    "cautions": support.get(
+                        "caution_reasons",
+                        [],
+                    ),
+                }
+            )
+
+    if rows:
+        render_records(
+            rows,
+            title="Action Support",
+            columns=[
+                ColumnSpec("#", ("rank",)),
+                ColumnSpec("GROUP", ("group",)),
+                ColumnSpec(
+                    "TITLE",
+                    ("title",),
+                    max_width=50,
+                ),
+                ColumnSpec(
+                    "PRIORITY",
+                    ("priority",),
+                ),
+                ColumnSpec(
+                    "FAMILY",
+                    ("family",),
+                ),
+                ColumnSpec("RISK", ("risk",)),
+                ColumnSpec(
+                    "HUMAN APPROVAL",
+                    ("approval",),
+                ),
+                ColumnSpec(
+                    "CURRENT EVIDENCE",
+                    ("current_evidence",),
+                ),
+                ColumnSpec(
+                    "HISTORICAL SUPPORT",
+                    ("historical_support",),
+                ),
+                ColumnSpec(
+                    "SIMILAR",
+                    ("similar_cases",),
+                ),
+                ColumnSpec(
+                    "OBSERVED",
+                    ("observed",),
+                ),
+                ColumnSpec(
+                    "EFFECTIVE",
+                    ("effective",),
+                ),
+                ColumnSpec(
+                    "INEFFECTIVE",
+                    ("ineffective",),
+                ),
+                ColumnSpec(
+                    "WHY HISTORY SUPPORTS IT",
+                    ("support_reasons",),
+                    max_width=70,
+                ),
+                ColumnSpec(
+                    "CAUTIONS",
+                    ("cautions",),
+                    max_width=70,
+                ),
+            ],
+        )
+
+    rollback = result.get(
+        "rollback_candidate"
+    )
+
+    if isinstance(rollback, dict):
+        baseline = rollback.get("baseline")
+        support = rollback.get(
+            "historical_support"
+        )
+
+        if not isinstance(baseline, dict):
+            baseline = {}
+
+        if not isinstance(support, dict):
+            support = {}
+
+        render_data(
+            {
+                "Baseline Available": baseline.get(
+                    "available"
+                ),
+                "Change Event": baseline.get(
+                    "change_event_id"
+                ),
+                "Human Approval Required": (
+                    baseline.get(
+                        "requires_human_approval"
+                    )
+                ),
+                "Historical Support": support.get(
+                    "level"
+                ),
+                "Historical Score": support.get(
+                    "score"
+                ),
+                "Supporting Incidents": (
+                    support.get(
+                        "supporting_incident_ids",
+                        [],
+                    )
+                ),
+                "Contradicting Incidents": (
+                    support.get(
+                        "contradicting_incident_ids",
+                        [],
+                    )
+                ),
+                "Cautions": support.get(
+                    "caution_reasons",
+                    [],
+                ),
+            },
+            output_format=(
+                runtime.output_format
+            ),
+            title="Rollback Candidate",
+        )
+
+    patterns = result.get(
+        "historical_resolution_patterns",
+        [],
+    )
+
+    if isinstance(patterns, list) and patterns:
+        render_records(
+            [
+                item
+                for item in patterns
+                if isinstance(item, dict)
+            ],
+            title=(
+                "Historical Resolution Patterns"
+            ),
+            columns=[
+                ColumnSpec(
+                    "ACTION TYPE",
+                    ("action_type",),
+                ),
+                ColumnSpec(
+                    "OBSERVED",
+                    ("observed_cases",),
+                ),
+                ColumnSpec(
+                    "EFFECTIVE",
+                    ("effective_cases",),
+                ),
+                ColumnSpec(
+                    "INEFFECTIVE",
+                    ("ineffective_cases",),
+                ),
+                ColumnSpec(
+                    "UNKNOWN",
+                    (
+                        "unknown_effectiveness_cases",
+                    ),
+                ),
+            ],
+        )
+
+
 @app.command("history")
 def incident_history(
     context: typer.Context,

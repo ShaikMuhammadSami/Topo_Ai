@@ -103,6 +103,9 @@ from app.api.incident_outcome import (
 from app.api.incident_memory import (
     router as incident_memory_router,
 )
+from app.api.response_intelligence import (
+    router as response_intelligence_router,
+)
 from dotenv import load_dotenv
 
 
@@ -233,6 +236,9 @@ app.include_router(
 )
 app.include_router(
     incident_memory_router
+)
+app.include_router(
+    response_intelligence_router
 )
 # @app.get("/health")
 # def health_check() -> dict:
