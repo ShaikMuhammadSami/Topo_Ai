@@ -675,6 +675,126 @@ class TopoClient:
 
         return value
 
+    def create_execution_intent(
+        self,
+        incident_id: str,
+        *,
+        approval_id: str,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/execution-intents"
+        )
+        value = self._request(
+            "POST",
+            path,
+            json_body={
+                "approval_id": approval_id,
+            },
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Execution-intent creation endpoint "
+                "returned an invalid response."
+            )
+
+        return value
+
+    def list_execution_intents(
+        self,
+        incident_id: str,
+        *,
+        status: str | None = None,
+        approval_id: str | None = None,
+        action_id: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/execution-intents"
+        )
+        value = self._request(
+            "GET",
+            path,
+            params={
+                "status": status,
+                "approval_id": approval_id,
+                "action_id": action_id,
+                "limit": limit,
+                "offset": offset,
+            },
+        )
+
+        return self._collection(
+            value,
+            keys=("execution_intents", "items"),
+        )
+
+    def get_execution_intent(
+        self,
+        incident_id: str,
+        execution_id: str,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/execution-intents/"
+            + self._encode_identifier(
+                execution_id
+            )
+        )
+        value = self._request("GET", path)
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Execution-intent endpoint returned "
+                "an invalid response."
+            )
+
+        return value
+
+    def cancel_execution_intent(
+        self,
+        incident_id: str,
+        execution_id: str,
+        *,
+        reason: str,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/execution-intents/"
+            + self._encode_identifier(
+                execution_id
+            )
+            + "/cancel"
+        )
+        value = self._request(
+            "POST",
+            path,
+            json_body={"reason": reason},
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Execution-intent cancellation endpoint "
+                "returned an invalid response."
+            )
+
+        return value
+
     # ------------------------------------------------------------------
     # Explanations
     # ------------------------------------------------------------------
