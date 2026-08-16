@@ -32,6 +32,47 @@ def load_incident_outcome_record(
     return session.scalar(statement)
 
 
+def list_incident_outcome_records(
+    session: Session,
+    *,
+    exclude_incident_id: str | None = None,
+    limit: int = 500,
+) -> list[IncidentOutcomeRecord]:
+    """Return a bounded historical-outcome set.
+
+    The service layer validates payloads and decides
+    whether a durable outcome is sufficiently complete
+    for historical comparison.
+    """
+    statement = select(IncidentOutcomeRecord)
+
+    if exclude_incident_id is not None:
+        statement = statement.where(
+            IncidentOutcomeRecord.incident_id
+            != exclude_incident_id
+        )
+
+    statement = (
+        statement
+        .order_by(
+            IncidentOutcomeRecord
+            .resolved_at
+            .desc(),
+            IncidentOutcomeRecord
+            .updated_at
+            .desc(),
+            IncidentOutcomeRecord
+            .incident_id
+            .asc(),
+        )
+        .limit(max(1, min(limit, 1000)))
+    )
+
+    return list(
+        session.scalars(statement).all()
+    )
+
+
 def load_incident_outcome(
     session: Session,
     *,

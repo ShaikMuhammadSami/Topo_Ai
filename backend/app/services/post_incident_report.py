@@ -37,6 +37,11 @@ from app.repositories.post_incident_report_repository import (
 from app.services.incident_explanation import (
     build_incident_evidence,
 )
+from app.services.llm_client import (
+    configured_openai_model,
+    generate_openai_structured,
+    resolve_configured_provider,
+)
 
 
 REPORT_PROMPT_VERSION = (
@@ -1148,29 +1153,55 @@ def _groq_report(
         evidence=evidence,
     )
 
+
+def _openai_report(
+    *,
+    evidence: list[GroundingEvidence],
+    model_name: str,
+) -> GeneratedPostIncidentReport:
+    payload = {
+        "prompt_version": (
+            REPORT_PROMPT_VERSION
+        ),
+        "allowed_evidence_ids": [
+            item.evidence_id
+            for item in evidence
+        ],
+        "evidence_catalog": [
+            item.model_dump(mode="json")
+            for item in evidence
+        ],
+    }
+
+    try:
+        generated = generate_openai_structured(
+            system_prompt=(
+                REPORT_SYSTEM_PROMPT
+            ),
+            evidence_payload=payload,
+            response_model=(
+                GeneratedPostIncidentReport
+            ),
+            model_name=model_name,
+        )
+
+    except Exception as exc:
+        raise PostIncidentReportGenerationError(
+            str(exc)
+        ) from exc
+
+    return _validate_report(
+        generated=generated,
+        evidence=evidence,
+    )
+
 def _resolve_provider(
     requested: ExplanationProvider,
 ) -> ExplanationProvider:
-    if (
-        requested
-        != ExplanationProvider.AUTO
-    ):
-        return requested
-
-    configured = os.getenv(
-        "TOPO_AI_LLM_PROVIDER",
-        "groq",
-    ).lower()
-
-    if (
-        configured == "groq"
-        and os.getenv("GROQ_API_KEY")
-    ):
-        return ExplanationProvider.GROQ
-
-    return (
-        ExplanationProvider
-        .DETERMINISTIC
+    return ExplanationProvider(
+        resolve_configured_provider(
+            requested.value
+        )
     )
 
 
@@ -1219,15 +1250,23 @@ def generate_post_incident_report(
         request.provider
     )
 
-    configured_model = os.getenv(
-        "TOPO_AI_LLM_MODEL",
-        "openai/gpt-oss-120b",
+    configured_model = (
+        configured_openai_model()
+        if provider
+        == ExplanationProvider.OPENAI
+        else os.getenv(
+            "TOPO_AI_LLM_MODEL",
+            "openai/gpt-oss-120b",
+        )
     )
 
     model_name = (
         configured_model
         if provider
-        == ExplanationProvider.GROQ
+        in {
+            ExplanationProvider.OPENAI,
+            ExplanationProvider.GROQ,
+        }
         else None
     )
 
@@ -1258,6 +1297,46 @@ def generate_post_incident_report(
     )
 
     if (
+        provider
+        == ExplanationProvider.OPENAI
+    ):
+        try:
+            generated = _openai_report(
+                evidence=evidence,
+                model_name=configured_model,
+            )
+
+        except Exception as exc:
+            if (
+                request.provider
+                == ExplanationProvider.OPENAI
+            ):
+                raise (
+                    PostIncidentReportGenerationError(
+                        str(exc)
+                    )
+                ) from exc
+
+            warnings.append(
+                "OpenAI report generation failed; "
+                "deterministic fallback was used: "
+                f"{type(exc).__name__}: {exc}"
+            )
+            provider = (
+                ExplanationProvider
+                .DETERMINISTIC
+            )
+            model_name = None
+            generated = _validate_report(
+                generated=(
+                    _deterministic_report(
+                        evidence
+                    )
+                ),
+                evidence=evidence,
+            )
+
+    elif (
         provider
         == ExplanationProvider.GROQ
     ):

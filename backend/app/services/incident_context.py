@@ -80,7 +80,7 @@ def _entity_id_for_node(
     return None
 
 
-def _root_entity_id(
+def root_entity_id_for_analysis(
     analysis: CausalAnalysisResponse,
 ) -> str | None:
     hypothesis = analysis.top_hypothesis
@@ -148,6 +148,15 @@ def _root_entity_id(
     return hypothesis.affected_entity_id
 
 
+def _root_entity_id(
+    analysis: CausalAnalysisResponse,
+) -> str | None:
+    """Backward-compatible private alias."""
+    return root_entity_id_for_analysis(
+        analysis
+    )
+
+
 def _escalation_targets(
     ownership: (
         EntityOwnershipResolution | None
@@ -198,7 +207,7 @@ def build_incident_operational_context(
     )
 
     hypothesis = analysis.top_hypothesis
-    root_entity_id = _root_entity_id(
+    root_entity_id = root_entity_id_for_analysis(
         analysis
     )
 

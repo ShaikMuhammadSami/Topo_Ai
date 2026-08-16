@@ -843,6 +843,266 @@ def incident_outcome(
         )
 
 
+@app.command("history")
+def incident_history(
+    context: typer.Context,
+    incident_id: str = typer.Argument(
+        help="Stable incident ID.",
+    ),
+    limit: int = typer.Option(
+        5,
+        "--limit",
+        min=1,
+        max=20,
+        help="Maximum historical matches.",
+    ),
+    min_similarity: float = typer.Option(
+        0.25,
+        "--min-similarity",
+        min=0.0,
+        max=1.0,
+        help=(
+            "Minimum deterministic similarity "
+            "score."
+        ),
+    ),
+    include_ai: bool = typer.Option(
+        False,
+        "--ai/--no-ai",
+        help=(
+            "Add one optional OpenAI summary "
+            "after deterministic matching."
+        ),
+    ),
+) -> None:
+    runtime = get_runtime(context)
+    result = api_call(
+        lambda:
+            runtime.client
+            .incident_historical_intelligence(
+                incident_id,
+                limit=limit,
+                min_similarity=(
+                    min_similarity
+                ),
+                include_ai=include_ai,
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    analysis = result.get(
+        "analysis_context"
+    )
+
+    if not isinstance(analysis, dict):
+        analysis = {}
+
+    render_data(
+        {
+            "Incident": result.get(
+                "incident_id"
+            ),
+            "Historical Support": result.get(
+                "historical_support_level"
+            ),
+            "Current Root Cause": analysis.get(
+                "root_event_title"
+            ),
+            "Root Entity": analysis.get(
+                "root_entity_id"
+            ),
+            "Root Service": analysis.get(
+                "root_service_name"
+            ),
+            "Causal Change Kind": analysis.get(
+                "causal_change_kind"
+            ),
+            "Business Capability": analysis.get(
+                "business_capability"
+            ),
+            "Summary": result.get("summary"),
+            "AI Historical Summary": result.get(
+                "ai_summary"
+            ),
+            "AI Status": result.get(
+                "ai_status"
+            ),
+            "Warnings": result.get(
+                "warnings",
+                [],
+            ),
+        },
+        output_format=(
+            runtime.output_format
+        ),
+        title=(
+            "Incident Historical Intelligence"
+        ),
+    )
+
+    raw_matches = result.get("matches", [])
+    match_rows = []
+
+    if isinstance(raw_matches, list):
+        for item in raw_matches:
+            if not isinstance(item, dict):
+                continue
+
+            resolution = item.get(
+                "resolution"
+            )
+
+            if not isinstance(resolution, dict):
+                resolution = {}
+
+            action = resolution.get(
+                "primary_resolution_action"
+            )
+
+            if not isinstance(action, dict):
+                action = {}
+
+            match_rows.append(
+                {
+                    "incident_id": item.get(
+                        "incident_id"
+                    ),
+                    "similarity": item.get(
+                        "similarity_score"
+                    ),
+                    "why": item.get(
+                        "matched_factors",
+                        [],
+                    ),
+                    "differences": item.get(
+                        "differing_factors",
+                        [],
+                    ),
+                    "verdict": resolution.get(
+                        "rca_verdict"
+                    ),
+                    "resolution": action.get(
+                        "title"
+                    ) or resolution.get(
+                        "resolution_summary"
+                    ),
+                    "effectiveness": action.get(
+                        "effectiveness"
+                    ),
+                    "mitigation_seconds": (
+                        resolution.get(
+                            "time_to_mitigation_seconds"
+                        )
+                    ),
+                    "resolution_seconds": (
+                        resolution.get(
+                            "time_to_resolution_seconds"
+                        )
+                    ),
+                }
+            )
+
+    if match_rows:
+        render_records(
+            match_rows,
+            title="Historical Matches",
+            columns=[
+                ColumnSpec(
+                    "INCIDENT ID",
+                    ("incident_id",),
+                    max_width=45,
+                ),
+                ColumnSpec(
+                    "SIMILARITY",
+                    ("similarity",),
+                ),
+                ColumnSpec(
+                    "WHY IT MATCHES",
+                    ("why",),
+                    max_width=65,
+                ),
+                ColumnSpec(
+                    "DIFFERENCES",
+                    ("differences",),
+                    max_width=65,
+                ),
+                ColumnSpec(
+                    "RCA VERDICT",
+                    ("verdict",),
+                ),
+                ColumnSpec(
+                    "RESOLUTION",
+                    ("resolution",),
+                    max_width=55,
+                ),
+                ColumnSpec(
+                    "EFFECTIVENESS",
+                    ("effectiveness",),
+                ),
+                ColumnSpec(
+                    "MITIGATION (S)",
+                    ("mitigation_seconds",),
+                ),
+                ColumnSpec(
+                    "RESOLUTION (S)",
+                    ("resolution_seconds",),
+                ),
+            ],
+        )
+
+    patterns = result.get(
+        "resolution_patterns",
+        [],
+    )
+
+    if isinstance(patterns, list) and patterns:
+        render_records(
+            [
+                item
+                for item in patterns
+                if isinstance(item, dict)
+            ],
+            title="Resolution Patterns",
+            columns=[
+                ColumnSpec(
+                    "ACTION TYPE",
+                    ("action_type",),
+                ),
+                ColumnSpec(
+                    "OBSERVED",
+                    ("observed_cases",),
+                ),
+                ColumnSpec(
+                    "EFFECTIVE",
+                    ("effective_cases",),
+                ),
+                ColumnSpec(
+                    "INEFFECTIVE",
+                    ("ineffective_cases",),
+                ),
+                ColumnSpec(
+                    "UNKNOWN",
+                    (
+                        "unknown_effectiveness_cases",
+                    ),
+                ),
+                ColumnSpec(
+                    "INCIDENTS",
+                    (
+                        "supporting_incident_ids",
+                    ),
+                    max_width=60,
+                ),
+            ],
+        )
+
+
 @app.command("explain")
 def explain_incident(
     context: typer.Context,
