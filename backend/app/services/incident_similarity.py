@@ -786,15 +786,20 @@ def build_historical_incident_intelligence(
     limit: int = 5,
     min_similarity: float = 0.25,
     include_ai: bool = False,
+    current_profile: (
+        HistoricalIncidentFeatureProfile | None
+    ) = None,
 ) -> IncidentHistoricalIntelligence:
     bounded_limit = max(1, min(limit, 20))
     bounded_minimum = max(
         0.0,
         min(min_similarity, 1.0),
     )
-    current = build_current_incident_profile(
-        session,
-        incident_id=incident_id,
+    current = current_profile or (
+        build_current_incident_profile(
+            session,
+            incident_id=incident_id,
+        )
     )
     warnings = list(current.warnings)
     records = list_incident_outcome_records(

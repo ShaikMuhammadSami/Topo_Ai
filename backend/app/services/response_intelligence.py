@@ -996,12 +996,23 @@ def build_incident_response_intelligence(
     history_limit: int = 5,
     min_similarity: float = 0.5,
     include_ai: bool = False,
+    response_plan: (
+        IncidentResponsePlan | None
+    ) = None,
+    historical_intelligence: (
+        IncidentHistoricalIntelligence | None
+    ) = None,
 ) -> IncidentResponseIntelligence:
-    plan = build_incident_response_plan(
-        session=session,
-        incident_id=incident_id,
+    # Callers that already orchestrate the baseline plan and
+    # historical scan can pass those immutable results through.
+    # Existing API/CLI callers retain the original behavior.
+    plan = response_plan or (
+        build_incident_response_plan(
+            session=session,
+            incident_id=incident_id,
+        )
     )
-    history = (
+    history = historical_intelligence or (
         build_historical_incident_intelligence(
             session=session,
             incident_id=incident_id,

@@ -358,6 +358,640 @@ def operational_context(
     )
 
 
+@app.command("briefing")
+def incident_briefing(
+    context: typer.Context,
+    incident_id: str = typer.Argument(
+        help="Stable incident ID.",
+    ),
+    include_ai: bool = typer.Option(
+        False,
+        "--ai/--no-ai",
+        help=(
+            "Add one optional OpenAI narrative after "
+            "the deterministic briefing is built."
+        ),
+    ),
+) -> None:
+    runtime = get_runtime(context)
+    result = api_call(
+        lambda:
+            runtime.client.incident_briefing(
+                incident_id,
+                include_ai=include_ai,
+            )
+    )
+
+    if (
+        runtime.output_format
+        == OutputFormat.JSON
+    ):
+        emit_json(result)
+        return
+
+    def mapping(
+        value: object,
+    ) -> dict:
+        return value if isinstance(value, dict) else {}
+
+    def records(
+        value: object,
+    ) -> list[dict]:
+        if not isinstance(value, list):
+            return []
+
+        return [
+            item
+            for item in value
+            if isinstance(item, dict)
+        ]
+
+    def render_rows(
+        values: list[dict],
+        *,
+        title: str,
+        columns: list[ColumnSpec],
+        empty_message: str,
+    ) -> None:
+        if values:
+            render_records(
+                values,
+                title=title,
+                columns=columns,
+            )
+            return
+
+        render_data(
+            {"Status": empty_message},
+            output_format=(
+                runtime.output_format
+            ),
+            title=title,
+        )
+
+    incident = mapping(result.get("incident"))
+    summary = mapping(result.get("summary"))
+    root = mapping(result.get("root_cause"))
+    blast = mapping(result.get("blast_radius"))
+    operational = mapping(
+        result.get("operational_context")
+    )
+    ownership = mapping(
+        operational.get("ownership")
+    )
+    business = mapping(
+        operational.get("business_impact")
+    )
+    remediation = mapping(
+        result.get("remediation")
+    )
+    historical = mapping(
+        result.get("historical_context")
+    )
+    outcome = mapping(result.get("outcome"))
+
+    render_data(
+        {
+            "Incident ID": incident.get(
+                "incident_id"
+            ),
+            "Title": incident.get("title"),
+            "Status": incident.get("status"),
+            "Severity": incident.get("severity"),
+            "Environment": incident.get(
+                "environment"
+            ),
+            "Cluster": incident.get(
+                "cluster_name"
+            ),
+            "Namespace": incident.get(
+                "namespace"
+            ),
+            "First Observed": incident.get(
+                "first_observed_at"
+            ),
+            "Current State": incident.get(
+                "current_state"
+            ),
+        },
+        output_format=runtime.output_format,
+        title="INCIDENT",
+    )
+    render_data(
+        {
+            "Summary": summary.get("text"),
+            "Evidence": summary.get(
+                "evidence_references",
+                [],
+            ),
+        },
+        output_format=runtime.output_format,
+        title="WHAT HAPPENED",
+    )
+    render_data(
+        {
+            "Root Cause": root.get(
+                "root_event_title"
+            ),
+            "Root Source": root.get(
+                "root_event_source"
+            ),
+            "Causal Confidence": root.get(
+                "causal_confidence"
+            ),
+            "Confidence Level": root.get(
+                "confidence_level"
+            ),
+            "Root Entity": root.get(
+                "root_entity_id"
+            ),
+            "Causal Change": root.get(
+                "causal_change_title"
+            ),
+            "Causal Change Type": root.get(
+                "causal_change_type"
+            ),
+            "Causal Analysis": root.get(
+                "causal_analysis_id"
+            ),
+            "Evidence": root.get(
+                "evidence_references",
+                [],
+            ),
+        },
+        output_format=runtime.output_format,
+        title="ROOT CAUSE",
+    )
+
+    change_rows = records(
+        result.get("recent_relevant_changes")
+    )
+    render_rows(
+        change_rows,
+        title="WHAT CHANGED",
+        columns=[
+            ColumnSpec("ROLE", ("role",)),
+            ColumnSpec(
+                "CHANGE",
+                ("title",),
+                max_width=55,
+            ),
+            ColumnSpec("SOURCE", ("source",)),
+            ColumnSpec(
+                "TYPE",
+                ("change_type",),
+            ),
+            ColumnSpec(
+                "OCCURRED AT",
+                ("occurred_at",),
+            ),
+            ColumnSpec(
+                "EVENT ID",
+                ("event_id",),
+                max_width=50,
+            ),
+            ColumnSpec(
+                "RELEASE / COMMIT",
+                (
+                    "release_version",
+                    "commit_sha",
+                ),
+            ),
+        ],
+        empty_message="No causal change chain is available.",
+    )
+
+    path_rows = records(
+        result.get("dependency_path")
+    )
+    render_rows(
+        path_rows,
+        title="DEPENDENCY PATH",
+        columns=[
+            ColumnSpec("#", ("order",)),
+            ColumnSpec(
+                "NODE",
+                ("label",),
+                max_width=55,
+            ),
+            ColumnSpec(
+                "NODE TYPE",
+                ("node_type",),
+            ),
+            ColumnSpec(
+                "CAUSAL RELATION",
+                ("relation_from_previous",),
+            ),
+            ColumnSpec(
+                "TOPOLOGY RELATION",
+                (
+                    "topology_relationship_type",
+                ),
+            ),
+            ColumnSpec(
+                "ENTITY / EVENT",
+                ("entity_id", "event_id"),
+                max_width=55,
+            ),
+        ],
+        empty_message=(
+            "No evidence-backed dependency path is available."
+        ),
+    )
+
+    render_data(
+        (
+            {
+                "Affected Entities": blast.get(
+                    "affected_entity_count"
+                ),
+                "Returned / Omitted": (
+                    f"{blast.get('returned_entity_count')} / "
+                    f"{blast.get('omitted_entity_count')}"
+                ),
+                "Direct / Indirect / Potential": (
+                    f"{blast.get('direct_impact_count')} / "
+                    f"{blast.get('indirect_impact_count')} / "
+                    f"{blast.get('potential_impact_count')}"
+                ),
+                "Affected Services": blast.get(
+                    "affected_services",
+                    [],
+                ),
+                "Dependency Types": blast.get(
+                    "affected_dependency_types",
+                    [],
+                ),
+                "Affected Teams": blast.get(
+                    "affected_teams",
+                    [],
+                ),
+                "Business Capabilities": blast.get(
+                    "business_capabilities",
+                    [],
+                ),
+            }
+            if blast
+            else {
+                "Status": (
+                    "Blast-radius context is unavailable."
+                )
+            }
+        ),
+        output_format=runtime.output_format,
+        title="BLAST RADIUS",
+    )
+    render_data(
+        {
+            "Resolved": ownership.get(
+                "resolved",
+                False,
+            ),
+            "Root Owner Team": ownership.get(
+                "owner_team"
+            ),
+            "Owner Email": ownership.get(
+                "owner_email"
+            ),
+            "On-call": ownership.get(
+                "oncall_contact"
+            ),
+            "Technical Service": ownership.get(
+                "service_name"
+            ),
+            "Repository": ownership.get(
+                "repository_url"
+            ),
+            "Business Capability": ownership.get(
+                "business_capability"
+            ),
+            "Criticality": ownership.get(
+                "criticality"
+            ),
+            "Escalation Targets": operational.get(
+                "escalation_targets",
+                [],
+            ),
+        },
+        output_format=runtime.output_format,
+        title="OWNER / ON-CALL",
+    )
+    render_data(
+        {
+            "Impact Level": business.get(
+                "business_impact_level"
+            ),
+            "Affected Entities": business.get(
+                "affected_entity_count"
+            ),
+            "Ownership Resolved / Unresolved": (
+                f"{business.get('resolved_entity_count')} / "
+                f"{business.get('unresolved_entity_count')}"
+            ),
+            "Affected Teams": business.get(
+                "owner_teams",
+                [],
+            ),
+            "Affected Capabilities": business.get(
+                "business_capabilities",
+                [],
+            ),
+            "Highest Criticality": business.get(
+                "highest_criticality"
+            ),
+            "Routing Recommendation": business.get(
+                "routing_recommendation"
+            ),
+        },
+        output_format=runtime.output_format,
+        title="BUSINESS IMPACT",
+    )
+
+    action_rows = records(
+        remediation.get("actions")
+    )
+    render_rows(
+        action_rows,
+        title="WHAT TO DO NEXT",
+        columns=[
+            ColumnSpec("#", ("rank",)),
+            ColumnSpec(
+                "ACTION",
+                ("title",),
+                max_width=55,
+            ),
+            ColumnSpec(
+                "TYPE",
+                ("semantics",),
+            ),
+            ColumnSpec(
+                "PRIORITY",
+                ("priority",),
+            ),
+            ColumnSpec("RISK", ("risk",)),
+            ColumnSpec(
+                "HUMAN APPROVAL",
+                ("requires_human_approval",),
+            ),
+            ColumnSpec(
+                "WHY",
+                ("reason",),
+                max_width=70,
+            ),
+            ColumnSpec(
+                "TARGET",
+                ("entity_ids",),
+                max_width=55,
+            ),
+        ],
+        empty_message=(
+            "Response guidance is unavailable; no action "
+            "was invented."
+        ),
+    )
+
+    preview_rows = []
+
+    for preview in records(
+        remediation.get("previews")
+    ):
+        target = mapping(
+            preview.get("affected_target")
+        )
+        potential = records(
+            preview.get(
+                "potentially_impacted_entities"
+            )
+        )
+        preview_rows.append(
+            {
+                "action": preview.get(
+                    "action_title"
+                ),
+                "intended_effect": preview.get(
+                    "intended_effect"
+                ),
+                "target": [
+                    *target.get("entity_ids", []),
+                    *target.get(
+                        "change_event_ids",
+                        [],
+                    ),
+                ],
+                "potential_impact": [
+                    item.get("entity_id")
+                    for item in potential
+                ],
+                "risk": preview.get("risk"),
+                "expected_observation": preview.get(
+                    "expected_observation_if_successful"
+                ),
+                "failure_modes": preview.get(
+                    "possible_failure_modes",
+                    [],
+                ),
+                "historical_observations": (
+                    preview.get(
+                        "historical_observations",
+                        [],
+                    )
+                ),
+                "scope": preview.get(
+                    "potential_impact_scope_note"
+                ),
+            }
+        )
+
+    render_rows(
+        preview_rows,
+        title="REMEDIATION PREVIEW",
+        columns=[
+            ColumnSpec(
+                "ACTION",
+                ("action",),
+                max_width=50,
+            ),
+            ColumnSpec(
+                "INTENDED EFFECT",
+                ("intended_effect",),
+                max_width=80,
+            ),
+            ColumnSpec(
+                "TARGET",
+                ("target",),
+                max_width=55,
+            ),
+            ColumnSpec(
+                "POTENTIAL IMPACT",
+                ("potential_impact",),
+                max_width=65,
+            ),
+            ColumnSpec("RISK", ("risk",)),
+            ColumnSpec(
+                "EXPECTED OBSERVATION",
+                ("expected_observation",),
+                max_width=80,
+            ),
+            ColumnSpec(
+                "POSSIBLE FAILURE MODES",
+                ("failure_modes",),
+                max_width=80,
+            ),
+        ],
+        empty_message=(
+            "No evidence-eligible mitigation preview is "
+            "available."
+        ),
+    )
+
+    verification_rows = records(
+        result.get("verification_plan")
+    )
+    render_rows(
+        verification_rows,
+        title="HOW TO VERIFY",
+        columns=[
+            ColumnSpec(
+                "CHECK",
+                ("title",),
+                max_width=55,
+            ),
+            ColumnSpec(
+                "WHAT TO DO",
+                ("description",),
+                max_width=80,
+            ),
+            ColumnSpec(
+                "EXPECTED OBSERVATION",
+                ("expected_observation",),
+                max_width=80,
+            ),
+            ColumnSpec(
+                "TARGET",
+                ("entity_ids",),
+                max_width=55,
+            ),
+            ColumnSpec(
+                "EVIDENCE",
+                ("evidence_references",),
+                max_width=65,
+            ),
+        ],
+        empty_message=(
+            "No existing validation checks are available."
+        ),
+    )
+
+    history_rows = records(
+        historical.get("similar_incidents")
+    )
+    render_rows(
+        history_rows,
+        title="SIMILAR INCIDENTS",
+        columns=[
+            ColumnSpec(
+                "INCIDENT",
+                ("incident_id",),
+                max_width=45,
+            ),
+            ColumnSpec(
+                "SIMILARITY",
+                ("similarity",),
+            ),
+            ColumnSpec(
+                "WHY IT MATCHES",
+                ("why_it_matches",),
+                max_width=70,
+            ),
+            ColumnSpec(
+                "DIFFERENCES",
+                ("important_differences",),
+                max_width=70,
+            ),
+            ColumnSpec(
+                "RECORDED RESOLUTION",
+                ("primary_resolution_action",),
+                max_width=60,
+            ),
+            ColumnSpec(
+                "EFFECTIVENESS",
+                ("primary_action_effectiveness",),
+            ),
+        ],
+        empty_message=(
+            historical.get("summary")
+            or "No comparable incidents were found."
+        ),
+    )
+    render_data(
+        (
+            {
+                "Status": outcome.get("status"),
+                "Mitigated At": outcome.get(
+                    "mitigated_at"
+                ),
+                "Resolved At": outcome.get(
+                    "resolved_at"
+                ),
+                "Time to Mitigation (s)": outcome.get(
+                    "time_to_mitigation_seconds"
+                ),
+                "Time to Resolution (s)": outcome.get(
+                    "time_to_resolution_seconds"
+                ),
+                "Final RCA Verdict": outcome.get(
+                    "final_rca_verdict"
+                ),
+                "Primary Resolution Action": outcome.get(
+                    "primary_resolution_action"
+                ),
+                "Resolution Summary": outcome.get(
+                    "resolution_summary"
+                ),
+            }
+            if outcome
+            else {
+                "Status": (
+                    incident.get("status")
+                    or "in_progress"
+                ),
+                "Resolution Summary": (
+                    "No completed outcome is recorded."
+                ),
+            }
+        ),
+        output_format=runtime.output_format,
+        title="OUTCOME",
+    )
+    render_data(
+        {
+            "Status": result.get("ai_status"),
+            "Provider": result.get("ai_provider"),
+            "Model": result.get("ai_model"),
+            "Summary": (
+                result.get("ai_summary")
+                or (
+                    "No AI narrative was requested or "
+                    "available; structured facts above "
+                    "remain authoritative."
+                )
+            ),
+        },
+        output_format=runtime.output_format,
+        title="AI SUMMARY",
+    )
+    render_data(
+        {
+            "Warnings": (
+                result.get("warnings", [])
+                or ["None"]
+            )
+        },
+        output_format=runtime.output_format,
+        title="WARNINGS",
+    )
+
+
 @app.command("response-plan")
 def response_plan(
     context: typer.Context,

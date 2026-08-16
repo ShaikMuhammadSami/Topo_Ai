@@ -367,6 +367,36 @@ class TopoClient:
 
         return value
 
+    def incident_briefing(
+        self,
+        incident_id: str,
+        *,
+        include_ai: bool = False,
+    ) -> dict[str, Any]:
+        path = (
+            "/api/v1/incidents/"
+            + self._encode_identifier(
+                incident_id
+            )
+            + "/briefing"
+        )
+
+        value = self._request(
+            "GET",
+            path,
+            params={
+                "include_ai": include_ai,
+            },
+        )
+
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "Incident-briefing endpoint "
+                "returned an invalid response."
+            )
+
+        return value
+
     def incident_outcome(
         self,
         incident_id: str,

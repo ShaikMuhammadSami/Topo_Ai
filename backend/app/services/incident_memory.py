@@ -23,6 +23,9 @@ from app.models.incident_records import (
     IncidentRecordView,
     IncidentStatus,
 )
+from app.models.ownership import (
+    IncidentOwnershipImpact,
+)
 from app.models.topology import GraphSnapshot
 from app.repositories.causal_analysis_repository import (
     latest_causal_analysis,
@@ -390,6 +393,9 @@ def build_incident_feature_profile(
     outcome: IncidentOutcome | None = None,
     outcome_source_data: dict[str, Any] | None = None,
     historical: bool = False,
+    operational_impact: (
+        IncidentOwnershipImpact | None
+    ) = None,
 ) -> HistoricalIncidentFeatureProfile:
     warnings: list[str] = []
 
@@ -511,24 +517,27 @@ def build_incident_feature_profile(
         and incident.topology_snapshot_id
         == snapshot_id
     ):
-        try:
-            impact = (
-                calculate_incident_ownership_impact(
-                    session=session,
-                    incident_id=(
-                        incident.incident_id
-                    ),
+        impact = operational_impact
+
+        if impact is None:
+            try:
+                impact = (
+                    calculate_incident_ownership_impact(
+                        session=session,
+                        incident_id=(
+                            incident.incident_id
+                        ),
+                    )
                 )
-            )
 
-        except ValueError as exc:
-            warnings.append(
-                "Operational context unavailable; "
-                "technical similarity will continue: "
-                f"{exc}"
-            )
+            except ValueError as exc:
+                warnings.append(
+                    "Operational context unavailable; "
+                    "technical similarity will continue: "
+                    f"{exc}"
+                )
 
-        else:
+        if impact is not None:
             affected_entity_ids = [
                 item.entity_id
                 for item in impact.affected_entities
@@ -757,10 +766,21 @@ def build_current_incident_profile(
     session: Session,
     *,
     incident_id: str,
+    incident_record: (
+        IncidentRecordView | None
+    ) = None,
+    causal_analysis: (
+        CausalAnalysisResponse | None
+    ) = None,
+    operational_impact: (
+        IncidentOwnershipImpact | None
+    ) = None,
 ) -> HistoricalIncidentFeatureProfile:
-    incident = load_incident_record(
-        session=session,
-        incident_id=incident_id,
+    incident = incident_record or (
+        load_incident_record(
+            session=session,
+            incident_id=incident_id,
+        )
     )
 
     if incident is None:
@@ -768,15 +788,18 @@ def build_current_incident_profile(
             f"Incident not found: {incident_id}"
         )
 
-    analysis = latest_causal_analysis(
-        session,
-        incident_id=incident_id,
+    analysis = causal_analysis or (
+        latest_causal_analysis(
+            session,
+            incident_id=incident_id,
+        )
     )
 
     return build_incident_feature_profile(
         session,
         incident=incident,
         analysis=analysis,
+        operational_impact=operational_impact,
     )
 
 

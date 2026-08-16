@@ -187,10 +187,19 @@ def _escalation_targets(
 def build_incident_operational_context(
     session: Session,
     incident_id: str,
+    *,
+    causal_analysis: (
+        CausalAnalysisResponse | None
+    ) = None,
+    ownership_impact: (
+        IncidentOwnershipImpact | None
+    ) = None,
 ) -> IncidentOperationalContext:
-    analysis = latest_causal_analysis(
-        session,
-        incident_id=incident_id,
+    analysis = causal_analysis or (
+        latest_causal_analysis(
+            session,
+            incident_id=incident_id,
+        )
     )
 
     if analysis is None:
@@ -199,7 +208,7 @@ def build_incident_operational_context(
             "this incident."
         )
 
-    impact = (
+    impact = ownership_impact or (
         calculate_incident_ownership_impact(
             session=session,
             incident_id=incident_id,
