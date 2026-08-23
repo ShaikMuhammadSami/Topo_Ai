@@ -45,7 +45,7 @@ from app.models.webhooks import (
     WebhookEventType,
 )
 from app.repositories.incident_record_repository import (
-    get_incident_by_fingerprint,
+    find_correlatable_incident,
 )
 from app.services.incident_grouping import (
     incident_fingerprint,
@@ -362,84 +362,91 @@ def orchestrate_signal(
             ),
         )
     existing_incident = (
-     get_incident_by_fingerprint(
-          session=session,
-          fingerprint=(
-             incident_fingerprint(
-                 signal
+        find_correlatable_incident(
+            session=session,
+            fingerprint=(
+                incident_fingerprint(
+                    signal
                 )
+            ),
+            observed_after=(
+                signal.first_observed_at
+                - timedelta(minutes=120)
             ),
         )
     )
     incident_record = (
-     upsert_incident_from_orchestration(
-          session=session,
-          signal=signal,
-          analysis=analysis,
-          recommendations=recommendations,
+        upsert_incident_from_orchestration(
+            session=session,
+            signal=signal,
+            analysis=analysis,
+            recommendations=(
+                recommendations
+            ),
         )
     )
+
     if existing_incident is None:
-     incident_event = (
-        build_webhook_event(
-            event_type=(
-                WebhookEventType
-                .INCIDENT_CREATED
-            ),
-            resource_type="incident",
-            resource_id=(
-                incident_record.incident_id
-            ),
-            summary=(
-                "Topo AI created incident "
-                f"{incident_record.title}."
-            ),
-            severity=(
-                incident_record.severity
-            ),
-            dedupe_key=(
-                incident_record.incident_id
-            ),
-            payload={
-                "incident_id": (
-                    incident_record
-                    .incident_id
+        incident_event = (
+            build_webhook_event(
+                event_type=(
+                    WebhookEventType
+                    .INCIDENT_CREATED
                 ),
-                "status": (
-                    incident_record.status
+                resource_type="incident",
+                resource_id=(
+                    incident_record.incident_id
                 ),
-                "severity": (
+                summary=(
+                    "Topo AI created incident "
+                    f"{incident_record.title}."
+                ),
+                severity=(
                     incident_record.severity
                 ),
-                "cluster_name": (
-                    incident_record
-                    .cluster_name
+                dedupe_key=(
+                    incident_record.incident_id
                 ),
-                "namespace": (
-                    incident_record.namespace
-                ),
-                "affected_object_kind": (
-                    incident_record
-                    .affected_object_kind
-                ),
-                "affected_object_name": (
-                    incident_record
-                    .affected_object_name
-                ),
-                "analysis_id": (
-                    analysis.analysis_id
-                ),
-            },
-        )
-    )
-    for recommendation in recommendations:
-        save_recommendation(
-           session=session,
-           recommendation=recommendation,
+                payload={
+                    "incident_id": (
+                        incident_record
+                        .incident_id
+                    ),
+                    "status": (
+                        incident_record.status
+                    ),
+                    "severity": (
+                        incident_record.severity
+                    ),
+                    "cluster_name": (
+                        incident_record
+                        .cluster_name
+                    ),
+                    "namespace": (
+                        incident_record.namespace
+                    ),
+                    "affected_object_kind": (
+                        incident_record
+                        .affected_object_kind
+                    ),
+                    "affected_object_name": (
+                        incident_record
+                        .affected_object_name
+                    ),
+                    "analysis_id": (
+                        analysis.analysis_id
+                    ),
+                },
+            )
         )
 
-    recommendation_event = (
-        build_webhook_event(
+        publish_event_safely(
+            session=session,
+            event=incident_event,
+        )
+
+    for recommendation in recommendations:
+        recommendation_event = build_webhook_event(
             event_type=(
                 WebhookEventType
                 .RECOMMENDATION_GENERATED
@@ -496,16 +503,12 @@ def orchestrate_signal(
                 ),
             },
         )
-    )
 
-    publish_event_safely(
-        session=session,
-        event=recommendation_event,
-    )
-    publish_event_safely(
-        session=session,
-        event=incident_event,
-    )
+        publish_event_safely(
+            session=session,
+            event=recommendation_event,
+        )
+
     warnings = list(
         analysis.warnings
     )

@@ -78,6 +78,7 @@ def _incident_time(
     incident: IncidentRecord,
 ) -> str:
     for field_name in (
+        "first_observed_at",
         "started_at",
         "detected_at",
         "occurred_at",

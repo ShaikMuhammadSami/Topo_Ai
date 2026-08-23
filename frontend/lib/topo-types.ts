@@ -1868,3 +1868,24 @@ export type IncidentBriefing = {
   ai_provider: string | null
   ai_model: string | null
 }
+
+export type AutomaticAnalysisState =
+  | "not_required"
+  | "pending_topology"
+  | "pending_entity"
+  | "pending_analysis"
+  | "completed"
+  | "completed_no_hypothesis"
+  | "reused"
+  | "failed"
+
+export type IncidentLifecycleStatus = {
+  incident_id: string
+  automatic_analysis_state: AutomaticAnalysisState
+  topology_snapshot_id: string | null
+  affected_entity_id: string | null
+  causal_analysis_id: string | null
+  briefing_ready: boolean
+  retryable: boolean
+  message: string
+}

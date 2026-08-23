@@ -358,3 +358,7 @@ class AgentChangeEventBatchReceipt(
     event_ids: list[str] = Field(
         default_factory=list
     )
+
+    topology_affecting_count: int = 0
+    checkpoint_requested: bool = False
+    checkpoint_reason: str | None = None

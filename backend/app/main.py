@@ -118,6 +118,9 @@ from app.api.action_approvals import (
 from app.api.execution_intents import (
     router as execution_intents_router,
 )
+from app.api.automation import (
+    router as automation_router,
+)
 from dotenv import load_dotenv
 
 
@@ -263,6 +266,9 @@ app.include_router(
 )
 app.include_router(
     execution_intents_router
+)
+app.include_router(
+    automation_router
 )
 # @app.get("/health")
 # def health_check() -> dict:

@@ -483,30 +483,71 @@ class KubernetesCollector:
                 or []
             )
             container_ids = []
+            container_statuses = []
 
             for item in statuses:
-               container_id = getattr(
-                  item,
-                  "container_id",
-                  None,
+                container_id = getattr(
+                    item,
+                    "container_id",
+                    None,
                 )
 
-            if not container_id:
-               continue
+                if container_id:
+                    normalized = str(
+                        container_id
+                    )
 
-            normalized = str(
-              container_id
-            )
+                    if "://" in normalized:
+                        normalized = (
+                            normalized.split(
+                                "://",
+                                1,
+                            )[1]
+                        )
 
-            if "://" in normalized:
-              normalized = normalized.split(
-                 "://",
-                 1,
-                )[1]
+                    container_ids.append(
+                        normalized
+                    )
 
-            container_ids.append(
-              normalized
-            )
+                state = getattr(
+                    item,
+                    "state",
+                    None,
+                )
+                waiting = getattr(
+                    state,
+                    "waiting",
+                    None,
+                )
+                terminated = getattr(
+                    state,
+                    "terminated",
+                    None,
+                )
+                container_statuses.append(
+                    {
+                        "name": item.name,
+                        "image": item.image,
+                        "ready": item.ready,
+                        "restart_count": (
+                            item.restart_count
+                        ),
+                        "waiting_reason": (
+                            getattr(
+                                waiting,
+                                "reason",
+                                None,
+                            )
+                        ),
+                        "terminated_reason": (
+                            getattr(
+                                terminated,
+                                "reason",
+                                None,
+                            )
+                        ),
+                    }
+                )
 
 
             inventory["pods"].append(
@@ -553,6 +594,8 @@ class KubernetesCollector:
                     ],
                     "container_ids":
                         container_ids,
+                    "container_statuses":
+                        container_statuses,
                     "pod_ip":
                         pod.status.pod_ip,
                 }

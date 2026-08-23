@@ -104,41 +104,80 @@ def save_signals(
             created_count += 1
 
         else:
+            existing_signal = (
+                NormalizedSignal
+                .model_validate_json(
+                    record.payload_json
+                )
+            )
+
+            merged_signal = signal.model_copy(
+                update={
+                    "first_observed_at": min(
+                        existing_signal
+                        .first_observed_at,
+                        signal.first_observed_at,
+                    ),
+                    "last_observed_at": max(
+                        existing_signal
+                        .last_observed_at,
+                        signal.last_observed_at,
+                    ),
+                    "occurrence_count": max(
+                        existing_signal
+                        .occurrence_count,
+                        signal.occurrence_count,
+                    ),
+                    "topology_snapshot_id": (
+                        existing_signal
+                        .topology_snapshot_id
+                        or signal
+                        .topology_snapshot_id
+                    ),
+                    "involved_entity_id": (
+                        existing_signal
+                        .involved_entity_id
+                        or signal
+                        .involved_entity_id
+                    ),
+                }
+            )
+
             record.severity = (
-                signal.severity.value
+                merged_signal.severity.value
             )
 
             record.category = (
-                signal.category.value
+                merged_signal.category.value
             )
 
-            record.title = signal.title
-            record.summary = signal.summary
-            record.reason = signal.reason
-            record.action = signal.action
+            record.title = merged_signal.title
+            record.summary = merged_signal.summary
+            record.reason = merged_signal.reason
+            record.action = merged_signal.action
 
             record.first_observed_at = (
-                signal
+                merged_signal
                 .first_observed_at
                 .isoformat()
             )
 
             record.last_observed_at = (
-                signal
+                merged_signal
                 .last_observed_at
                 .isoformat()
             )
 
             record.occurrence_count = (
-                signal.occurrence_count
+                merged_signal.occurrence_count
             )
 
             record.involved_entity_id = (
-                signal.involved_entity_id
+                merged_signal.involved_entity_id
             )
 
             record.payload_json = (
-                signal.model_dump_json()
+                merged_signal.model_dump_json()
             )
 
             record.updated_at = now

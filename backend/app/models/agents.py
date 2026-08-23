@@ -241,6 +241,23 @@ class AgentSnapshotReceipt(BaseModel):
     entity_count: int
     relationship_count: int
 
+    checkpoint_created: bool = True
+    checkpoint_reused: bool = False
+    checkpoint_reason: str = (
+        "periodic_reconcile"
+    )
+    state_digest: str | None = None
+    detected_change_count: int = 0
+    failure_signal_count: int = 0
+    incident_created_count: int = 0
+    incident_correlated_count: int = 0
+    automatic_analysis_states: list[str] = Field(
+        default_factory=list
+    )
+    warnings: list[str] = Field(
+        default_factory=list
+    )
+
 
 class AgentSummary(BaseModel):
     model_config = ConfigDict(

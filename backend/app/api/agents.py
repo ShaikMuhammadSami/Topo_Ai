@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import (
     APIRouter,
     Depends,
@@ -73,6 +75,17 @@ from app.models.change_events import (
 )
 from app.repositories.change_event_repository import (
     ingest_change_event,
+)
+from app.models.lifecycle_automation import (
+    FailureSignalBatchRequest,
+    FailureSignalBatchResult,
+    TopologyCheckpointReason,
+)
+from app.services.continuous_lifecycle import (
+    ingest_failure_signal_batch,
+)
+from app.services.topology_checkpoint import (
+    is_topology_affecting_change_event,
 )
 admin_router = APIRouter(
     prefix="/api/v1/agents",
@@ -572,6 +585,7 @@ def submit_change_events(
     ),
 ) -> AgentChangeEventBatchReceipt:
     event_ids: list[str] = []
+    topology_affecting_count = 0
 
     try:
         for event in request.events:
@@ -625,6 +639,14 @@ def submit_change_events(
                 receipt.event_id
             )
 
+            if (
+                receipt.created
+                and is_topology_affecting_change_event(
+                    event
+                )
+            ):
+                topology_affecting_count += 1
+
         session.commit()
 
     except ValueError as exc:
@@ -645,5 +667,65 @@ def submit_change_events(
                 request.events
             ),
             event_ids=event_ids,
+            topology_affecting_count=(
+                topology_affecting_count
+            ),
+            checkpoint_requested=(
+                topology_affecting_count > 0
+            ),
+            checkpoint_reason=(
+                TopologyCheckpointReason
+                .AUTOMATIC_CHANGE.value
+                if topology_affecting_count > 0
+                else None
+            ),
         )
+    )
+
+
+@agent_router.post(
+    "/signals",
+    response_model=FailureSignalBatchResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def submit_failure_signals(
+    request: FailureSignalBatchRequest,
+    agent: TopoAgentRecord = Depends(
+        require_agent
+    ),
+    session: Session = Depends(
+        get_session
+    ),
+) -> FailureSignalBatchResult:
+    namespace_scope = set(
+        json.loads(agent.namespace_scope_json)
+    )
+
+    for signal in request.signals:
+        if signal.cluster_name != agent.cluster_name:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Signal cluster name does not "
+                    "match the enrolled agent."
+                ),
+            )
+
+        if (
+            namespace_scope
+            and signal.namespace
+            and signal.namespace
+            not in namespace_scope
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Signal namespace is outside the "
+                    "enrolled agent's discovery scope."
+                ),
+            )
+
+    return ingest_failure_signal_batch(
+        session=session,
+        signals=request.signals,
     )

@@ -103,6 +103,90 @@ def get_incident_by_fingerprint(
     ).first()
 
 
+def find_correlatable_incident(
+    session: Session,
+    *,
+    fingerprint: str,
+    observed_after: datetime,
+    replay_at: datetime | None = None,
+) -> IncidentRecord | None:
+    """
+    Return only an active, recent incident family.
+
+    Terminal or stale incidents must not absorb a later
+    recurrence merely because their fingerprint matches.
+    """
+
+    statement = (
+        select(IncidentRecord)
+        .where(
+            IncidentRecord.fingerprint
+            == fingerprint,
+            IncidentRecord.status.in_(
+                [
+                    IncidentStatus.OPEN.value,
+                    IncidentStatus.INVESTIGATING.value,
+                    IncidentStatus.RECOMMENDED.value,
+                    IncidentStatus.REMEDIATING.value,
+                ]
+            ),
+            IncidentRecord.last_observed_at
+            >= observed_after.isoformat(),
+        )
+        .order_by(
+            IncidentRecord.last_observed_at.desc()
+        )
+        .limit(1)
+    )
+
+    active = session.scalar(statement)
+
+    if active is not None or replay_at is None:
+        return active
+
+    # An overlapping source poll may replay an event
+    # after its incident was resolved. Treat only an
+    # observation no newer than the recorded incident as
+    # the same evidence; a genuinely later recurrence is
+    # still allowed to create a new incident.
+    replay_statement = (
+        select(IncidentRecord)
+        .where(
+            IncidentRecord.fingerprint
+            == fingerprint,
+            IncidentRecord.last_observed_at
+            >= replay_at.isoformat(),
+        )
+        .order_by(
+            IncidentRecord.last_observed_at.desc()
+        )
+        .limit(1)
+    )
+
+    return session.scalar(replay_statement)
+
+
+def list_incidents_by_fingerprint(
+    session: Session,
+    *,
+    fingerprint: str,
+) -> list[IncidentRecord]:
+    statement = (
+        select(IncidentRecord)
+        .where(
+            IncidentRecord.fingerprint
+            == fingerprint
+        )
+        .order_by(
+            IncidentRecord.created_at.desc()
+        )
+    )
+
+    return list(
+        session.scalars(statement).all()
+    )
+
+
 def load_incident_record(
     session: Session,
     incident_id: str,

@@ -1,5 +1,3 @@
-import json
-
 from fastapi import (
     APIRouter,
     Depends,
@@ -24,11 +22,17 @@ from app.repositories.snapshot_repository import (
     get_snapshot_record,
     list_snapshots,
     load_snapshot,
-    save_snapshot,
 )
 from app.services.snapshot_diff import compare_snapshots
 from app.services.network_topology_enricher import (
     enrich_kubernetes_network_topology,
+)
+from app.models.lifecycle_automation import (
+    TopologyCheckpointReason,
+)
+from app.services.topology_checkpoint import (
+    checkpoint_metadata,
+    persist_topology_checkpoint,
 )
 
 
@@ -41,6 +45,13 @@ router = APIRouter(
 def record_to_summary(
     record: SnapshotRecord,
 ) -> SnapshotSummary:
+    snapshot = GraphSnapshot.model_validate_json(
+        record.payload_json
+    )
+    checkpoint = checkpoint_metadata(
+        snapshot
+    )
+
     return SnapshotSummary(
         snapshot_id=record.snapshot_id,
         schema_version=record.schema_version,
@@ -54,6 +65,16 @@ def record_to_summary(
             record.relationship_count
         ),
         evidence_count=record.evidence_count,
+        checkpoint_reason=(
+            str(checkpoint.get("reason"))
+            if checkpoint.get("reason")
+            else None
+        ),
+        state_digest=(
+            str(checkpoint.get("state_digest"))
+            if checkpoint.get("state_digest")
+            else None
+        ),
     )
 
 
@@ -86,10 +107,24 @@ def capture_snapshot(
                 snapshot
             )
         )
-        record = save_snapshot(
+        checkpoint = persist_topology_checkpoint(
             session=session,
             snapshot=snapshot,
+            reason=(
+                TopologyCheckpointReason.MANUAL
+            ),
+            derive_changes=False,
+            force=True,
         )
+        record = get_snapshot_record(
+            session=session,
+            snapshot_id=checkpoint.snapshot_id,
+        )
+
+        if record is None:
+            raise RuntimeError(
+                "Captured snapshot could not be loaded."
+            )
 
         return record_to_summary(record)
 
