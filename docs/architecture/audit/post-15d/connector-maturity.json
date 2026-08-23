@@ -1,0 +1,610 @@
+{
+  "schema_version": "1.0",
+  "connectors": [
+    {
+      "id": "connector-001",
+      "connector": "Topo Agent API",
+      "mode": "submission plus heartbeat",
+      "authentication": "one-time enrollment then hashed agent bearer token",
+      "scope": "snapshot, change event, failure signal, runtime batch",
+      "maturity": "PROVEN",
+      "evidence": [
+        "agent/src/topo_agent/client.py",
+        "backend/app/api/agents.py",
+        "agent/tests/test_continuous_capture.py",
+        "backend/tests/test_continuous_lifecycle.py"
+      ],
+      "limitations": "Tests use in-process/fake clients; deployment/network behavior is not certified.",
+      "classification": "PROVEN",
+      "dimensions": {
+        "discovery_inventory": "PROVEN",
+        "event_change_ingestion": "PROVEN",
+        "authentication": "PROVEN",
+        "entity_normalization": "PROVEN",
+        "relationship_construction": "PROVEN",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "PROVEN",
+        "real_golden_e2e": "IMPLEMENTED_BUT_UNPROVEN",
+        "runtime_wiring": "PROVEN"
+      }
+    },
+    {
+      "id": "connector-002",
+      "connector": "Kubernetes inventory",
+      "mode": "periodic full list/reconciliation",
+      "authentication": "kubeconfig or in-cluster service account",
+      "scope": "namespace, node, workload, service, ingress and EndpointSlice inventory",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "agent/src/topo_agent/collector.py",
+        "agent/src/topo_agent/plugins/kubernetes.py"
+      ],
+      "limitations": "No committed live-cluster integration suite; not every Kubernetes resource kind is modeled.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "PARTIAL",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "PROVEN",
+        "relationship_construction": "PROVEN",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "PARTIAL",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PROVEN"
+      }
+    },
+    {
+      "id": "connector-003",
+      "connector": "Kubernetes change/failure observation",
+      "mode": "bounded polling with resourceVersion state, not Kubernetes watch stream",
+      "authentication": "same Kubernetes client",
+      "scope": "resource events and supported Pod failure reasons",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "agent/src/topo_agent/change_watch_kubernetes.py",
+        "agent/tests/test_continuous_capture.py",
+        "backend/tests/test_continuous_lifecycle.py"
+      ],
+      "limitations": "Internal polling/normalization/lifecycle contracts are tested with mocks and fixtures; no committed live-cluster golden artifact proves Kubernetes API observation behavior. The qualifying failure vocabulary is intentionally narrow.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "PARTIAL",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "PROVEN",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PROVEN",
+        "automated_tests": "PROVEN",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PROVEN"
+      }
+    },
+    {
+      "id": "connector-004",
+      "connector": "AWS inventory",
+      "mode": "periodic polling",
+      "authentication": "boto3 default/profile/assume-role chain",
+      "scope": "VPC, subnet, routing, security, compute, EKS, load balancing, RDS and Lambda",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "agent/src/topo_agent/plugins/aws.py",
+        "agent/tests/test_aws_cache.py"
+      ],
+      "limitations": "No live AWS test; discovery regions are configuration-dependent.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "PARTIAL",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "PARTIAL",
+        "relationship_construction": "PARTIAL",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "PARTIAL",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PROVEN"
+      }
+    },
+    {
+      "id": "connector-005",
+      "connector": "AWS CloudTrail change watch",
+      "mode": "polling",
+      "authentication": "AWS SDK credentials",
+      "scope": "normalized cloud mutation events",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "agent/src/topo_agent/change_watch_aws.py",
+        "backend/app/models/change_events.py"
+      ],
+      "limitations": "Disabled by default and no connector-specific test proves live delivery.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "IMPLEMENTED_BUT_UNPROVEN",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "DORMANT"
+      }
+    },
+    {
+      "id": "connector-006",
+      "connector": "Azure inventory",
+      "mode": "periodic Resource Graph polling",
+      "authentication": "DefaultAzureCredential or configured federated/client identity",
+      "scope": "network, compute, AKS, application and database resources",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "agent/src/topo_agent/plugins/azure.py",
+        "agent/tests/test_azure_cache.py"
+      ],
+      "limitations": "No live subscription test; resource-type coverage is curated.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "PARTIAL",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "PARTIAL",
+        "relationship_construction": "PARTIAL",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "PARTIAL",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PROVEN"
+      }
+    },
+    {
+      "id": "connector-007",
+      "connector": "Azure Activity Log change watch",
+      "mode": "polling",
+      "authentication": "Azure credential",
+      "scope": "normalized cloud mutation events",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "agent/src/topo_agent/change_watch_azure.py",
+        "backend/app/models/change_events.py"
+      ],
+      "limitations": "Disabled by default and no live/tested delivery boundary.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "IMPLEMENTED_BUT_UNPROVEN",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "DORMANT"
+      }
+    },
+    {
+      "id": "connector-008",
+      "connector": "GCP inventory",
+      "mode": "periodic API/Cloud Asset polling",
+      "authentication": "Application Default Credentials with optional impersonation",
+      "scope": "hierarchy, network, compute, GKE, database, serverless and Pub/Sub",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "agent/src/topo_agent/plugins/gcp.py",
+        "agent/tests/test_gcp_cache.py"
+      ],
+      "limitations": "No live project test; API enablement and organization access are external prerequisites.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "PARTIAL",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "PARTIAL",
+        "relationship_construction": "PARTIAL",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "PARTIAL",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PROVEN"
+      }
+    },
+    {
+      "id": "connector-009",
+      "connector": "GCP Audit Log change watch",
+      "mode": "polling",
+      "authentication": "GCP credential",
+      "scope": "normalized cloud mutation events",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "agent/src/topo_agent/change_watch_gcp.py",
+        "backend/app/models/change_events.py"
+      ],
+      "limitations": "Disabled by default and no connector-specific integration test.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "IMPLEMENTED_BUT_UNPROVEN",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "DORMANT"
+      }
+    },
+    {
+      "id": "connector-010",
+      "connector": "Host process/system-service inventory",
+      "mode": "periodic local collection",
+      "authentication": "local agent process permissions",
+      "scope": "hosts, processes and services",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "agent/src/topo_agent/plugins/host.py",
+        "backend/app/services/agent_runtime_enrichment.py"
+      ],
+      "limitations": "Platform and permission behavior is not tested broadly.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "IMPLEMENTED_BUT_UNPROVEN",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "IMPLEMENTED_BUT_UNPROVEN",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-011",
+      "connector": "Docker inventory",
+      "mode": "periodic local Docker API collection",
+      "authentication": "local Docker socket/endpoint permissions",
+      "scope": "containers and networks",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "agent/src/topo_agent/plugins/docker.py",
+        "backend/app/services/agent_runtime_enrichment.py"
+      ],
+      "limitations": "No focused connector tests.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "IMPLEMENTED_BUT_UNPROVEN",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "IMPLEMENTED_BUT_UNPROVEN",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-012",
+      "connector": "Host network inventory",
+      "mode": "periodic psutil socket collection",
+      "authentication": "local process permissions",
+      "scope": "listening and established connections",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "agent/src/topo_agent/plugins/network.py",
+        "backend/app/services/agent_runtime_enrichment.py"
+      ],
+      "limitations": "Visibility varies by OS and privilege; no focused tests.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "IMPLEMENTED_BUT_UNPROVEN",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "IMPLEMENTED_BUT_UNPROVEN",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-013",
+      "connector": "Tetragon/eBPF",
+      "mode": "event stream parsed by a separate sensor process",
+      "authentication": "agent bearer token to backend",
+      "scope": "process lifecycle and connect events",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "agent/src/topo_agent/sensor.py",
+        "agent/src/topo_agent/tetragon_parser.py",
+        "agent/tests/test_tetragon_parser.py"
+      ],
+      "limitations": "Parser is tested; live DaemonSet/sensor/backend path is not.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "PARTIAL",
+        "authentication": "PROVEN",
+        "entity_normalization": "PARTIAL",
+        "relationship_construction": "PARTIAL",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "PARTIAL",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PARTIAL"
+      }
+    },
+    {
+      "id": "connector-014",
+      "connector": "GitHub repository enrichment",
+      "mode": "on-demand API call",
+      "authentication": "TOPO_GITHUB_TOKEN",
+      "scope": "repository and commits",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "backend/app/connectors/github_connector.py",
+        "backend/app/services/github_graph.py",
+        "backend/app/api/github.py"
+      ],
+      "limitations": "No connector test; configured single repository orientation.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "IMPLEMENTED_BUT_UNPROVEN",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "PARTIAL",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-015",
+      "connector": "GitHub Actions enrichment",
+      "mode": "on-demand API call",
+      "authentication": "TOPO_GITHUB_TOKEN",
+      "scope": "workflow runs and commit/image links",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "backend/app/services/github_actions_graph.py",
+        "backend/app/api/github.py"
+      ],
+      "limitations": "No connector-specific test and image linkage depends on available metadata.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "IMPLEMENTED_BUT_UNPROVEN",
+        "event_change_ingestion": "MISSING",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "PARTIAL",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-016",
+      "connector": "GitHub change webhook",
+      "mode": "webhook",
+      "authentication": "HMAC SHA-256",
+      "scope": "push, pull request and workflow/deployment-shaped changes supported by normalizer",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "backend/app/services/change_source_ingest.py",
+        "backend/app/services/external_change_normalizers.py",
+        "backend/tests/test_external_change_normalizers.py",
+        "backend/tests/test_webhook_security.py"
+      ],
+      "limitations": "Only selected GitHub normalization paths are tested.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "PARTIAL",
+        "authentication": "PROVEN",
+        "entity_normalization": "PARTIAL",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "PARTIAL",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PARTIAL"
+      }
+    },
+    {
+      "id": "connector-017",
+      "connector": "GitLab change webhook",
+      "mode": "webhook",
+      "authentication": "secret token or signed webhook token",
+      "scope": "push, merge/pipeline/deployment-shaped changes supported by normalizer",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "backend/app/services/change_source_ingest.py",
+        "backend/app/services/external_change_normalizers.py"
+      ],
+      "limitations": "Security helper is tested, but end-to-end normalization/delivery is not.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "IMPLEMENTED_BUT_UNPROVEN",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "IMPLEMENTED_BUT_UNPROVEN",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-018",
+      "connector": "Jenkins change webhook",
+      "mode": "webhook",
+      "authentication": "Topo HMAC",
+      "scope": "pipeline and deployment events",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "backend/app/services/change_source_ingest.py",
+        "backend/app/services/external_change_normalizers.py"
+      ],
+      "limitations": "Payload contract is Topo-specific and lacks a committed integration test.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "IMPLEMENTED_BUT_UNPROVEN",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "IMPLEMENTED_BUT_UNPROVEN",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-019",
+      "connector": "Azure DevOps change webhook",
+      "mode": "webhook",
+      "authentication": "HTTP Basic against configured secret",
+      "scope": "git, build, pull request and deployment events",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "backend/app/services/change_source_ingest.py",
+        "backend/app/services/external_change_normalizers.py"
+      ],
+      "limitations": "No committed connector test.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "IMPLEMENTED_BUT_UNPROVEN",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "IMPLEMENTED_BUT_UNPROVEN",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "IMPLEMENTED_BUT_UNPROVEN",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-020",
+      "connector": "Terraform Cloud webhook",
+      "mode": "webhook",
+      "authentication": "HMAC notification signature",
+      "scope": "infrastructure run notifications",
+      "maturity": "PARTIAL",
+      "evidence": [
+        "backend/app/services/external_change_normalizers.py",
+        "backend/tests/test_webhook_security.py"
+      ],
+      "limitations": "Creates change evidence but does not build Terraform state/resource graph topology.",
+      "classification": "PARTIAL",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "PARTIAL",
+        "authentication": "PROVEN",
+        "entity_normalization": "PARTIAL",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "PARTIAL",
+        "automated_tests": "PARTIAL",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "PARTIAL"
+      }
+    },
+    {
+      "id": "connector-021",
+      "connector": "Outbound generic webhook",
+      "mode": "synchronous/background application dispatch",
+      "authentication": "configured signing secret and headers",
+      "scope": "selected Topo lifecycle event types",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "evidence": [
+        "backend/app/services/webhook_delivery.py",
+        "backend/app/api/webhooks.py"
+      ],
+      "limitations": "No focused integration test, retry/HA guarantees are not production-grade.",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "IMPLEMENTED_BUT_UNPROVEN",
+        "authentication": "IMPLEMENTED_BUT_UNPROVEN",
+        "entity_normalization": "MISSING",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "IMPLEMENTED_BUT_UNPROVEN",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "IMPLEMENTED_BUT_UNPROVEN"
+      }
+    },
+    {
+      "id": "connector-022",
+      "connector": "Prometheus Alertmanager",
+      "mode": "none",
+      "authentication": "none",
+      "scope": "future normalized failure signal adapter",
+      "maturity": "MISSING",
+      "evidence": [
+        "backend/app/models/signals.py"
+      ],
+      "limitations": "No adapter or endpoint-specific verification.",
+      "classification": "MISSING",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "MISSING",
+        "authentication": "MISSING",
+        "entity_normalization": "MISSING",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "MISSING"
+      }
+    },
+    {
+      "id": "connector-023",
+      "connector": "Grafana/Datadog/New Relic",
+      "mode": "none",
+      "authentication": "none",
+      "scope": "future normalized failure signal adapters",
+      "maturity": "MISSING",
+      "evidence": [
+        "backend/app/models/signals.py"
+      ],
+      "limitations": "No vendor implementation.",
+      "classification": "MISSING",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "MISSING",
+        "authentication": "MISSING",
+        "entity_normalization": "MISSING",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "MISSING"
+      }
+    },
+    {
+      "id": "connector-024",
+      "connector": "PagerDuty/ServiceNow/Jira/Opsgenie",
+      "mode": "none",
+      "authentication": "none",
+      "scope": "future incident/notification integration",
+      "maturity": "MISSING",
+      "evidence": [
+        "backend/app/models/incident_records.py"
+      ],
+      "limitations": "No vendor implementation.",
+      "classification": "MISSING",
+      "dimensions": {
+        "discovery_inventory": "MISSING",
+        "event_change_ingestion": "MISSING",
+        "authentication": "MISSING",
+        "entity_normalization": "MISSING",
+        "relationship_construction": "MISSING",
+        "change_to_entity_linking": "MISSING",
+        "automated_tests": "MISSING",
+        "real_golden_e2e": "MISSING",
+        "runtime_wiring": "MISSING"
+      }
+    }
+  ]
+}
+

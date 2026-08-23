@@ -1,0 +1,1100 @@
+{
+  "schema_version": "1.0",
+  "canonical_model": "backend/app/models/topology.py",
+  "entity_type_enum": [
+    "application",
+    "code_repository",
+    "source_revision",
+    "pipeline",
+    "artifact",
+    "environment",
+    "cloud_resource",
+    "compute",
+    "workload",
+    "runtime_instance",
+    "endpoint",
+    "datastore",
+    "network",
+    "security_asset",
+    "observability",
+    "signal",
+    "incident",
+    "team",
+    "business_capability",
+    "unknown"
+  ],
+  "relationship_type_enum": [
+    "contains",
+    "owns",
+    "produces",
+    "triggers",
+    "deploys",
+    "runs",
+    "selects",
+    "exposes",
+    "routes_to",
+    "calls",
+    "depends_on",
+    "uses",
+    "emits",
+    "observes",
+    "protects",
+    "resolves_to",
+    "attached_to",
+    "affects",
+    "derived_from",
+    "unknown"
+  ],
+  "entity_producers": [
+    {
+      "id": "entity-producer-001",
+      "producer": "backend direct Kubernetes collector",
+      "file": "backend/app/collectors/kubernetes_collector.py",
+      "kinds": [
+        "KubernetesCluster",
+        "KubernetesNamespace",
+        "KubernetesDeployment",
+        "KubernetesReplicaSet",
+        "KubernetesPod",
+        "KubernetesService"
+      ],
+      "id_rule": "k8s:{safe_cluster}:{lower_kind}:{uid || namespace-or-_cluster:name}",
+      "identity_strength": "UID is stable for object lifetime; fallback is scoped name but differs from agent hashing",
+      "maturity": "PARTIAL",
+      "stable_fields": [
+        "cluster name",
+        "Kubernetes UID when present"
+      ],
+      "ephemeral_fields": [
+        "namespace/name fallback",
+        "Pod name"
+      ],
+      "fallback_matching": "literal namespace-or-_cluster:name",
+      "ambiguity_risks": [
+        "fallback conflicts with agent and network-enricher formats",
+        "Pod identity ends at object lifetime"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [],
+      "classification": "PARTIAL"
+    },
+    {
+      "id": "entity-producer-002",
+      "producer": "agent Kubernetes inventory ingest and network enrichment",
+      "file": "backend/app/services/agent_snapshot_ingest.py",
+      "kinds": [
+        "KubernetesCluster",
+        "KubernetesNamespace",
+        "KubernetesNode",
+        "KubernetesDeployment",
+        "KubernetesReplicaSet",
+        "KubernetesPod",
+        "KubernetesService",
+        "KubernetesIngress",
+        "KubernetesEndpointSlice",
+        "DNSName",
+        "NetworkEndpoint",
+        "ExternalEndpoint"
+      ],
+      "id_rule": "Kubernetes object: k8s:{cluster}:{lower_kind}:{uid || sha256(cluster|kind|namespace|name)[0:24]}; network endpoint families use source-specific content hashes",
+      "identity_strength": "UID exact where present; otherwise deterministic scoped identity",
+      "maturity": "PROVEN",
+      "stable_fields": [
+        "cluster name",
+        "Kubernetes UID when present"
+      ],
+      "ephemeral_fields": [
+        "Pod name",
+        "UID-less resource name"
+      ],
+      "fallback_matching": "SHA-256 of cluster|kind|namespace|name",
+      "ambiguity_risks": [
+        "network enricher uses a different field order for its fallback"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py",
+        "agent/tests/test_continuous_capture.py"
+      ],
+      "classification": "PROVEN"
+    },
+    {
+      "id": "entity-producer-003",
+      "producer": "GitHub enrichment",
+      "file": "backend/app/services/github_graph.py",
+      "kinds": [
+        "GitRepository",
+        "GitCommit"
+      ],
+      "id_rule": "github:{host}:repository:{database_id}; commit appends :commit:{lower_sha}",
+      "identity_strength": "Provider database ID and commit SHA",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "stable_fields": [
+        "GitHub host",
+        "repository database ID",
+        "commit SHA"
+      ],
+      "ephemeral_fields": [
+        "repository display/full name can be renamed"
+      ],
+      "fallback_matching": "repository metadata/URL used by later correlation, not by graph ID constructor",
+      "ambiguity_risks": [
+        "change events often carry owner/name instead of provider database ID"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [],
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "entity-producer-004",
+      "producer": "GitHub Actions enrichment",
+      "file": "backend/app/services/github_actions_graph.py",
+      "kinds": [
+        "GitHubWorkflowRun"
+      ],
+      "id_rule": "github:{host}:workflow-run:{run_id}",
+      "identity_strength": "Provider workflow run ID",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "stable_fields": [
+        "GitHub host",
+        "workflow run ID",
+        "head SHA"
+      ],
+      "ephemeral_fields": [
+        "run name/status"
+      ],
+      "fallback_matching": "head SHA links to existing commit",
+      "ambiguity_risks": [
+        "missing commit/image metadata leaves chain incomplete"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [],
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "entity-producer-005",
+      "producer": "container image enrichment",
+      "file": "backend/app/services/container_image_graph.py",
+      "kinds": [
+        "ContainerImage"
+      ],
+      "id_rule": "artifact:container-image:sha256:{digest} when digest is available, otherwise artifact:container-image:reference:{sha256(normalized_reference)[0:24]}",
+      "identity_strength": "Digest immutable; tag/reference identity can move",
+      "maturity": "PARTIAL",
+      "stable_fields": [
+        "content digest when available"
+      ],
+      "ephemeral_fields": [
+        "tag/reference string"
+      ],
+      "fallback_matching": "hash normalized image reference",
+      "ambiguity_risks": [
+        "same tag can point to different content",
+        "digest and reference nodes can coexist"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_briefing.py"
+      ],
+      "classification": "PARTIAL"
+    },
+    {
+      "id": "entity-producer-006",
+      "producer": "AWS enrichment",
+      "file": "backend/app/services/agent_cloud_enrichment.py",
+      "kinds": [
+        "AWSAccount",
+        "AWSRegion",
+        "AWSVPC",
+        "AWSSubnet",
+        "AWSRouteTable",
+        "AWSSecurityGroup",
+        "AWSEC2Instance",
+        "AWSEKSCluster",
+        "AWSEKSNodeGroup",
+        "AWSLoadBalancer",
+        "AWSTargetGroup",
+        "AWSTarget",
+        "AWSRDSInstance",
+        "AWSLambdaFunction"
+      ],
+      "id_rule": "aws:{sha256(account|region|resource_type|provider_resource_id) prefix}",
+      "identity_strength": "Provider identifiers normalized into opaque graph IDs",
+      "maturity": "PARTIAL",
+      "stable_fields": [
+        "provider account/project/subscription scope",
+        "provider resource ID"
+      ],
+      "ephemeral_fields": [
+        "display name",
+        "mutable tags/properties"
+      ],
+      "fallback_matching": "normalized provider reference stored in external_id/properties for matching",
+      "ambiguity_risks": [
+        "change references and opaque graph hashes need property-based correlation"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_cloud_enrichment.py"
+      ],
+      "classification": "PARTIAL"
+    },
+    {
+      "id": "entity-producer-007",
+      "producer": "Azure enrichment",
+      "file": "backend/app/services/agent_azure_enrichment.py",
+      "kinds": [
+        "AzureSubscription",
+        "AzureResourceGroup",
+        "AzureVirtualNetwork",
+        "AzureSubnet",
+        "AzureRouteTable",
+        "AzureNetworkSecurityGroup",
+        "AzurePublicIPAddress",
+        "AzureNetworkInterface",
+        "AzureVirtualMachine",
+        "AzureVirtualMachineScaleSet",
+        "AzureAKSCluster",
+        "AzureLoadBalancer",
+        "AzureApplicationGateway",
+        "AzurePrivateEndpoint",
+        "AzureAppServicePlan",
+        "AzureAppService",
+        "AzureFunctionApp",
+        "AzureSQLServer",
+        "AzureSQLDatabase",
+        "AzurePostgreSQLFlexibleServer"
+      ],
+      "id_rule": "azure:{sha256(lowercase normalized Azure resource ID) prefix}",
+      "identity_strength": "Provider resource ID",
+      "maturity": "PARTIAL",
+      "stable_fields": [
+        "provider account/project/subscription scope",
+        "provider resource ID"
+      ],
+      "ephemeral_fields": [
+        "display name",
+        "mutable tags/properties"
+      ],
+      "fallback_matching": "normalized provider reference stored in external_id/properties for matching",
+      "ambiguity_risks": [
+        "change references and opaque graph hashes need property-based correlation"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_azure_enrichment.py"
+      ],
+      "classification": "PARTIAL"
+    },
+    {
+      "id": "entity-producer-008",
+      "producer": "GCP enrichment",
+      "file": "backend/app/services/agent_gcp_enrichment.py",
+      "kinds": [
+        "GCPOrganization",
+        "GCPFolder",
+        "GCPProject",
+        "GCPVPCNetwork",
+        "GCPSubnetwork",
+        "GCPRoute",
+        "GCPFirewallRule",
+        "GCPIPAddress",
+        "GCPComputeInstance",
+        "GCPManagedInstanceGroup",
+        "GCPHealthCheck",
+        "GCPBackendService",
+        "GCPForwardingRule",
+        "GCPGKECluster",
+        "GCPGKENodePool",
+        "GCPCloudSQLInstance",
+        "GCPCloudRunService",
+        "GCPCloudFunction",
+        "GCPPubSubTopic",
+        "GCPPubSubSubscription"
+      ],
+      "id_rule": "gcp:{sha256(normalized provider resource ID) prefix}",
+      "identity_strength": "Provider resource ID/self link",
+      "maturity": "PARTIAL",
+      "stable_fields": [
+        "provider account/project/subscription scope",
+        "provider resource ID"
+      ],
+      "ephemeral_fields": [
+        "display name",
+        "mutable tags/properties"
+      ],
+      "fallback_matching": "normalized provider reference stored in external_id/properties for matching",
+      "ambiguity_risks": [
+        "change references and opaque graph hashes need property-based correlation"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_gcp_enrichment.py"
+      ],
+      "classification": "PARTIAL"
+    },
+    {
+      "id": "entity-producer-009",
+      "producer": "runtime inventory enrichment",
+      "file": "backend/app/services/agent_runtime_enrichment.py",
+      "kinds": [
+        "Host",
+        "Process",
+        "SystemService",
+        "DockerNetwork",
+        "Container",
+        "ListeningPort",
+        "NetworkEndpoint"
+      ],
+      "id_rule": "source-specific stable digest of host, PID/create-time, service identity, container external ID, network ID, or protocol/address/port",
+      "identity_strength": "Host/container IDs are strong; process and endpoint identities are observation-scoped",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "stable_fields": [
+        "host/container/network external identity where supplied"
+      ],
+      "ephemeral_fields": [
+        "PID",
+        "process create time",
+        "socket endpoint observation"
+      ],
+      "fallback_matching": "source-specific content digest",
+      "ambiguity_risks": [
+        "process identity is observation/lifetime scoped",
+        "address reuse"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [
+        "agent/tests/test_plugin_manager.py"
+      ],
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "entity-producer-010",
+      "producer": "Tetragon runtime enrichment",
+      "file": "backend/app/services/runtime_snapshot_enrichment.py",
+      "kinds": [
+        "RuntimeNetworkEndpoint"
+      ],
+      "id_rule": "runtime endpoint digest from protocol/address/port/name",
+      "identity_strength": "Deterministic observed endpoint",
+      "maturity": "PARTIAL",
+      "stable_fields": [
+        "protocol/address/port tuple within observation context"
+      ],
+      "ephemeral_fields": [
+        "process and network endpoint lifetime"
+      ],
+      "fallback_matching": "content digest",
+      "ambiguity_risks": [
+        "NAT/address reuse and missing workload correlation"
+      ],
+      "downstream_consumers": [
+        "topology snapshots",
+        "change correlation",
+        "incident affected-entity resolution",
+        "causal RCA",
+        "blast radius",
+        "ownership"
+      ],
+      "test_paths": [
+        "agent/tests/test_tetragon_parser.py"
+      ],
+      "classification": "PARTIAL"
+    }
+  ],
+  "actual_relationships": [
+    {
+      "id": "rel-001",
+      "source_kinds": [
+        "KubernetesCluster",
+        "KubernetesNamespace",
+        "GitRepository",
+        "cloud scope/entity",
+        "Host"
+      ],
+      "predicate": "contains",
+      "target_kinds": [
+        "KubernetesNamespace",
+        "Kubernetes workload/service",
+        "GitCommit",
+        "cloud member",
+        "Process",
+        "Container"
+      ],
+      "creator_paths": [
+        "backend/app/collectors/kubernetes_collector.py",
+        "backend/app/services/agent_snapshot_ingest.py",
+        "backend/app/services/github_graph.py",
+        "backend/app/services/agent_cloud_enrichment.py",
+        "backend/app/services/agent_azure_enrichment.py",
+        "backend/app/services/agent_gcp_enrichment.py",
+        "backend/app/services/agent_runtime_enrichment.py"
+      ],
+      "type": "contains",
+      "producers": [
+        "Kubernetes collector/agent ingest",
+        "GitHub enrichment",
+        "AWS/Azure/GCP enrichment",
+        "runtime inventory"
+      ],
+      "semantics": "structural containment",
+      "direction": "container to member",
+      "evidence": "usually snapshot observation; evidence_ids frequently empty",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "mixed_direct_inventory_and_provider_reference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py",
+        "backend/tests/test_agent_cloud_enrichment.py",
+        "backend/tests/test_agent_azure_enrichment.py",
+        "backend/tests/test_agent_gcp_enrichment.py"
+      ]
+    },
+    {
+      "id": "rel-002",
+      "source_kinds": [
+        "KubernetesDeployment",
+        "KubernetesReplicaSet"
+      ],
+      "predicate": "owns",
+      "target_kinds": [
+        "KubernetesReplicaSet",
+        "KubernetesPod"
+      ],
+      "creator_paths": [
+        "backend/app/collectors/kubernetes_collector.py",
+        "backend/app/services/agent_snapshot_ingest.py"
+      ],
+      "type": "owns",
+      "producers": [
+        "Kubernetes collector/agent ingest"
+      ],
+      "semantics": "ownerReference-backed Deployment-to-ReplicaSet and ReplicaSet-to-Pod ownership",
+      "direction": "owner to owned object",
+      "evidence": "Kubernetes UID/ownerReference",
+      "maturity": "PROVEN",
+      "classification": "PROVEN",
+      "observation_mode": "direct_owner_reference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py"
+      ]
+    },
+    {
+      "id": "rel-003",
+      "source_kinds": [
+        "GitCommit",
+        "GitHubWorkflowRun"
+      ],
+      "predicate": "produces",
+      "target_kinds": [
+        "ContainerImage"
+      ],
+      "creator_paths": [
+        "backend/app/services/github_graph.py",
+        "backend/app/services/github_actions_graph.py"
+      ],
+      "type": "produces",
+      "producers": [
+        "GitHub enrichment",
+        "GitHub Actions enrichment"
+      ],
+      "semantics": "commit or workflow produced container image",
+      "direction": "source revision/pipeline to artifact",
+      "evidence": "digest, workload annotation, SHA/tag or run metadata; ambiguous matches are bounded/suppressed",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "inferred_from_digest_annotation_sha_or_run_metadata",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": []
+    },
+    {
+      "id": "rel-004",
+      "source_kinds": [
+        "GitCommit"
+      ],
+      "predicate": "triggers",
+      "target_kinds": [
+        "GitHubWorkflowRun"
+      ],
+      "creator_paths": [
+        "backend/app/services/github_actions_graph.py"
+      ],
+      "type": "triggers",
+      "producers": [
+        "GitHub Actions enrichment"
+      ],
+      "semantics": "commit triggered workflow run",
+      "direction": "commit to workflow run",
+      "evidence": "head SHA/provider run metadata",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "observation_mode": "direct_provider_head_sha_reference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": []
+    },
+    {
+      "id": "rel-005",
+      "source_kinds": [
+        "KubernetesDeployment",
+        "KubernetesPod",
+        "Container",
+        "cloud compute"
+      ],
+      "predicate": "runs",
+      "target_kinds": [
+        "ContainerImage",
+        "Process",
+        "Container",
+        "managed runtime"
+      ],
+      "creator_paths": [
+        "backend/app/collectors/kubernetes_collector.py",
+        "backend/app/services/agent_runtime_enrichment.py",
+        "backend/app/services/agent_cloud_enrichment.py",
+        "backend/app/services/agent_azure_enrichment.py",
+        "backend/app/services/agent_gcp_enrichment.py"
+      ],
+      "type": "runs",
+      "producers": [
+        "Kubernetes image/runtime enrichment",
+        "cloud enrichment",
+        "runtime inventory"
+      ],
+      "semantics": "workload/compute/container runs runtime or artifact",
+      "direction": "host/workload to runtime object",
+      "evidence": "inventory properties and provider references",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "mixed_inventory_and_inference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "agent/tests/test_tetragon_parser.py"
+      ]
+    },
+    {
+      "id": "rel-006",
+      "source_kinds": [
+        "KubernetesService"
+      ],
+      "predicate": "selects",
+      "target_kinds": [
+        "KubernetesPod"
+      ],
+      "creator_paths": [
+        "backend/app/collectors/kubernetes_collector.py",
+        "backend/app/services/agent_snapshot_ingest.py",
+        "backend/app/services/network_topology_enricher.py"
+      ],
+      "type": "selects",
+      "producers": [
+        "Kubernetes collector",
+        "network topology enrichment"
+      ],
+      "semantics": "Service selects Pod",
+      "direction": "service to pod",
+      "evidence": "label selector exact match",
+      "maturity": "PROVEN",
+      "classification": "PROVEN",
+      "observation_mode": "deterministic_selector_inference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py"
+      ]
+    },
+    {
+      "id": "rel-007",
+      "source_kinds": [
+        "KubernetesService",
+        "Host",
+        "Process",
+        "cloud load balancer/service"
+      ],
+      "predicate": "exposes",
+      "target_kinds": [
+        "KubernetesEndpointSlice",
+        "ListeningPort",
+        "cloud endpoint/target"
+      ],
+      "creator_paths": [
+        "backend/app/services/network_topology_enricher.py",
+        "backend/app/services/agent_runtime_enrichment.py",
+        "backend/app/services/agent_azure_enrichment.py"
+      ],
+      "type": "exposes",
+      "producers": [
+        "network topology enrichment",
+        "runtime inventory",
+        "cloud enrichment"
+      ],
+      "semantics": "resource exposes endpoint/listener/target",
+      "direction": "resource to exposed object",
+      "evidence": "provider or observed socket inventory",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "mixed_inventory_and_provider_reference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": []
+    },
+    {
+      "id": "rel-008",
+      "source_kinds": [
+        "KubernetesIngress",
+        "KubernetesService",
+        "KubernetesEndpointSlice",
+        "cloud load balancer/router"
+      ],
+      "predicate": "routes_to",
+      "target_kinds": [
+        "KubernetesService",
+        "KubernetesPod",
+        "NetworkEndpoint",
+        "cloud target/backend"
+      ],
+      "creator_paths": [
+        "backend/app/services/agent_snapshot_ingest.py",
+        "backend/app/services/network_topology_enricher.py",
+        "backend/app/services/agent_cloud_enrichment.py",
+        "backend/app/services/agent_azure_enrichment.py",
+        "backend/app/services/agent_gcp_enrichment.py"
+      ],
+      "type": "routes_to",
+      "producers": [
+        "network topology enrichment",
+        "AWS/Azure/GCP enrichment"
+      ],
+      "semantics": "ingress/load balancer/service endpoint route",
+      "direction": "routing source to destination",
+      "evidence": "provider references, ingress backends or EndpointSlice targets",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "mixed_provider_reference_and_endpoint_inference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_cloud_enrichment.py",
+        "backend/tests/test_agent_azure_enrichment.py",
+        "backend/tests/test_agent_gcp_enrichment.py"
+      ]
+    },
+    {
+      "id": "rel-009",
+      "source_kinds": [
+        "KubernetesPod",
+        "Process",
+        "Host"
+      ],
+      "predicate": "calls",
+      "target_kinds": [
+        "ExternalEndpoint",
+        "NetworkEndpoint",
+        "RuntimeNetworkEndpoint"
+      ],
+      "creator_paths": [
+        "backend/app/services/network_topology_enricher.py",
+        "backend/app/services/agent_runtime_enrichment.py",
+        "backend/app/services/runtime_snapshot_enrichment.py"
+      ],
+      "type": "calls",
+      "producers": [
+        "Kubernetes annotations",
+        "network runtime/Tetragon"
+      ],
+      "semantics": "declared or observed outbound dependency",
+      "direction": "caller to endpoint",
+      "evidence": "annotation or runtime network observation",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "mixed_declared_annotation_and_runtime_observation",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "agent/tests/test_tetragon_parser.py"
+      ]
+    },
+    {
+      "id": "rel-010",
+      "source_kinds": [
+        "KubernetesPod",
+        "cloud resource"
+      ],
+      "predicate": "depends_on",
+      "target_kinds": [
+        "KubernetesService",
+        "cloud dependency"
+      ],
+      "creator_paths": [
+        "backend/app/services/network_topology_enricher.py"
+      ],
+      "type": "depends_on",
+      "producers": [
+        "Kubernetes annotations",
+        "cloud enrichment"
+      ],
+      "semantics": "declared service/resource dependency",
+      "direction": "dependent to dependency",
+      "evidence": "annotation/provider reference",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "declared_or_provider_reference_inference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_briefing.py"
+      ]
+    },
+    {
+      "id": "rel-011",
+      "source_kinds": [
+        "KubernetesDeployment",
+        "KubernetesPod",
+        "GitHubWorkflowRun"
+      ],
+      "predicate": "uses",
+      "target_kinds": [
+        "ContainerImage"
+      ],
+      "creator_paths": [
+        "backend/app/services/container_image_graph.py",
+        "backend/app/services/github_graph.py",
+        "backend/app/services/github_actions_graph.py"
+      ],
+      "type": "uses",
+      "producers": [
+        "container image enrichment",
+        "cloud enrichment"
+      ],
+      "semantics": "workload/resource uses artifact or dependency",
+      "direction": "consumer to used object",
+      "evidence": "image reference/digest or provider property",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "image_reference_or_digest_inference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_briefing.py"
+      ]
+    },
+    {
+      "id": "rel-012",
+      "source_kinds": [
+        "AWSSecurityGroup",
+        "AzureNetworkSecurityGroup",
+        "GCPFirewallRule"
+      ],
+      "predicate": "protects",
+      "target_kinds": [
+        "cloud network/compute resource"
+      ],
+      "creator_paths": [
+        "backend/app/services/agent_cloud_enrichment.py",
+        "backend/app/services/agent_azure_enrichment.py",
+        "backend/app/services/agent_gcp_enrichment.py"
+      ],
+      "type": "protects",
+      "producers": [
+        "AWS/Azure/GCP enrichment"
+      ],
+      "semantics": "security control protects a resource/network",
+      "direction": "security control to protected object",
+      "evidence": "provider attachment/reference",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "provider_attachment_inference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_cloud_enrichment.py",
+        "backend/tests/test_agent_azure_enrichment.py",
+        "backend/tests/test_agent_gcp_enrichment.py"
+      ]
+    },
+    {
+      "id": "rel-013",
+      "source_kinds": [
+        "KubernetesService",
+        "DNSName"
+      ],
+      "predicate": "resolves_to",
+      "target_kinds": [
+        "DNSName",
+        "NetworkEndpoint"
+      ],
+      "creator_paths": [
+        "backend/app/services/network_topology_enricher.py"
+      ],
+      "type": "resolves_to",
+      "producers": [
+        "network topology enrichment"
+      ],
+      "semantics": "service/DNS identity resolves to endpoint identity",
+      "direction": "name/service to resolved target",
+      "evidence": "Kubernetes ExternalName or inventory mapping; DNS is not actively queried",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "declared_external_name_or_inventory_inference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": []
+    },
+    {
+      "id": "rel-014",
+      "source_kinds": [
+        "KubernetesPod",
+        "Container",
+        "cloud interface/compute"
+      ],
+      "predicate": "attached_to",
+      "target_kinds": [
+        "KubernetesNode",
+        "DockerNetwork",
+        "cloud network/subnet/security resource"
+      ],
+      "creator_paths": [
+        "backend/app/services/agent_snapshot_ingest.py",
+        "backend/app/services/agent_runtime_enrichment.py",
+        "backend/app/services/agent_cloud_enrichment.py",
+        "backend/app/services/agent_azure_enrichment.py",
+        "backend/app/services/agent_gcp_enrichment.py"
+      ],
+      "type": "attached_to",
+      "producers": [
+        "Kubernetes/network/runtime/cloud enrichment"
+      ],
+      "semantics": "workload/interface/container attached to node/network/resource",
+      "direction": "attached object to attachment target",
+      "evidence": "nodeName, provider reference or runtime inventory",
+      "maturity": "PARTIAL",
+      "classification": "PARTIAL",
+      "observation_mode": "mixed_direct_inventory_and_provider_reference",
+      "timestamp_semantics": "relationship.observed_at is collector observation time",
+      "confidence_semantics": "source/rule confidence; often defaults to 1.0 and is not calibrated",
+      "snapshot_semantics": "immutable once serialized inside a persisted GraphSnapshot by service convention",
+      "downstream_consumers": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/incident_briefing.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_cloud_enrichment.py",
+        "backend/tests/test_agent_azure_enrichment.py",
+        "backend/tests/test_agent_gcp_enrichment.py"
+      ]
+    }
+  ],
+  "declared_but_not_observed_as_constructed_relationships": [
+    "deploys",
+    "emits",
+    "observes",
+    "affects",
+    "derived_from",
+    "unknown"
+  ],
+  "identity_conflicts": [
+    {
+      "severity": "HIGH",
+      "concept": "UID-less Kubernetes object",
+      "paths": [
+        "backend/app/collectors/kubernetes_collector.py",
+        "backend/app/services/agent_snapshot_ingest.py",
+        "backend/app/services/network_topology_enricher.py"
+      ],
+      "conflict": "Direct collection uses literal namespace:name, agent ingest hashes cluster|kind|namespace|name, and network enrichment hashes cluster|namespace|kind|name."
+    },
+    {
+      "severity": "MEDIUM",
+      "concept": "logical identity versus graph entity identity",
+      "paths": [
+        "backend/app/services/identity_resolver.py",
+        "backend/app/models/identity.py"
+      ],
+      "conflict": "Logical identity IDs are a separate grouping namespace and are not canonical replacements for graph entity IDs."
+    },
+    {
+      "severity": "MEDIUM",
+      "concept": "mutable container image tags",
+      "paths": [
+        "backend/app/services/container_image_graph.py"
+      ],
+      "conflict": "Digest identities are immutable, while reference-hash identities represent a mutable tag string and cannot prove artifact immutability."
+    },
+    {
+      "severity": "MEDIUM",
+      "concept": "change entity references versus opaque cloud graph IDs",
+      "paths": [
+        "backend/app/models/change_events.py",
+        "backend/app/repositories/change_event_repository.py",
+        "backend/app/services/agent_cloud_enrichment.py",
+        "backend/app/services/agent_azure_enrichment.py",
+        "backend/app/services/agent_gcp_enrichment.py"
+      ],
+      "conflict": "Change payloads may carry provider IDs while graph IDs are hashed; correlation depends on external_id/provider_resource_id properties rather than one universal ID."
+    }
+  ],
+  "provenance_assessment": {
+    "maturity": "PARTIAL",
+    "finding": "Entity and Relationship models support source_system, observed_at, confidence, evidence_ids and properties, but many discovered relationships leave evidence_ids empty and use default confidence even when derived heuristically.",
+    "evidence": [
+      "backend/app/models/topology.py",
+      "backend/app/services/agent_snapshot_ingest.py",
+      "backend/app/services/agent_cloud_enrichment.py",
+      "backend/app/services/network_topology_enricher.py"
+    ]
+  },
+  "counts": {
+    "entity_kinds_discovered": 77,
+    "relationship_enum_kinds": 20,
+    "relationship_kinds_constructed": 14
+  }
+}
+

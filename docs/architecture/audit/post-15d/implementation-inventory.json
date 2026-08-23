@@ -1,0 +1,796 @@
+{
+  "schema_version": "1.0",
+  "audit_scope": "Repository reality after Block 15D",
+  "maturity_definitions": {
+    "PROVEN": "Implemented and exercised by a relevant committed automated or integration test across the stated capability boundary; this does not imply production certification.",
+    "IMPLEMENTED_BUT_UNPROVEN": "Executable implementation exists, but the repository does not contain a test that proves the stated boundary or real external-system behavior.",
+    "PARTIAL": "A useful subset exists, but material advertised inputs, semantics, or end-to-end links are absent or incomplete.",
+    "STUBBED": "The surface exists primarily as static/demo behavior or a placeholder without the advertised backend capability.",
+    "DORMANT": "Implemented code/data contracts exist but are intentionally outside the active V1 product path.",
+    "DUPLICATED": "Two or more active implementations represent substantially overlapping concepts without one unambiguous canonical owner.",
+    "DEAD": "No reachable runtime, API, CLI, frontend, or test path was found and the code has no documented active role.",
+    "MISSING": "No implementation of the stated capability was found."
+  },
+  "capabilities": [
+    {
+      "id": "cap-001",
+      "name": "FastAPI backend process",
+      "domain": "integration",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/main.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_api_tokens.py",
+        "backend/tests/test_incident_briefing.py"
+      ],
+      "dependencies": [
+        "backend HTTP/event contracts",
+        "secret configuration"
+      ],
+      "v1_relevance": "core",
+      "notes": "Registers 127 /api/v1 operations plus /health; startup creates SQLAlchemy tables."
+    },
+    {
+      "id": "cap-002",
+      "name": "Topo Agent long-running discovery process",
+      "domain": "discovery_and_ingestion",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "agent/src/topo_agent/runner.py",
+        "agent/src/topo_agent/main.py"
+      ],
+      "test_paths": [
+        "agent/tests/test_continuous_capture.py"
+      ],
+      "dependencies": [
+        "Topo Agent configuration",
+        "external source SDK or local runtime API",
+        "backend agent ingestion API"
+      ],
+      "v1_relevance": "core",
+      "notes": "Plugin collection, heartbeat, buffering, checkpoint and failure-signal submission are exercised with fakes; real infrastructure access is connector-specific and not proven."
+    },
+    {
+      "id": "cap-003",
+      "name": "Kubernetes discovery",
+      "domain": "discovery_and_ingestion",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "agent/src/topo_agent/collector.py",
+        "agent/src/topo_agent/plugins/kubernetes.py",
+        "backend/app/collectors/kubernetes_collector.py"
+      ],
+      "test_paths": [
+        "agent/tests/test_continuous_capture.py"
+      ],
+      "dependencies": [
+        "Topo Agent configuration",
+        "external source SDK or local runtime API",
+        "backend agent ingestion API"
+      ],
+      "v1_relevance": "core",
+      "notes": "Core workload, service, ingress and EndpointSlice inventory exists; Kubernetes client behavior is mocked in tests and supported resource coverage is bounded."
+    },
+    {
+      "id": "cap-004",
+      "name": "AWS inventory discovery",
+      "domain": "discovery_and_ingestion",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "agent/src/topo_agent/plugins/aws.py",
+        "backend/app/services/agent_cloud_enrichment.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_cloud_enrichment.py"
+      ],
+      "dependencies": [
+        "Topo Agent configuration",
+        "external source SDK or local runtime API",
+        "backend agent ingestion API"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Multiple AWS resources and relationships are implemented, but tests prove only selected enrichment and cache behavior, not live AWS collection."
+    },
+    {
+      "id": "cap-005",
+      "name": "Azure inventory discovery",
+      "domain": "discovery_and_ingestion",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "agent/src/topo_agent/plugins/azure.py",
+        "backend/app/services/agent_azure_enrichment.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_azure_enrichment.py"
+      ],
+      "dependencies": [
+        "Topo Agent configuration",
+        "external source SDK or local runtime API",
+        "backend agent ingestion API"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Broad Resource Graph normalization exists; no live subscription integration test is committed."
+    },
+    {
+      "id": "cap-006",
+      "name": "GCP inventory discovery",
+      "domain": "discovery_and_ingestion",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "agent/src/topo_agent/plugins/gcp.py",
+        "backend/app/services/agent_gcp_enrichment.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_agent_gcp_enrichment.py"
+      ],
+      "dependencies": [
+        "Topo Agent configuration",
+        "external source SDK or local runtime API",
+        "backend agent ingestion API"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Compute, GKE, hierarchy and asset inventory exist; no live project integration test is committed."
+    },
+    {
+      "id": "cap-007",
+      "name": "Host, process, Docker and socket inventory",
+      "domain": "discovery_and_ingestion",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "implementation_paths": [
+        "agent/src/topo_agent/plugins/host.py",
+        "agent/src/topo_agent/plugins/docker.py",
+        "agent/src/topo_agent/plugins/network.py",
+        "backend/app/services/agent_runtime_enrichment.py"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "Topo Agent configuration",
+        "external source SDK or local runtime API",
+        "backend agent ingestion API"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Executable collectors and graph enrichment exist without focused end-to-end tests."
+    },
+    {
+      "id": "cap-008",
+      "name": "Tetragon/eBPF runtime ingestion",
+      "domain": "discovery_and_ingestion",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "agent/src/topo_agent/sensor.py",
+        "agent/src/topo_agent/tetragon_parser.py",
+        "agent/deploy/tetragon-topo-policy.yaml"
+      ],
+      "test_paths": [
+        "agent/tests/test_tetragon_parser.py"
+      ],
+      "dependencies": [
+        "Topo Agent configuration",
+        "external source SDK or local runtime API",
+        "backend agent ingestion API"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Parser, aggregation, sensor heartbeat and deployment artifacts exist; live Tetragon-to-backend behavior is unproven."
+    },
+    {
+      "id": "cap-009",
+      "name": "Immutable topology snapshots",
+      "domain": "topology_and_graph",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/models/topology.py",
+        "backend/app/repositories/snapshot_repository.py",
+        "backend/app/services/topology_checkpoint.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py"
+      ],
+      "dependencies": [
+        "GraphSnapshot contract",
+        "topology snapshot persistence"
+      ],
+      "v1_relevance": "core",
+      "notes": "Manual and automatic snapshots are persisted as serialized GraphSnapshot payloads; immutability is enforced by service convention rather than database constraints."
+    },
+    {
+      "id": "cap-010",
+      "name": "Continuous topology checkpointing",
+      "domain": "topology_and_graph",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/topology_checkpoint.py",
+        "backend/app/services/continuous_lifecycle.py",
+        "agent/src/topo_agent/runner.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py"
+      ],
+      "dependencies": [
+        "GraphSnapshot contract",
+        "topology snapshot persistence"
+      ],
+      "v1_relevance": "core",
+      "notes": "Meaningful-change triggers, digest dedupe, debounce metadata, periodic reconciliation and incident-boundary behavior are covered."
+    },
+    {
+      "id": "cap-011",
+      "name": "Logical identity resolution",
+      "domain": "topology_and_graph",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "backend/app/services/identity_resolver.py",
+        "backend/app/models/identity.py",
+        "backend/app/api/identities.py"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "GraphSnapshot contract",
+        "topology snapshot persistence"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Deterministic rules and overrides exist, but graph entity ID constructors remain inconsistent across some ingestion paths."
+    },
+    {
+      "id": "cap-012",
+      "name": "Source-to-runtime chain",
+      "domain": "topology_and_graph",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "backend/app/services/github_graph.py",
+        "backend/app/services/github_actions_graph.py",
+        "backend/app/services/container_image_graph.py",
+        "frontend/lib/code-runtime.ts"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "GraphSnapshot contract",
+        "topology snapshot persistence"
+      ],
+      "v1_relevance": "differentiator",
+      "notes": "Repository, commit, workflow, image and workload links exist in subsets; no single committed test proves the complete chain and Helm is absent."
+    },
+    {
+      "id": "cap-013",
+      "name": "Topology snapshot diff / normalized change intelligence",
+      "domain": "topology_and_graph",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/change_normalizer.py",
+        "backend/app/repositories/change_repository.py",
+        "backend/app/services/topology_checkpoint.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py"
+      ],
+      "dependencies": [
+        "GraphSnapshot contract",
+        "topology snapshot persistence"
+      ],
+      "v1_relevance": "core",
+      "notes": "Snapshot differences produce durable normalized changes and meaningful topology changes can promote durable change events."
+    },
+    {
+      "id": "cap-014",
+      "name": "Native change-event model and correlation",
+      "domain": "change_intelligence",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "backend/app/models/change_events.py",
+        "backend/app/repositories/change_event_repository.py",
+        "backend/app/repositories/change_event_repository.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_change_event_link_idempotency.py"
+      ],
+      "dependencies": [
+        "change-event/snapshot-diff contracts",
+        "topology entity identity"
+      ],
+      "v1_relevance": "core",
+      "notes": "Durable events and links exist; provider-resource-to-graph identity matching is not uniformly canonical."
+    },
+    {
+      "id": "cap-015",
+      "name": "Native change-source webhooks",
+      "domain": "change_intelligence",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "backend/app/api/change_source_webhooks.py",
+        "backend/app/services/change_source_ingest.py",
+        "backend/app/services/external_change_normalizers.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_external_change_normalizers.py",
+        "backend/tests/test_webhook_security.py"
+      ],
+      "dependencies": [
+        "change-event/snapshot-diff contracts",
+        "topology entity identity"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "GitHub, GitLab, Jenkins, Azure DevOps and Terraform Cloud contracts exist; only selected normalization/security cases are tested."
+    },
+    {
+      "id": "cap-016",
+      "name": "Internal failure-signal to incident lifecycle",
+      "domain": "incident_intelligence",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/continuous_lifecycle.py",
+        "backend/app/services/incident_lifecycle.py",
+        "backend/app/services/incident_grouping.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_continuous_lifecycle.py"
+      ],
+      "dependencies": [
+        "canonical IncidentRecord",
+        "signals",
+        "pinned topology",
+        "change intelligence"
+      ],
+      "v1_relevance": "core",
+      "notes": "Deterministic qualifying failures, correlation, safe pinning, entity resolution, pending reconciliation, durable RCA and briefing handoff are covered by an integration-style repository test."
+    },
+    {
+      "id": "cap-017",
+      "name": "Legacy signal orchestration and incident analysis",
+      "domain": "incident_intelligence",
+      "classification": "DUPLICATED",
+      "implementation_paths": [
+        "backend/app/services/incident_orchestrator.py",
+        "backend/app/services/incident_analysis.py",
+        "backend/app/api/incidents.py",
+        "frontend/components/app/live-incident-workspace.tsx"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "canonical IncidentRecord",
+        "signals",
+        "pinned topology",
+        "change intelligence"
+      ],
+      "v1_relevance": "advanced_legacy",
+      "notes": "Active advanced workflow persists IncidentAnalysis separately from canonical IncidentRecord and Block 13C CausalAnalysis."
+    },
+    {
+      "id": "cap-018",
+      "name": "Evidence-backed causal RCA (13C)",
+      "domain": "incident_intelligence",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/causal_rca.py",
+        "backend/app/models/causal_rca.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_causal_rca.py",
+        "backend/tests/test_incident_briefing.py"
+      ],
+      "dependencies": [
+        "canonical IncidentRecord",
+        "signals",
+        "pinned topology",
+        "change intelligence"
+      ],
+      "v1_relevance": "core",
+      "notes": "Deterministic ranking and evidence graph are tested; confidence is a heuristic composite score, not a calibrated probability."
+    },
+    {
+      "id": "cap-019",
+      "name": "Blast-radius traversal",
+      "domain": "topology_and_graph",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "implementation_paths": [
+        "backend/app/services/blast_radius.py",
+        "backend/app/api/blast_radius.py"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "GraphSnapshot contract",
+        "topology snapshot persistence"
+      ],
+      "v1_relevance": "core",
+      "notes": "Pinned-snapshot bounded-depth traversal exists, but there is no focused blast-radius test file and traversal treats all relationships as undirected."
+    },
+    {
+      "id": "cap-020",
+      "name": "Ownership and business impact (14A)",
+      "domain": "ownership_and_business_impact",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/ownership_resolver.py",
+        "backend/app/services/business_impact.py",
+        "backend/app/services/incident_context.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_context.py"
+      ],
+      "dependencies": [
+        "pinned topology",
+        "blast radius",
+        "ownership mappings"
+      ],
+      "v1_relevance": "core",
+      "notes": "Resolution, aggregation and operational context are exercised; ownership mappings are current-state, not temporally versioned."
+    },
+    {
+      "id": "cap-021",
+      "name": "Response plan (14B)",
+      "domain": "response_and_history",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/response_plan.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_response_plan.py"
+      ],
+      "dependencies": [
+        "causal analysis",
+        "operational context",
+        "incident outcomes"
+      ],
+      "v1_relevance": "core",
+      "notes": "Read-only investigation/mitigation guidance and validation checks are deterministic and tested."
+    },
+    {
+      "id": "cap-022",
+      "name": "Resolution and outcome intelligence (14C)",
+      "domain": "response_and_history",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/incident_outcome.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_outcome.py"
+      ],
+      "dependencies": [
+        "causal analysis",
+        "operational context",
+        "incident outcomes"
+      ],
+      "v1_relevance": "core",
+      "notes": "Responder evidence, action attribution and timing are durable and tested with conservative ambiguity handling."
+    },
+    {
+      "id": "cap-023",
+      "name": "Historical incident similarity (14D)",
+      "domain": "incident_intelligence",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/incident_memory.py",
+        "backend/app/services/incident_similarity.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_memory.py"
+      ],
+      "dependencies": [
+        "canonical IncidentRecord",
+        "signals",
+        "pinned topology",
+        "change intelligence"
+      ],
+      "v1_relevance": "core",
+      "notes": "Explicit weighted deterministic similarity with bounded history and optional annotation-only AI."
+    },
+    {
+      "id": "cap-024",
+      "name": "Historical response intelligence (14E)",
+      "domain": "response_and_history",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/response_intelligence.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_response_intelligence.py"
+      ],
+      "dependencies": [
+        "causal analysis",
+        "operational context",
+        "incident outcomes"
+      ],
+      "v1_relevance": "core",
+      "notes": "Historical support can annotate but cannot create current actions; raw counts and conflicts are preserved."
+    },
+    {
+      "id": "cap-025",
+      "name": "Execution readiness (14F)",
+      "domain": "future_execution_control",
+      "classification": "DORMANT",
+      "implementation_paths": [
+        "backend/app/services/execution_readiness.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_execution_readiness.py"
+      ],
+      "dependencies": [
+        "response/readiness evidence",
+        "authenticated principal"
+      ],
+      "v1_relevance": "future",
+      "notes": "Thoroughly tested read-only safety contract, intentionally excluded from the V1 briefing and cockpit."
+    },
+    {
+      "id": "cap-026",
+      "name": "Human approval control plane (14G)",
+      "domain": "future_execution_control",
+      "classification": "DORMANT",
+      "implementation_paths": [
+        "backend/app/services/action_approval.py",
+        "backend/app/api/action_approvals.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_action_approval.py"
+      ],
+      "dependencies": [
+        "response/readiness evidence",
+        "authenticated principal"
+      ],
+      "v1_relevance": "future",
+      "notes": "Durable approval state/audit exists but is not needed by V1 incident intelligence."
+    },
+    {
+      "id": "cap-027",
+      "name": "Execution transaction foundation (14H)",
+      "domain": "future_execution_control",
+      "classification": "DORMANT",
+      "implementation_paths": [
+        "backend/app/services/execution_transaction.py",
+        "backend/app/api/execution_intents.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_execution_transaction.py"
+      ],
+      "dependencies": [
+        "response/readiness evidence",
+        "authenticated principal"
+      ],
+      "v1_relevance": "future",
+      "notes": "Intent and internal claim primitives exist; no public claim/execute endpoint, worker, or infrastructure executor exists."
+    },
+    {
+      "id": "cap-028",
+      "name": "Unified incident briefing (15A)",
+      "domain": "incident_intelligence",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/incident_briefing.py",
+        "backend/app/api/incident_briefing.py",
+        "frontend/components/app/incident-briefing-workspace.tsx"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_briefing.py"
+      ],
+      "dependencies": [
+        "canonical IncidentRecord",
+        "signals",
+        "pinned topology",
+        "change intelligence"
+      ],
+      "v1_relevance": "primary_contract",
+      "notes": "Orchestrates existing RCA, context, plan, history and outcome services with optional annotation-only AI."
+    },
+    {
+      "id": "cap-029",
+      "name": "Incident cockpit and incident home",
+      "domain": "incident_intelligence",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "frontend/components/app/incident-home.tsx",
+        "frontend/components/app/incident-briefing-workspace.tsx"
+      ],
+      "test_paths": [
+        "frontend/test/incident-cockpit-ux.test.mjs",
+        "frontend/test/incident-briefing.test.mjs"
+      ],
+      "dependencies": [
+        "canonical IncidentRecord",
+        "signals",
+        "pinned topology",
+        "change intelligence"
+      ],
+      "v1_relevance": "primary_ui",
+      "notes": "Live briefing contract, lifecycle pending state, progressive disclosure and no execution controls are tested."
+    },
+    {
+      "id": "cap-030",
+      "name": "Ask Topo frontend",
+      "domain": "frontend",
+      "classification": "STUBBED",
+      "implementation_paths": [
+        "frontend/components/app/ask-view.tsx",
+        "frontend/lib/topo-data.ts"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "backend HTTP API",
+        "Next.js runtime"
+      ],
+      "v1_relevance": "demo",
+      "notes": "Static demo content; it does not call a backend question-answering contract."
+    },
+    {
+      "id": "cap-031",
+      "name": "CLI simulator frontend",
+      "domain": "frontend",
+      "classification": "STUBBED",
+      "implementation_paths": [
+        "frontend/components/app/cli-view.tsx",
+        "frontend/lib/topo-data.ts"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "backend HTTP API",
+        "Next.js runtime"
+      ],
+      "v1_relevance": "demo",
+      "notes": "Browser simulator is static and distinct from the real Python CLI."
+    },
+    {
+      "id": "cap-032",
+      "name": "Python operational CLI",
+      "domain": "cli",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "cli/src/topo_cli/main.py",
+        "cli/src/topo_cli/commands/incidents.py"
+      ],
+      "test_paths": [
+        "cli/tests/test_incident_briefing.py"
+      ],
+      "dependencies": [
+        "backend HTTP API",
+        "profile/token configuration"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Broad API coverage exists, but tests focus mainly on Blocks 14A-15A and dormant execution contracts rather than every command."
+    },
+    {
+      "id": "cap-033",
+      "name": "API token authentication",
+      "domain": "platform_foundation",
+      "classification": "PARTIAL",
+      "implementation_paths": [
+        "backend/app/security/api_tokens.py",
+        "backend/app/security/api_tokens.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_api_tokens.py"
+      ],
+      "dependencies": [
+        "environment configuration",
+        "SQLAlchemy/FastAPI security middleware"
+      ],
+      "v1_relevance": "foundation",
+      "notes": "Bearer token and agent-specific auth exist; API authentication is disabled by default and general routes lack fine-grained authorization/tenancy."
+    },
+    {
+      "id": "cap-034",
+      "name": "Outbound webhook notifications",
+      "domain": "integration",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN",
+      "implementation_paths": [
+        "backend/app/services/webhook_delivery.py",
+        "backend/app/api/webhooks.py",
+        "frontend/components/app/webhook-integrations-view.tsx"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "backend HTTP/event contracts",
+        "secret configuration"
+      ],
+      "v1_relevance": "supporting",
+      "notes": "Configuration, dispatch and delivery audit exist without focused delivery integration tests; secrets/headers are stored in application records."
+    },
+    {
+      "id": "cap-035",
+      "name": "Central OpenAI annotation client",
+      "domain": "cli",
+      "classification": "PROVEN",
+      "implementation_paths": [
+        "backend/app/services/llm_client.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_incident_memory.py",
+        "backend/tests/test_incident_briefing.py"
+      ],
+      "dependencies": [
+        "backend HTTP API",
+        "profile/token configuration"
+      ],
+      "v1_relevance": "optional",
+      "notes": "Responses API, store=false, redaction and deterministic no-key/provider-failure fallback are tested."
+    },
+    {
+      "id": "cap-036",
+      "name": "LLM provider unification",
+      "domain": "ai_annotation",
+      "classification": "DUPLICATED",
+      "implementation_paths": [
+        "backend/app/services/llm_client.py",
+        "backend/app/services/incident_copilot.py",
+        "backend/app/services/incident_explanation.py",
+        "backend/app/services/investigation_planner.py",
+        "backend/app/services/post_incident_report.py"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "deterministic structured evidence",
+        "optional model provider"
+      ],
+      "v1_relevance": "internal",
+      "notes": "Four active legacy services call Groq directly in addition to the centralized LLM client."
+    },
+    {
+      "id": "cap-037",
+      "name": "Database migrations and production schema lifecycle",
+      "domain": "platform_foundation",
+      "classification": "MISSING",
+      "implementation_paths": [
+        "backend/app/db/database.py",
+        "backend/app/db/models.py"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "environment configuration",
+        "SQLAlchemy/FastAPI security middleware"
+      ],
+      "v1_relevance": "production_gap",
+      "notes": "No Alembic/migration directory exists; startup uses Base.metadata.create_all."
+    },
+    {
+      "id": "cap-038",
+      "name": "Tenant isolation and broad RBAC",
+      "domain": "platform_foundation",
+      "classification": "MISSING",
+      "implementation_paths": [
+        "backend/app/security/api_tokens.py",
+        "backend/app/security/approval_authorization.py"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "environment configuration",
+        "SQLAlchemy/FastAPI security middleware"
+      ],
+      "v1_relevance": "production_gap",
+      "notes": "Principal roles exist for approval/execution policy only; topology, incident and connector records have no tenant boundary."
+    },
+    {
+      "id": "cap-039",
+      "name": "Prometheus/Alertmanager, Grafana, Datadog, New Relic and ITSM connectors",
+      "domain": "integration",
+      "classification": "MISSING",
+      "implementation_paths": [
+        "backend/app/models/signals.py",
+        "backend/app/api/signals.py"
+      ],
+      "test_paths": [],
+      "dependencies": [
+        "backend HTTP/event contracts",
+        "secret configuration"
+      ],
+      "v1_relevance": "future",
+      "notes": "The normalized failure-signal contract is an extension point, but vendor adapters are not present."
+    },
+    {
+      "id": "cap-040",
+      "name": "Autonomous remediation/execution",
+      "domain": "response_and_history",
+      "classification": "MISSING",
+      "implementation_paths": [
+        "backend/app/services/execution_transaction.py"
+      ],
+      "test_paths": [
+        "backend/tests/test_execution_transaction.py"
+      ],
+      "dependencies": [
+        "causal analysis",
+        "operational context",
+        "incident outcomes"
+      ],
+      "v1_relevance": "explicitly_out_of_scope",
+      "notes": "No executor or Kubernetes/Terraform/cloud mutation path exists; this matches the read-only V1 boundary."
+    }
+  ]
+}
+
