@@ -9,7 +9,6 @@ import {
 import {
   buildIncidentWorkspaceModel,
   formatBriefingDuration,
-  formatConfidence,
   humanizeToken,
   isActiveIncident,
 } from "@/lib/incident-briefing"
@@ -96,7 +95,7 @@ export function BusinessOverview({
             {business.cause}
           </p>
           <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-            This is the leading evidence-backed conclusion, not a guarantee. Causal confidence is {formatConfidence(briefing.root_cause.causal_confidence)}.
+            This is the leading evidence-backed conclusion, not a guarantee. Evidence is {humanizeToken(briefing.root_cause.confidence_semantics?.evidence_state ?? "legacy unknown")} and the heuristic ranking band is {humanizeToken(briefing.root_cause.confidence_semantics?.ranking_strength ?? briefing.root_cause.confidence_level)}. Calibrated causal probability is unavailable.
           </p>
           </section>
 

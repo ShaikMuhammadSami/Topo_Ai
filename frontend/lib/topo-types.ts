@@ -1654,6 +1654,7 @@ export type BriefingRootCause = {
   root_entity_id: string | null
   causal_confidence: number
   confidence_level: string
+  confidence_semantics?: CausalConfidenceSemantics | null
   causal_change_event_id: string
   causal_change_title: string
   causal_change_source: string | null
@@ -1662,6 +1663,39 @@ export type BriefingRootCause = {
   summary: string
   reasons: string[]
   evidence_references: string[]
+}
+
+export type CausalConfidenceSemantics = {
+  semantics_version: "tc5.v1" | string
+  ranking_algorithm_version: string
+  score_type: "heuristic_ranking"
+  ranking_score: number | null
+  score_minimum: number
+  score_maximum: number
+  ranking_strength: "low" | "medium" | "high" | null
+  legacy_confidence: number | null
+  legacy_confidence_semantics:
+    | "legacy_normalized_heuristic_ranking_score"
+    | string
+  evidence_summary: {
+    supporting_count: number
+    contradicting_count: number
+    missing_count: number
+  }
+  evidence_completeness:
+    | "complete_for_current_model"
+    | "partial"
+    | "unknown"
+  evidence_state:
+    | "supported_under_current_model"
+    | "contested"
+    | "incomplete"
+    | "contested_with_gaps"
+    | "insufficient_evidence"
+    | "legacy_unknown"
+  calibration_status: "not_calibrated"
+  calibrated_probability: null
+  interpretation: string
 }
 
 export type BriefingRelevantChange = {

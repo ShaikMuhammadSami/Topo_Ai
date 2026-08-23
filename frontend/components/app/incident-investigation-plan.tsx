@@ -396,12 +396,7 @@ export function IncidentInvestigationPlan({
             </Badge>
 
             <Badge>
-              confidence{" "}
-              {Math.round(
-                plan.overall_confidence
-                * 100,
-              )}
-              %
+              generated plan self-score {plan.overall_confidence.toFixed(2)} (uncalibrated)
             </Badge>
 
             <Badge>

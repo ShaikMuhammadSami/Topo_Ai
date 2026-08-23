@@ -101,10 +101,18 @@ export function incidentTopologyHref(
   )}`
 }
 
-export function formatConfidence(
-  confidence: number,
+export function formatNormalizedScore(
+  score: number,
 ): string {
-  return `${Math.round(confidence * 100)}%`
+  return score.toFixed(2)
+}
+
+export function formatRankingScore(
+  score: number | null | undefined,
+): string {
+  return score === null || score === undefined
+    ? "Legacy rank"
+    : `${score.toFixed(1)} / 100`
 }
 
 export function humanizeToken(

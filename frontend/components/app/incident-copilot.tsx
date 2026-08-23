@@ -482,11 +482,7 @@ function CopilotMessage({
 
       {message.confidence !== null && (
         <p className="mt-3 font-mono text-[10px] text-muted-foreground">
-          Confidence:{" "}
-          {Math.round(
-            message.confidence * 100,
-          )}
-          %
+          Generated answer self-score: {message.confidence.toFixed(2)} (uncalibrated)
         </p>
       )}
 

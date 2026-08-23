@@ -75,6 +75,9 @@ from app.repositories.incident_record_repository import (
 from app.repositories.topology_snapshot_repository import (
     load_topology_snapshot,
 )
+from app.services.confidence_semantics import (
+    ensure_analysis_confidence_semantics,
+)
 from app.services.incident_context import (
     build_incident_operational_context,
     root_entity_id_for_analysis,
@@ -121,9 +124,12 @@ the leading causal hypothesis, the causal change and infrastructure
 path, blast radius, owner/business impact, the safest next checks,
 historical context, and outcome when present.
 
-Do not calculate or change root cause, confidence, ownership,
+Do not calculate or change root cause, heuristic ranking, evidence state,
+calibration status, calibrated probability, ownership,
 criticality, blast radius, actions, risk, historical support, affected
 entities, verification evidence, or outcome. Do not invent facts. Do
+not generate a numeric confidence, probability, likelihood, or certainty.
+The structured contract states that causal probability is not calibrated.
 not state that a remediation will fix the incident. Preserve cautious
 conditional language and the read-only, human-performed boundary.
 """.strip()
@@ -1010,7 +1016,7 @@ def _failure_modes(
 
     if plan.root_cause.causal_confidence < 0.5:
         result.append(
-            "Causal confidence is weak; prioritize the "
+            "The heuristic causal ranking is weak; prioritize the "
             "listed investigation and validation checks "
             "before a human considers mitigation."
         )
@@ -1467,6 +1473,8 @@ def build_incident_briefing(
             "this incident."
         )
 
+    analysis = ensure_analysis_confidence_semantics(analysis)
+
     hypothesis = analysis.top_hypothesis
 
     if hypothesis is None:
@@ -1479,11 +1487,26 @@ def build_incident_briefing(
 
     if hypothesis.confidence < 0.5:
         warnings.append(
-            "Causal confidence is low. Treat the root "
+            "The heuristic causal ranking is low. Treat the root "
             "cause as a weak hypothesis and prioritize "
             "investigation and validation before any "
             "human-performed mitigation."
         )
+
+    semantics = analysis.confidence_semantics
+    if semantics is not None:
+        if semantics.evidence_summary.contradicting_count:
+            warnings.append(
+                "The leading hypothesis has explicit contradicting "
+                "evidence. Its heuristic ranking was not converted into "
+                "or adjusted as a probability."
+            )
+        if semantics.evidence_summary.missing_count:
+            warnings.append(
+                "Expected causal evidence is missing; evidence "
+                "completeness is partial even if the heuristic ranking "
+                "is high."
+            )
 
     snapshot = None
 
@@ -1775,7 +1798,8 @@ def build_incident_briefing(
         "The leading evidence-backed causal hypothesis "
         f"points to '{hypothesis.root_title}' and the "
         f"operational change '{hypothesis.target_title}' "
-        f"at confidence {hypothesis.confidence:.2f}."
+        f"with heuristic ranking score {hypothesis.score:.2f}. "
+        "Calibrated causal probability is unavailable."
     )
     briefing = IncidentBriefing(
         incident=incident_model,
@@ -1819,6 +1843,9 @@ def build_incident_briefing(
             ),
             confidence_level=(
                 hypothesis.confidence_level.value
+            ),
+            confidence_semantics=(
+                analysis.confidence_semantics
             ),
             causal_change_event_id=(
                 hypothesis.target_event_id

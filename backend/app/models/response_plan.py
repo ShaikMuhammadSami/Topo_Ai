@@ -13,6 +13,7 @@ from app.models.ownership import (
     EntityOwnershipResolution,
     IncidentOwnershipImpact,
 )
+from app.models.confidence_semantics import CausalConfidenceSemantics
 from app.models.recommendations import (
     RecommendationRisk,
 )
@@ -120,6 +121,7 @@ class ResponseRootCause(BaseModel):
         le=1.0,
     )
     confidence_level: str
+    causal_confidence_semantics: CausalConfidenceSemantics | None = None
 
     evidence_ids: list[str] = Field(
         default_factory=list

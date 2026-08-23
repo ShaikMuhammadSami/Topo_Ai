@@ -139,7 +139,7 @@ export function IncidentWorkspace() {
           <header className="flex items-center justify-between border-b border-border px-5 py-3">
             <h3 className="font-heading text-sm font-bold">Ranked hypotheses</h3>
             <span className="font-mono text-[11px] text-muted-foreground">
-              {revealed ? "3 hypotheses · conf ≥ 0.18" : "awaiting evidence threshold…"}
+              {revealed ? "3 hypotheses · heuristic rank ≥ 0.18" : "awaiting evidence threshold…"}
             </span>
           </header>
           {revealed ? (
@@ -198,7 +198,7 @@ export function IncidentWorkspace() {
             <div className="flex min-h-48 flex-col items-center justify-center gap-3 p-6 text-center">
               <p className="font-mono text-[12px] text-muted-foreground">
                 topo is correlating signals… hypotheses appear once evidence
-                confidence ≥ 0.50
+                heuristic rank ≥ 0.50
               </p>
               <button
                 onClick={() => setRevealed(true)}

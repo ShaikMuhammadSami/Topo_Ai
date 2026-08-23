@@ -22,11 +22,11 @@ export function IdentitiesView() {
           identity resolution
         </p>
         <h2 className="font-heading text-4xl font-black tracking-tight">
-          repo <span className="text-muted-foreground">→</span> pod, with confidence
+          repo <span className="text-muted-foreground">→</span> pod, with a deterministic match score
         </h2>
         <p className="mt-2 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
           The backbone of everything downstream. If identities are wrong, blame is
-          wrong. Every match carries a confidence score and a source - label match
+          wrong. Every match carries a heuristic match score and a source - label match
           (~0.99), naming heuristic (~0.7) or manual override (1.00).
         </p>
       </div>
@@ -55,7 +55,7 @@ export function IdentitiesView() {
               <th className="px-4 py-3 text-left font-normal">Pod prefix</th>
               <th className="px-4 py-3 text-left font-normal">Svc CIDR</th>
               <th className="px-4 py-3 text-left font-normal">Source</th>
-              <th className="px-4 py-3 text-left font-normal">Confidence</th>
+              <th className="px-4 py-3 text-left font-normal">Match score</th>
             </tr>
           </thead>
           <tbody className="font-mono text-[12px]">

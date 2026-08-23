@@ -46,6 +46,29 @@ def _payload() -> dict:
             "root_entity_id": "entity:payments",
             "causal_confidence": 0.9,
             "confidence_level": "high",
+            "confidence_semantics": {
+                "semantics_version": "tc5.v1",
+                "ranking_algorithm_version": "13c-causal-v1",
+                "score_type": "heuristic_ranking",
+                "ranking_score": 90.0,
+                "score_minimum": 0.0,
+                "score_maximum": 100.0,
+                "ranking_strength": "high",
+                "legacy_confidence": 0.9,
+                "legacy_confidence_semantics": (
+                    "legacy_normalized_heuristic_ranking_score"
+                ),
+                "evidence_summary": {
+                    "supporting_count": 4,
+                    "contradicting_count": 0,
+                    "missing_count": 1,
+                },
+                "evidence_completeness": "partial",
+                "evidence_state": "incomplete",
+                "calibration_status": "not_calibrated",
+                "calibrated_probability": None,
+                "interpretation": "Heuristic ranking, not probability.",
+            },
             "causal_change_title": (
                 "Deploy payment-api revision 42"
             ),
@@ -383,6 +406,37 @@ def test_human_readable_section_order(
         "AI SUMMARY",
         "WARNINGS",
     ]
+
+
+def test_human_root_cause_uses_tc5_semantic_labels(
+    monkeypatch,
+) -> None:
+    rendered = {}
+    _wire_command(monkeypatch, _payload(), OutputFormat.TABLE)
+    monkeypatch.setattr(
+        incidents,
+        "render_data",
+        lambda value, **kwargs: rendered.setdefault(kwargs["title"], value),
+    )
+    monkeypatch.setattr(
+        incidents,
+        "render_records",
+        lambda *args, **kwargs: None,
+    )
+
+    incidents.incident_briefing(
+        context=object(),
+        incident_id="incident:1",
+        include_ai=False,
+    )
+
+    root = rendered["ROOT CAUSE"]
+    assert root["Heuristic Ranking Score"] == 90.0
+    assert root["Legacy Normalized Ranking"] == 0.9
+    assert root["Evidence State"] == "incomplete"
+    assert root["Calibration Status"] == "not_calibrated"
+    assert root["Calibrated Probability"] is None
+    assert "Causal Confidence" not in root
 
 
 def test_remediation_preview_is_rendered(

@@ -452,7 +452,7 @@ export function IncidentRecommendations({
           <p className="mx-auto mt-2 max-w-xl text-sm text-muted-foreground">
             Generate actions from the ranked
             hypotheses. Only candidates meeting
-            the configured confidence threshold
+            the configured heuristic ranking threshold
             will be included.
           </p>
         </div>
@@ -560,11 +560,7 @@ function RecommendationRow({
             ),
           )}
         >
-          {Math.round(
-            recommendation.confidence *
-              100,
-          )}
-          %
+          {recommendation.confidence.toFixed(2)} heuristic score
         </span>
       </div>
 
@@ -655,11 +651,7 @@ function RecommendationDetail({
             ),
           )}
         >
-          {Math.round(
-            recommendation.confidence *
-              100,
-          )}
-          %
+          {recommendation.confidence.toFixed(2)} heuristic score
         </div>
       </div>
 

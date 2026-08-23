@@ -15,7 +15,7 @@ const prompts = [
 const firstAnswer = (
   <>
     <p className="leading-relaxed">
-      Most likely cause (confidence <span className="font-bold text-warn">0.91</span>)
+      Most likely cause (demo heuristic rank <span className="font-bold text-warn">0.91</span>)
       - regression in checkout-api from{" "}
       <code className="rounded-sm bg-secondary px-1 text-info">PR #2284</code> merged at
       14:28 UTC. The diff removed{" "}

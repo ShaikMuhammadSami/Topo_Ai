@@ -527,12 +527,7 @@ export function IncidentPostIncidentReport({
               </Badge>
 
               <Badge>
-                confidence{" "}
-                {Math.round(
-                  report.overall_confidence
-                  * 100,
-                )}
-                %
+                generated report self-score {report.overall_confidence.toFixed(2)} (uncalibrated)
               </Badge>
 
               <Badge>

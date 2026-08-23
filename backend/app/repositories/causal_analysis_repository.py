@@ -10,6 +10,9 @@ from app.db.models import (
 from app.models.causal_rca import (
     CausalAnalysisResponse,
 )
+from app.services.confidence_semantics import (
+    ensure_analysis_confidence_semantics,
+)
 
 
 def save_causal_analysis(
@@ -18,6 +21,7 @@ def save_causal_analysis(
     analysis: CausalAnalysisResponse,
     commit: bool = True,
 ) -> CausalAnalysisResponse:
+    analysis = ensure_analysis_confidence_semantics(analysis)
     record = session.get(
         CausalAnalysisRecord,
         analysis.analysis_id,
@@ -71,8 +75,8 @@ def save_causal_analysis(
         # calculation with the same deterministic fingerprint returns the
         # original persisted payload instead of silently changing its ledger,
         # generated_at, or conclusions.
-        return CausalAnalysisResponse.model_validate_json(
-            record.payload_json
+        return ensure_analysis_confidence_semantics(
+            CausalAnalysisResponse.model_validate_json(record.payload_json)
         )
 
     if commit:
@@ -94,11 +98,8 @@ def load_causal_analysis(
     if record is None:
         return None
 
-    return (
-        CausalAnalysisResponse
-        .model_validate_json(
-            record.payload_json
-        )
+    return ensure_analysis_confidence_semantics(
+        CausalAnalysisResponse.model_validate_json(record.payload_json)
     )
 
 
@@ -129,9 +130,6 @@ def latest_causal_analysis(
     if record is None:
         return None
 
-    return (
-        CausalAnalysisResponse
-        .model_validate_json(
-            record.payload_json
-        )
+    return ensure_analysis_confidence_semantics(
+        CausalAnalysisResponse.model_validate_json(record.payload_json)
     )

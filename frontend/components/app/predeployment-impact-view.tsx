@@ -567,15 +567,11 @@ export function PreDeploymentImpactView() {
 
               <div className="text-right">
                 <p className="font-heading text-5xl font-black">
-                  {Math.round(
-                    result.risk_score *
-                      100,
-                  )}
-                  %
+                  {result.risk_score.toFixed(2)}
                 </p>
 
                 <p className="font-mono text-xs text-muted-foreground">
-                  predicted risk
+                  deterministic risk score
                 </p>
               </div>
             </div>
@@ -682,11 +678,7 @@ export function PreDeploymentImpactView() {
                         </td>
 
                         <td className="p-3">
-                          {Math.round(
-                            entity.risk_score *
-                              100,
-                          )}
-                          %
+                          {entity.risk_score.toFixed(2)}
                         </td>
                       </tr>
                     ))}

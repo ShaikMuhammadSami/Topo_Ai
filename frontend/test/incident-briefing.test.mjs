@@ -100,6 +100,27 @@ function completeBriefing() {
       root_entity_id: "entity:payments",
       causal_confidence: 0.87,
       confidence_level: "high",
+      confidence_semantics: {
+        semantics_version: "tc5.v1",
+        ranking_algorithm_version: "13c-causal-v1",
+        score_type: "heuristic_ranking",
+        ranking_score: 87,
+        score_min: 0,
+        score_max: 100,
+        ranking_strength: "high",
+        legacy_confidence: 0.87,
+        legacy_confidence_semantics: "normalized_heuristic_ranking_score",
+        evidence_summary: {
+          supporting_count: 4,
+          contradicting_count: 1,
+          missing_count: 0,
+        },
+        evidence_completeness: "complete_for_current_model",
+        evidence_state: "contested",
+        calibration_status: "not_calibrated",
+        calibrated_probability: null,
+        interpretation: "This ranks hypotheses under the current deterministic model; it is not a probability.",
+      },
       causal_change_event_id: "event:deploy",
       causal_change_title: "Deploy payment-api revision 42",
       causal_change_source: "github_actions",
@@ -522,6 +543,17 @@ test("root cause comes directly from briefing data", () => {
   const model = buildIncidentWorkspaceModel(completeBriefing())
   assert.equal(model.immediate.rootCause, "Deploy payment-api revision 42")
   assert.equal(model.immediate.causalConfidence, 0.87)
+})
+
+test("TC-5 confidence semantics remain authoritative briefing data", () => {
+  const briefing = completeBriefing()
+  assert.equal(briefing.root_cause.confidence_semantics.ranking_score, 87)
+  assert.equal(briefing.root_cause.confidence_semantics.evidence_state, "contested")
+  assert.equal(briefing.root_cause.confidence_semantics.calibration_status, "not_calibrated")
+  assert.equal(briefing.root_cause.confidence_semantics.calibrated_probability, null)
+  assert.match(componentSource, /probability not calibrated/)
+  assert.match(componentSource, /Calibrated causal probability is unavailable/)
+  assert.doesNotMatch(componentSource, /formatConfidence/)
 })
 
 test("what changed preserves briefing change data", () => {

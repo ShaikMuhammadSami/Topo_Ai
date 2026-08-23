@@ -591,14 +591,11 @@ function IncidentDetail({
         />
 
         <Metric
-          label="TOP SCORE"
+          label="TOP HEURISTIC RANK"
           value={
             incident.top_hypothesis_score === null
               ? "—"
-              : `${Math.round(
-                  incident.top_hypothesis_score *
-                    100,
-                )}%`
+              : incident.top_hypothesis_score.toFixed(2)
           }
         />
 

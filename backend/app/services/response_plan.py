@@ -722,8 +722,8 @@ def _change_review_action(
         reason=(
             "This is the operational change "
             "selected by the leading causal "
-            f"hypothesis at confidence "
-            f"{hypothesis.confidence:.2f}."
+            "hypothesis under the existing heuristic ranking "
+            f"at normalized score {hypothesis.confidence:.2f}."
         ),
         owner_team=owner_team,
         oncall_contact=oncall_contact,
@@ -968,7 +968,7 @@ def _rollback_candidate(
         return RollbackCandidate(
             available=False,
             reason=(
-                "Causal confidence is below the "
+                "The normalized heuristic causal ranking is below the "
                 f"{STRONG_CAUSAL_CONFIDENCE:.2f} "
                 "threshold required to surface a "
                 "rollback or reversion candidate."
@@ -1040,8 +1040,8 @@ def _rollback_candidate(
             f"Change event '{event.event_id}' is a "
             f"{event.kind} change that preceded the "
             "incident, is linked to the causal entity, "
-            f"and has {hypothesis.confidence:.2f} "
-            "causal confidence. Validate the leading "
+            f"and has normalized heuristic ranking "
+            f"{hypothesis.confidence:.2f}. Validate the leading "
             "hypothesis and the previous known-good "
             "state before considering reversion."
         ),
@@ -1809,7 +1809,7 @@ def build_incident_response_plan(
 
     if hypothesis.confidence < 0.50:
         warnings.append(
-            "Causal confidence is low. The plan "
+            "The heuristic causal ranking is low. The plan "
             "prioritizes investigation and validation "
             "and does not surface destructive "
             "mitigation as a candidate."
@@ -1854,6 +1854,9 @@ def build_incident_response_plan(
         confidence_level=(
             hypothesis
             .confidence_level.value
+        ),
+        causal_confidence_semantics=(
+            analysis.confidence_semantics
         ),
         evidence_ids=_deduplicated(
             hypothesis

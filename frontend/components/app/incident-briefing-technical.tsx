@@ -17,7 +17,8 @@ import {
 import {
   buildIncidentWorkspaceModel,
   compactDependencyPath,
-  formatConfidence,
+  formatNormalizedScore,
+  formatRankingScore,
   humanizeToken,
 } from "@/lib/incident-briefing"
 import type { IncidentBriefing } from "@/lib/topo-types"
@@ -79,7 +80,9 @@ export function TechnicalWorkspace({
             <div className="flex flex-wrap items-center justify-between gap-3">
               <Eyebrow icon={FileSearch}>Likely root cause</Eyebrow>
               <span className="font-heading text-2xl font-black text-primary">
-                {formatConfidence(root.causal_confidence)}
+                {formatRankingScore(
+                  root.confidence_semantics?.ranking_score,
+                )}
               </span>
             </div>
             <h3 className="mt-2 font-heading text-lg font-bold">
@@ -89,7 +92,13 @@ export function TechnicalWorkspace({
               {model.immediate.rootCauseSummary}
             </p>
             <p className="mt-3 font-mono text-[10px] uppercase text-muted-foreground">
-              {humanizeToken(root.confidence_level)} confidence · {root.root_event_source}
+              {humanizeToken(
+                root.confidence_semantics?.ranking_strength ??
+                  root.confidence_level,
+              )} heuristic ranking · {humanizeToken(
+                root.confidence_semantics?.evidence_state ??
+                  "legacy_unknown",
+              )} evidence · probability not calibrated · {root.root_event_source}
             </p>
           </div>
         </div>
@@ -390,7 +399,7 @@ function BlastRadiusSection({
                       {humanizeToken(entity.impact)}
                     </span>
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {formatConfidence(entity.impact_score)}
+                      {formatNormalizedScore(entity.impact_score)}
                     </span>
                   </div>
                 ))}
