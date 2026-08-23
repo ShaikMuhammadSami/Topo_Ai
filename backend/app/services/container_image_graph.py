@@ -12,10 +12,15 @@ from app.models.topology import (
     EvidenceType,
     GraphSnapshot,
     Relationship,
+    RelationshipOrigin,
     RelationshipType,
 )
 from app.services.canonical_identity import (
     canonical_container_image_identity,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -518,15 +523,40 @@ def augment_snapshot_with_container_images(
                     observed_at=(
                         result.collected_at
                     ),
-                    confidence=(
-                        1.0
-                        if candidate_digest
-                        else 0.80
-                    ),
                     directed=True,
                     evidence_ids=[
                         evidence_id
                     ],
+                    provenance=relationship_provenance(
+                        predicate=RelationshipType.USES,
+                        origin=(
+                            RelationshipOrigin.DERIVED
+                            if candidate_digest
+                            else RelationshipOrigin.DECLARED
+                        ),
+                        source_component=(
+                            "backend.app.services.container_image_graph"
+                        ),
+                        source_references=[
+                            source_reference(
+                                reference_type="container_image_reference",
+                                reference=requested_image,
+                                source_system="kubernetes",
+                                attributes={
+                                    "container_name": container.get("name"),
+                                },
+                            ),
+                            source_reference(
+                                reference_type="container_image_digest",
+                                reference=candidate_digest,
+                                source_system="kubernetes",
+                                attributes={
+                                    "resolution_method": resolution_method,
+                                },
+                            ),
+                        ],
+                        linker_version="container-image-linker:v1",
+                    ),
                     properties={
                         "container_name": (
                             container.get(

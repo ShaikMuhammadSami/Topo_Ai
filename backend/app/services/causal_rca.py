@@ -8,6 +8,7 @@ from datetime import (
     datetime,
     timezone,
 )
+from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -277,6 +278,68 @@ def _adjacency(
         )
 
     return result
+
+
+def _pinned_relationship_metadata(
+    snapshot: GraphSnapshot | None,
+    *,
+    left_entity_id: str,
+    right_entity_id: str,
+) -> dict[str, Any]:
+    """Return deterministic edge evidence from the supplied pinned snapshot."""
+
+    if snapshot is None:
+        return {}
+
+    matches = [
+        relationship
+        for relationship in snapshot.relationships
+        if (
+            relationship.source_entity_id == left_entity_id
+            and relationship.target_entity_id == right_entity_id
+        )
+        or (
+            relationship.source_entity_id == right_entity_id
+            and relationship.target_entity_id == left_entity_id
+        )
+    ]
+
+    if not matches:
+        return {}
+
+    relationship = sorted(matches, key=lambda item: item.id)[0]
+    provenance = (
+        relationship.provenance.model_dump(mode="json")
+        if relationship.provenance is not None
+        else None
+    )
+
+    return {
+        "topology_snapshot_id": snapshot.snapshot_id,
+        "relationship_id": relationship.id,
+        "relationship_type": relationship.relationship_type.value,
+        "relationship_direction": (
+            "forward"
+            if relationship.source_entity_id == left_entity_id
+            else "reverse"
+        ),
+        "relationship_source_system": relationship.source_system,
+        "relationship_observed_at": (
+            relationship.observed_at.isoformat()
+        ),
+        "relationship_confidence": relationship.confidence,
+        "relationship_confidence_semantics": (
+            relationship.confidence_semantics.value
+            if relationship.confidence_semantics is not None
+            else None
+        ),
+        "relationship_provenance": provenance,
+        "relationship_provenance_status": (
+            provenance["completeness"]
+            if provenance is not None
+            else "legacy_unspecified"
+        ),
+    }
 
 
 def _shortest_path(
@@ -1313,6 +1376,13 @@ def analyze_causal_rca(
                         ),
                         entity_id=(
                             right_id
+                        ),
+                        attributes=(
+                            _pinned_relationship_metadata(
+                                snapshot,
+                                left_entity_id=left_id,
+                                right_entity_id=right_id,
+                            )
                         ),
                     )
                 )

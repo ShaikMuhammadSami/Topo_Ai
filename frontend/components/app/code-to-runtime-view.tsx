@@ -30,6 +30,7 @@ import {
 import type {
   GraphSnapshot,
   SnapshotSummary,
+  TopologyRelationship,
 } from "@/lib/topo-types"
 
 export function CodeToRuntimeView() {
@@ -559,12 +560,10 @@ function ChainCard({
           title="Image → runtime"
           confidence={
             chain.workloadToImage.length
-              ? Math.min(
-                  ...chain.workloadToImage.map(
-                    (item) => item.confidence,
-                  ),
+              ? minimumRelationshipConfidence(
+                  chain.workloadToImage,
                 )
-              : 0
+              : null
           }
           values={[
             [
@@ -645,7 +644,7 @@ function EvidenceItem({
   values,
 }: {
   title: string
-  confidence: number
+  confidence: number | null
   values: Array<[string, string]>
 }) {
   return (
@@ -656,7 +655,9 @@ function EvidenceItem({
         </p>
 
         <span className="font-mono text-[11px] text-ok">
-          {Math.round(confidence * 100)}%
+          {confidence === null
+            ? "not scored"
+            : `${Math.round(confidence * 100)}% heuristic`}
         </span>
       </div>
 
@@ -754,4 +755,14 @@ function formatDate(
   }
 
   return parsed.toLocaleString()
+}
+
+function minimumRelationshipConfidence(
+  relationships: TopologyRelationship[],
+): number | null {
+  const values = relationships
+    .map((relationship) => relationship.confidence)
+    .filter((value): value is number => value !== null)
+
+  return values.length ? Math.min(...values) : null
 }

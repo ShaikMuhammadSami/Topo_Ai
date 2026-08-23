@@ -7,7 +7,12 @@ from app.models.topology import (
     EvidenceType,
     GraphSnapshot,
     Relationship,
+    RelationshipOrigin,
     RelationshipType,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -102,6 +107,19 @@ def build_sample_snapshot() -> GraphSnapshot:
             relationship_type=RelationshipType.CONTAINS,
             source_system="kubernetes",
             observed_at=observed_at,
+            provenance=relationship_provenance(
+                predicate=RelationshipType.CONTAINS,
+                origin=RelationshipOrigin.DECLARED,
+                source_component="backend.app.services.sample_topology",
+                source_references=[
+                    source_reference(
+                        reference_type="sample_definition",
+                        reference="namespace-contains-deployment",
+                        source_system="topo-sample",
+                    )
+                ],
+                linker_version="sample-topology-linker:v1",
+            ),
         ),
         Relationship(
             id="rel:deployment-runs-pod",
@@ -110,6 +128,19 @@ def build_sample_snapshot() -> GraphSnapshot:
             relationship_type=RelationshipType.RUNS,
             source_system="kubernetes",
             observed_at=observed_at,
+            provenance=relationship_provenance(
+                predicate=RelationshipType.RUNS,
+                origin=RelationshipOrigin.DECLARED,
+                source_component="backend.app.services.sample_topology",
+                source_references=[
+                    source_reference(
+                        reference_type="sample_definition",
+                        reference="deployment-runs-pod",
+                        source_system="topo-sample",
+                    )
+                ],
+                linker_version="sample-topology-linker:v1",
+            ),
         ),
         Relationship(
             id="rel:service-selects-pod",
@@ -118,6 +149,19 @@ def build_sample_snapshot() -> GraphSnapshot:
             relationship_type=RelationshipType.SELECTS,
             source_system="kubernetes",
             observed_at=observed_at,
+            provenance=relationship_provenance(
+                predicate=RelationshipType.SELECTS,
+                origin=RelationshipOrigin.DERIVED,
+                source_component="backend.app.services.sample_topology",
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_selector",
+                        reference={"app": "payment-service"},
+                        source_system="topo-sample",
+                    )
+                ],
+                linker_version="sample-topology-linker:v1",
+            ),
             properties={
                 "selector": {
                     "app": "payment-service",

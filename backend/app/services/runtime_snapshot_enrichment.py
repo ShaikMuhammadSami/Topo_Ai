@@ -19,7 +19,12 @@ from app.models.topology import (
     EntityType,
     GraphSnapshot,
     Relationship,
+    RelationshipOrigin,
     RelationshipType,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -366,9 +371,37 @@ def enrich_snapshot_with_runtime_dependencies(
                 observed_at=(
                     dependency.last_seen_at
                 ),
-                confidence=0.95,
                 directed=True,
                 evidence_ids=[],
+                provenance=relationship_provenance(
+                    predicate=relation,
+                    origin=RelationshipOrigin.OBSERVED,
+                    source_component=(
+                        "backend.app.services.runtime_snapshot_enrichment"
+                    ),
+                    source_references=[
+                        source_reference(
+                            reference_type="runtime_dependency_record",
+                            reference=(
+                                dependency.runtime_dependency_id
+                            ),
+                            source_system="tetragon",
+                            attributes={
+                                "sensor_id": dependency.sensor_id,
+                                "observation_count": (
+                                    dependency.observation_count
+                                ),
+                                "first_seen_at": (
+                                    dependency.first_seen_at
+                                ),
+                                "last_seen_at": (
+                                    dependency.last_seen_at
+                                ),
+                            },
+                        )
+                    ],
+                    linker_version="tetragon-network-linker:v1",
+                ),
                 properties={
                     "runtime_observed":
                         True,

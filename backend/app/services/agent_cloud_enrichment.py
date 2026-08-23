@@ -14,7 +14,13 @@ from app.models.topology import (
     EntityType,
     GraphSnapshot,
     Relationship,
+    RelationshipConfidenceSemantics,
+    RelationshipOrigin,
     RelationshipType,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 from app.services.canonical_identity import (
     canonical_aws_identity,
@@ -246,13 +252,21 @@ def enrich_snapshot_with_aws(
         dict[str, Any],
     ] = {}
 
+    existing_native_references = {
+        entity.id: entity.external_id
+        for entity in entities
+        if entity.external_id
+    }
+
     def add_relationship(
         source_id: str | None,
         target_id: str | None,
         relation_name: str,
         properties:
             dict[str, Any] | None = None,
-        confidence: float = 1.0,
+        confidence: float | None = None,
+        origin: RelationshipOrigin = RelationshipOrigin.DECLARED,
+        source_references: list[Any] | None = None,
     ) -> None:
         if not source_id or not target_id:
             return
@@ -271,6 +285,34 @@ def enrich_snapshot_with_aws(
             return
 
         relationship_keys.add(key)
+
+        references = list(source_references or [])
+
+        for role, relationship_entity_id in (
+            ("subject", source_id),
+            ("object", target_id),
+        ):
+            value = resource_values.get(
+                relationship_entity_id,
+                {},
+            )
+            native_id = (
+                value.get("arn")
+                or value.get("resource_id")
+                or existing_native_references.get(
+                    relationship_entity_id
+                )
+            )
+            references.append(
+                source_reference(
+                    reference_type="source_native_entity",
+                    reference=native_id,
+                    source_system=(
+                        "aws" if value else "topology"
+                    ),
+                    attributes={"role": role},
+                )
+            )
 
         relationships.append(
             Relationship(
@@ -296,8 +338,22 @@ def enrich_snapshot_with_aws(
                     .collected_at
                 ),
                 confidence=confidence,
+                confidence_semantics=(
+                    RelationshipConfidenceSemantics.HEURISTIC_SCORE
+                    if confidence is not None
+                    else None
+                ),
                 directed=True,
                 evidence_ids=[],
+                provenance=relationship_provenance(
+                    predicate=relation,
+                    origin=origin,
+                    source_component=(
+                        "backend.app.services.agent_cloud_enrichment"
+                    ),
+                    source_references=references,
+                    linker_version="aws-inventory-linker:v1",
+                ),
                 properties=(
                     properties or {}
                 ),
@@ -759,6 +815,7 @@ def enrich_snapshot_with_aws(
                     entity.id,
                     "RUNS",
                     confidence=0.99,
+                    origin=RelationshipOrigin.INFERRED,
                 )
 
         if (
@@ -772,6 +829,7 @@ def enrich_snapshot_with_aws(
                 entity.id,
                 "RUNS",
                 confidence=0.99,
+                origin=RelationshipOrigin.INFERRED,
             )
 
         if (
@@ -816,6 +874,7 @@ def enrich_snapshot_with_aws(
                     entity.id,
                     "ROUTES_TO",
                     confidence=0.99,
+                    origin=RelationshipOrigin.INFERRED,
                 )
 
     return snapshot.model_copy(

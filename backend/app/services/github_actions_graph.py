@@ -14,10 +14,16 @@ from app.models.topology import (
     EvidenceType,
     GraphSnapshot,
     Relationship,
+    RelationshipConfidenceSemantics,
+    RelationshipOrigin,
     RelationshipType,
 )
 from app.services.canonical_identity import (
     canonical_github_workflow_run_identity,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -451,11 +457,30 @@ def augment_snapshot_with_github_actions(
                     "github-actions"
                 ),
                 observed_at=observed_at,
-                confidence=1.0,
                 directed=True,
                 evidence_ids=[
                     evidence_id
                 ],
+                provenance=relationship_provenance(
+                    predicate=RelationshipType.CONTAINS,
+                    origin=RelationshipOrigin.OBSERVED,
+                    source_component=(
+                        "backend.app.services.github_actions_graph"
+                    ),
+                    source_references=[
+                        source_reference(
+                            reference_type="github_repository_id",
+                            reference=repository_entity.external_id,
+                            source_system="github",
+                        ),
+                        source_reference(
+                            reference_type="github_workflow_run_id",
+                            reference=external_run_id,
+                            source_system="github-actions",
+                        ),
+                    ],
+                    linker_version="github-actions-run-linker:v1",
+                ),
                 properties={
                     "object": (
                         "workflow_run"
@@ -490,11 +515,30 @@ def augment_snapshot_with_github_actions(
             ),
             source_system="github-actions",
             observed_at=observed_at,
-            confidence=1.0,
             directed=True,
             evidence_ids=[
                 evidence_id
             ],
+            provenance=relationship_provenance(
+                predicate=RelationshipType.TRIGGERS,
+                origin=RelationshipOrigin.OBSERVED,
+                source_component=(
+                    "backend.app.services.github_actions_graph"
+                ),
+                source_references=[
+                    source_reference(
+                        reference_type="git_commit_sha",
+                        reference=head_sha,
+                        source_system="github",
+                    ),
+                    source_reference(
+                        reference_type="github_workflow_run_id",
+                        reference=external_run_id,
+                        source_system="github-actions",
+                    ),
+                ],
+                linker_version="github-actions-trigger-linker:v1",
+            ),
             properties={
                 "head_sha": head_sha,
                 "event": run.get("event"),
@@ -717,10 +761,38 @@ def augment_snapshot_with_github_actions(
                 ),
                 observed_at=observed_at,
                 confidence=confidence,
+                confidence_semantics=(
+                    RelationshipConfidenceSemantics.HEURISTIC_SCORE
+                ),
                 directed=True,
                 evidence_ids=[
                     evidence_id
                 ],
+                provenance=relationship_provenance(
+                    predicate=RelationshipType.PRODUCES,
+                    origin=RelationshipOrigin.INFERRED,
+                    source_component=(
+                        "backend.app.services.github_actions_graph"
+                    ),
+                    source_references=[
+                        source_reference(
+                            reference_type="github_workflow_run_id",
+                            reference=run_id,
+                            source_system="github-actions",
+                        ),
+                        source_reference(
+                            reference_type="container_image_digest",
+                            reference=(annotated_digest or graph_digest),
+                            source_system="kubernetes",
+                        ),
+                        source_reference(
+                            reference_type="mapping_method",
+                            reference=method,
+                            source_system="topo",
+                        ),
+                    ],
+                    linker_version="github-actions-artifact-linker:v1",
+                ),
                 properties={
                     "mapping_method": method,
                     "workflow_run_id": (

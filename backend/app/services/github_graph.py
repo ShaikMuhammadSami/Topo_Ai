@@ -15,11 +15,17 @@ from app.models.topology import (
     EvidenceType,
     GraphSnapshot,
     Relationship,
+    RelationshipConfidenceSemantics,
+    RelationshipOrigin,
     RelationshipType,
 )
 from app.services.canonical_identity import (
     canonical_git_commit_identity,
     canonical_git_repository_identity,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -515,11 +521,30 @@ def augment_snapshot_with_github(
                 ),
                 source_system="github",
                 observed_at=generated_at,
-                confidence=1.0,
                 directed=True,
                 evidence_ids=[
                     evidence_id
                 ],
+                provenance=relationship_provenance(
+                    predicate=RelationshipType.CONTAINS,
+                    origin=RelationshipOrigin.OBSERVED,
+                    source_component=(
+                        "backend.app.services.github_graph"
+                    ),
+                    source_references=[
+                        source_reference(
+                            reference_type="github_repository_id",
+                            reference=repository.get("id"),
+                            source_system="github",
+                        ),
+                        source_reference(
+                            reference_type="git_commit_sha",
+                            reference=sha,
+                            source_system="github",
+                        ),
+                    ],
+                    linker_version="github-commit-linker:v1",
+                ),
                 properties={},
             )
         )
@@ -770,10 +795,38 @@ def augment_snapshot_with_github(
             confidence=(
                 selected.confidence
             ),
+            confidence_semantics=(
+                RelationshipConfidenceSemantics.HEURISTIC_SCORE
+            ),
             directed=True,
             evidence_ids=[
                 evidence_id
             ],
+            provenance=relationship_provenance(
+                predicate=RelationshipType.PRODUCES,
+                origin=RelationshipOrigin.INFERRED,
+                source_component=(
+                    "backend.app.services.github_graph"
+                ),
+                source_references=[
+                    source_reference(
+                        reference_type="git_commit_sha",
+                        reference=selected.commit_sha,
+                        source_system="github",
+                    ),
+                    source_reference(
+                        reference_type="container_image_identity",
+                        reference=image_id,
+                        source_system="topology",
+                    ),
+                    source_reference(
+                        reference_type="mapping_method",
+                        reference=selected.method,
+                        source_system="topo",
+                    ),
+                ],
+                linker_version="github-image-linker:v1",
+            ),
             properties={
                 "commit_sha": (
                     selected.commit_sha

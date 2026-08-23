@@ -32,9 +32,27 @@ export type TopologyRelationship = {
   relationship_type: string;
   source_system: string;
   observed_at: string;
-  confidence: number;
+  confidence: number | null;
+  confidence_semantics: "heuristic_score" | null;
   directed: boolean;
   evidence_ids: string[];
+  provenance: {
+    origin: "observed" | "declared" | "derived" | "inferred";
+    source_component: string;
+    source_references: Array<{
+      reference_type: string;
+      reference: string;
+      source_system: string;
+      attributes: Record<string, unknown>;
+    }>;
+    linker_version: string;
+    completeness: "complete" | "partial" | "legacy_unspecified";
+  } | null;
+  historical_validation: {
+    historically_confirmed: boolean;
+    validated_at: string | null;
+    evidence_ids: string[];
+  } | null;
   properties: Record<string, unknown>;
 };
 

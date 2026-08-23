@@ -162,3 +162,9 @@ def test_gcp_network_contains_subnetwork(
         for relationship
         in result.relationships
     )
+
+    for relationship in result.relationships:
+        assert relationship.provenance is not None
+        assert relationship.provenance.origin.value == "declared"
+        assert relationship.confidence is None
+        assert relationship.provenance.source_references

@@ -83,7 +83,7 @@ def relationship_material_data(
     *,
     endpoint_id_map: dict[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Return relationship state with optionally aligned endpoint IDs."""
+    """Return customer topology state, excluding provenance representation."""
 
     result = relationship.model_dump(
         mode="json",
@@ -91,6 +91,11 @@ def relationship_material_data(
             "id",
             "observed_at",
             "evidence_ids",
+            "source_system",
+            "confidence",
+            "confidence_semantics",
+            "provenance",
+            "historical_validation",
         },
     )
     if endpoint_id_map:
