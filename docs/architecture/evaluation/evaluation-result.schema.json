@@ -1,0 +1,125 @@
+{
+  "$id": "https://topoai.local/schemas/eval-1/evaluation-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "result_version": {"const": "eval-1.result.v1"},
+    "harness_version": {"const": "eval-1.v1"},
+    "run_id": {"minLength": 6, "type": "string"},
+    "scenario_id": {"type": "string"},
+    "topo_git_commit": {"minLength": 7, "type": "string"},
+    "started_at": {"format": "date-time", "type": "string"},
+    "completed_at": {"format": "date-time", "type": "string"},
+    "environment": {"type": "object"},
+    "ground_truth": {
+      "properties": {
+        "scenario_version": {"const": "eval-1.scenario.v1"},
+        "scenario_id": {"type": "string"}
+      },
+      "required": ["scenario_version", "scenario_id"],
+      "type": "object"
+    },
+    "execution_receipt": {"$ref": "#/$defs/execution_receipt"},
+    "provider_verification": {"$ref": "#/$defs/provider_verification"},
+    "topo_observation": {"$ref": "#/$defs/topo_observation"},
+    "metric_results": {
+      "additionalProperties": {"type": ["boolean", "number", "integer", "null"]},
+      "type": "object"
+    },
+    "assertions": {"items": {"type": "object"}, "type": "array"},
+    "failures": {"items": {"type": "object"}, "type": "array"},
+    "warnings": {"items": {"type": "string"}, "type": "array"},
+    "overall_status": {"enum": ["PASS", "FAIL", "INCONCLUSIVE", "HARNESS_ERROR"]}
+  },
+  "required": [
+    "result_version", "harness_version", "run_id", "scenario_id", "topo_git_commit",
+    "started_at", "completed_at", "environment", "ground_truth", "execution_receipt",
+    "provider_verification", "topo_observation", "metric_results", "assertions",
+    "failures", "warnings", "overall_status"
+  ],
+  "title": "TopoAI EVAL-1 Result",
+  "type": "object",
+  "$defs": {
+    "execution_action": {
+      "additionalProperties": false,
+      "properties": {
+        "action_id": {"type": "string"},
+        "action_type": {"type": "string"},
+        "logical_target": {"type": "string"},
+        "provider_uid": {"type": "string"},
+        "executed_at": {"format": "date-time", "type": "string"},
+        "before": {"type": "object"},
+        "after": {"type": "object"},
+        "provider_receipt": {"type": "object"}
+      },
+      "required": ["action_id", "action_type", "logical_target", "provider_uid", "executed_at", "before", "after", "provider_receipt"],
+      "type": "object"
+    },
+    "execution_receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "receipt_version": {"const": "eval-1.execution.v1"},
+        "scenario_id": {"type": "string"},
+        "run_id": {"type": "string"},
+        "namespace": {"type": "string"},
+        "started_at": {"format": "date-time", "type": "string"},
+        "completed_at": {"format": "date-time", "type": ["string", "null"]},
+        "actions": {"items": {"$ref": "#/$defs/execution_action"}, "type": "array"}
+      },
+      "required": ["receipt_version", "scenario_id", "run_id", "namespace", "started_at", "completed_at", "actions"],
+      "type": "object"
+    },
+    "provider_object": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_name": {"type": "string"},
+        "provider_kind": {"type": "string"},
+        "namespace": {"type": "string"},
+        "name": {"type": "string"},
+        "uid": {"type": "string"},
+        "observed_at": {"format": "date-time", "type": "string"},
+        "spec": {"type": "object"},
+        "status": {"type": "object"},
+        "owner_uid": {"type": ["string", "null"]},
+        "labels": {"type": "object"},
+        "selectors": {"type": "object"}
+      },
+      "required": ["logical_name", "provider_kind", "namespace", "name", "uid", "observed_at", "spec", "status", "owner_uid", "labels", "selectors"],
+      "type": "object"
+    },
+    "provider_verification": {
+      "additionalProperties": false,
+      "properties": {
+        "verification_version": {"const": "eval-1.provider.v1"},
+        "source": {"type": "string"},
+        "observed_at": {"format": "date-time", "type": "string"},
+        "established": {"type": "boolean"},
+        "objects": {"items": {"$ref": "#/$defs/provider_object"}, "type": "array"},
+        "assertions": {"items": {"type": "object"}, "type": "array"},
+        "warnings": {"items": {"type": "string"}, "type": "array"}
+      },
+      "required": ["verification_version", "source", "observed_at", "established", "objects", "assertions", "warnings"],
+      "type": "object"
+    },
+    "topo_observation": {
+      "additionalProperties": false,
+      "properties": {
+        "observation_version": {"const": "eval-1.topo-observation.v1"},
+        "captured_at": {"format": "date-time", "type": "string"},
+        "incident": {"type": ["object", "null"]},
+        "incident_candidates": {"items": {"type": "object"}, "type": "array"},
+        "incident_signals": {"type": ["object", "null"]},
+        "snapshot": {"type": ["object", "null"]},
+        "causal_analysis": {"type": ["object", "null"]},
+        "briefing": {"type": ["object", "null"]},
+        "blast_radius": {"type": ["object", "null"]},
+        "change_events": {"items": {"type": "object"}, "type": "array"},
+        "incident_change_analysis": {"type": ["object", "null"]},
+        "endpoint_statuses": {"type": "object"},
+        "observed_times": {"type": "object"}
+      },
+      "required": ["observation_version", "captured_at", "incident", "incident_candidates", "incident_signals", "snapshot", "causal_analysis", "briefing", "blast_radius", "change_events", "incident_change_analysis", "endpoint_statuses", "observed_times"],
+      "type": "object"
+    }
+  }
+}

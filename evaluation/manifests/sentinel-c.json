@@ -1,0 +1,47 @@
+{
+  "causal_intent": {
+    "affected_entity": "root_pod",
+    "failure_mode": "ImagePullBackOff",
+    "root_change": "deployment_image_change",
+    "root_entity": "root_deployment"
+  },
+  "description": "A source deployment mutation generates derived topology-diff events that may outrank it.",
+  "distractors": ["root_replicaset"],
+  "environment_requirements": {"kubernetes": true, "minimum_ready_nodes": 1, "network_image_pull": true},
+  "expected_behavior": {
+    "accepted_top_causes": [
+      {"entity_alias": "root_deployment", "title_contains_all": ["deployment configuration changed"]}
+    ],
+    "known_failure_label": "KNOWN_FAILURE_REPRODUCED",
+    "should_abstain": false
+  },
+  "expected_blast_radius": {
+    "explicitly_unaffected": ["root_service"],
+    "required_affected": ["root_pod", "root_replicaset", "root_deployment"]
+  },
+  "expected_confidence_semantics": {"calibrated_probability": null, "calibration_status": "not_calibrated", "score_type": "heuristic_ranking"},
+  "expected_evidence": {
+    "expected_missing": [],
+    "forbidden_support": [],
+    "required_claim_types": ["source_change", "identity_resolution", "topology_path"]
+  },
+  "expected_incident": {"expected_count": 1, "expected_scope_alias": "root_pod"},
+  "expected_path": {
+    "forbidden_hops": [],
+    "optional_hops": [{"from": "root_service", "predicate": "selects", "to": "root_pod"}],
+    "required_hops": [
+      {"from": "root_deployment", "predicate": "owns", "to": "root_replicaset"},
+      {"from": "root_replicaset", "predicate": "owns", "to": "root_pod"}
+    ]
+  },
+  "family": "kubernetes_topology_diff_noise",
+  "non_causes": [],
+  "objects": {
+    "root_deployment": {"kind": "Deployment", "role": "root_change_target"},
+    "root_pod": {"kind": "Pod", "role": "affected_entity"},
+    "root_replicaset": {"kind": "ReplicaSet", "role": "derived_topology_context"},
+    "root_service": {"kind": "Service", "role": "dependent_service"}
+  },
+  "scenario_id": "sentinel-c",
+  "scenario_version": "eval-1.scenario.v1"
+}
