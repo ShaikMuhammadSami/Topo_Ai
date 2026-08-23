@@ -1,0 +1,130 @@
+{
+  "schema_version": "1.0",
+  "identity_version": "v1",
+  "runtime_owner": "backend/app/services/canonical_identity.py",
+  "persistence": {
+    "registry_table_added": false,
+    "historical_snapshots_rewritten": false,
+    "new_entity_fields": ["aliases", "identity_version"]
+  },
+  "resolution_priority": [
+    "canonical_id",
+    "source_native_id",
+    "scoped_alias",
+    "source_fallback"
+  ],
+  "ambiguity_policy": "return_ambiguous_without_selection",
+  "fuzzy_matching": false,
+  "llm_involvement": false,
+  "identity_transition_diff": {
+    "scope": "only the explicitly supplied before and after snapshots",
+    "entity_alignment": "mutual_unique_tc1_resolution",
+    "relationship_alignment": "unique_aligned_endpoints_and_type",
+    "identity_only_change_promoted": false,
+    "ambiguous_equivalence_suppressed": false,
+    "historical_snapshots_rewritten": false
+  },
+  "sources": [
+    {
+      "source": "kubernetes",
+      "kinds": "all currently normalized Kubernetes kinds",
+      "native_priority": "metadata.uid",
+      "fallback_tuple": ["cluster", "kind", "namespace", "name"],
+      "canonical_format": "k8s:{safe_cluster}:{lower_kind}:{uid_or_sha256_tuple_24}",
+      "legacy_aliases": [
+        "direct namespace-or-_cluster:name",
+        "agent sha256(cluster|kind|namespace|name)[0:24]",
+        "network sha256(cluster|namespace|kind|name)[0:24]"
+      ],
+      "status": "implemented_v1"
+    },
+    {
+      "source": "aws",
+      "native_priority": "arn then provider resource_id",
+      "fallback_tuple": null,
+      "canonical_format": "aws:{sha256(aws|account|region|resource_type|resource_id)[0:32]}",
+      "status": "existing_format_versioned_v1"
+    },
+    {
+      "source": "azure",
+      "native_priority": "full Azure resource ID",
+      "fallback_tuple": null,
+      "canonical_format": "azure:{sha256(lowercase_trimmed_resource_id)[0:32]}",
+      "status": "existing_format_versioned_v1"
+    },
+    {
+      "source": "gcp",
+      "native_priority": "full resource ID or self link",
+      "fallback_tuple": null,
+      "canonical_format": "gcp:{sha256(lowercase_trimmed_resource_id)[0:32]}",
+      "status": "existing_format_versioned_v1"
+    },
+    {
+      "source": "github_repository",
+      "native_priority": "provider repository database ID",
+      "fallback_tuple": ["host", "repository full name"],
+      "canonical_format": "github:{host}:repository:{provider_repository_id}",
+      "status": "existing_format_versioned_v1"
+    },
+    {
+      "source": "git_commit",
+      "native_priority": "commit SHA plus repository canonical ID",
+      "fallback_tuple": null,
+      "canonical_format": "{repository_canonical_id}:commit:{lowercase_sha}",
+      "status": "existing_format_versioned_v1"
+    },
+    {
+      "source": "github_actions",
+      "native_priority": "provider workflow run ID",
+      "fallback_tuple": null,
+      "canonical_format": "github:{host}:workflow-run:{run_id}",
+      "status": "existing_format_versioned_v1"
+    },
+    {
+      "source": "generic_ci_build",
+      "native_priority": "provider and pipeline scoped build ID",
+      "fallback_tuple": ["provider", "pipeline", "build_id"],
+      "canonical_format": "ci:{provider}:{sha256(pipeline)[0:20]}:build:{build_id}",
+      "status": "contract_available_no_new_graph_producer"
+    },
+    {
+      "source": "container_image",
+      "native_priority": "immutable digest then normalized mutable reference",
+      "fallback_tuple": ["registry", "repository", "tag"],
+      "canonical_format": "artifact:container-image:{digest} or artifact:container-image:reference:{sha256(reference)[0:24]}",
+      "status": "existing_format_versioned_v1"
+    },
+    {
+      "source": "runtime_ebpf",
+      "native_priority": "source-specific host/container/process/endpoint lifetime identity",
+      "fallback_tuple": "existing source-specific digest inputs",
+      "canonical_format": "existing runtime prefixes and content digests",
+      "status": "legacy_format_preserved_not_renamed"
+    },
+    {
+      "source": "terraform",
+      "native_priority": "change run/workspace evidence only",
+      "fallback_tuple": null,
+      "canonical_format": null,
+      "status": "no_graph_entity_do_not_fabricate"
+    },
+    {
+      "source": "business_service",
+      "native_priority": "existing logical identity and ownership selectors",
+      "fallback_tuple": null,
+      "canonical_format": null,
+      "status": "not_a_graph_entity_namespace"
+    }
+  ],
+  "known_unresolved": [
+    "legacy UID-less Kubernetes entity missing required scope/name fields",
+    "multiple legacy nodes deriving the same canonical identity",
+    "unscoped name or alias",
+    "commit SHA matching multiple repositories",
+    "CI build number without provider and pipeline scope",
+    "cloud display name without stable provider-native ID",
+    "mutable image tag without digest",
+    "runtime lifetime/address reuse",
+    "repository rename when only name fallback was available"
+  ]
+}

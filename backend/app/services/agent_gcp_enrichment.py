@@ -16,6 +16,9 @@ from app.models.topology import (
     Relationship,
     RelationshipType,
 )
+from app.services.canonical_identity import (
+    canonical_gcp_identity,
+)
 
 
 KIND_MAP = {
@@ -226,12 +229,11 @@ def _relationship_type(
 def _entity_id(
     resource_id: str,
 ) -> str:
-    return (
-        "gcp:"
-        + _digest(
-            _normalise(resource_id)
-        )
-    )
+    return canonical_gcp_identity(
+        project_id=None,
+        resource_type="GCPResource",
+        resource_id=resource_id,
+    ).canonical_id
 
 
 def _references(
@@ -410,9 +412,16 @@ def enrich_snapshot_with_gcp(
         if not resource_id:
             continue
 
-        entity_id = _entity_id(
-            resource_id
+        identity = canonical_gcp_identity(
+            project_id=(
+                str(value["account_id"])
+                if value.get("account_id")
+                else None
+            ),
+            resource_type=resource_type,
+            resource_id=resource_id,
         )
+        entity_id = identity.canonical_id
 
         raw_properties = value.get(
             "properties",
@@ -482,7 +491,11 @@ def enrich_snapshot_with_gcp(
                     ),
                     source_system="gcp",
                     external_id=(
-                        resource_id
+                        identity.source_native_id
+                    ),
+                    aliases=identity.aliases,
+                    identity_version=(
+                        identity.identity_version
                     ),
                     environment=(
                         agent.environment

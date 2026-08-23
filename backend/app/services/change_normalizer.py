@@ -16,6 +16,8 @@ from app.models.topology import (
 )
 from app.services.snapshot_diff import (
     compare_snapshots,
+    entity_material_data,
+    relationship_material_data,
 )
 
 
@@ -61,31 +63,6 @@ def _deep_changes(
             "after": after,
         }
     }
-
-
-def _entity_data(
-    entity: Entity,
-) -> dict[str, Any]:
-    return entity.model_dump(
-        mode="json",
-        exclude={
-            "id",
-            "observed_at",
-        },
-    )
-
-
-def _relationship_data(
-    relationship: Relationship,
-) -> dict[str, Any]:
-    return relationship.model_dump(
-        mode="json",
-        exclude={
-            "id",
-            "observed_at",
-            "evidence_ids",
-        },
-    )
 
 
 def _namespace(
@@ -567,13 +544,15 @@ def normalize_snapshot_changes(
     for changed in diff.changed_entities:
         before_entity = (
             before_entities.get(
-                changed.entity_id
+                changed.before_entity_id
+                or changed.entity_id
             )
         )
 
         after_entity = (
             after_entities.get(
-                changed.entity_id
+                changed.after_entity_id
+                or changed.entity_id
             )
         )
 
@@ -588,10 +567,10 @@ def normalize_snapshot_changes(
             change_type=(
                 ChangeType.ENTITY_UPDATED
             ),
-            before_value=_entity_data(
+            before_value=entity_material_data(
                 before_entity
             ),
-            after_value=_entity_data(
+            after_value=entity_material_data(
                 after_entity
             ),
         )
@@ -801,13 +780,15 @@ def normalize_snapshot_changes(
     ):
         before_relationship = (
             before_relationships.get(
-                changed.relationship_id
+                changed.before_relationship_id
+                or changed.relationship_id
             )
         )
 
         after_relationship = (
             after_relationships.get(
-                changed.relationship_id
+                changed.after_relationship_id
+                or changed.relationship_id
             )
         )
 
@@ -826,12 +807,20 @@ def normalize_snapshot_changes(
                 .RELATIONSHIP_UPDATED
             ),
             before_value=(
-                _relationship_data(
-                    before_relationship
+                relationship_material_data(
+                    before_relationship,
+                    endpoint_id_map={
+                        before_relationship.source_entity_id: (
+                            after_relationship.source_entity_id
+                        ),
+                        before_relationship.target_entity_id: (
+                            after_relationship.target_entity_id
+                        ),
+                    },
                 )
             ),
             after_value=(
-                _relationship_data(
+                relationship_material_data(
                     after_relationship
                 )
             ),

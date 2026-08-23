@@ -84,6 +84,7 @@ def find_active_ownership_mappings(
     entity_name: str,
     service_name: str | None,
     environment: str | None,
+    entity_ids: list[str] | None = None,
 ) -> list[OwnershipMappingRecord]:
     statement = select(
         OwnershipMappingRecord
@@ -124,10 +125,14 @@ def find_active_ownership_mappings(
         ):
             continue
 
+        accepted_entity_ids = set(
+            entity_ids or [entity_id]
+        )
+
         exact_match = (
             record.entity_id
             and record.entity_id
-            == entity_id
+            in accepted_entity_ids
         )
 
         service_match = (

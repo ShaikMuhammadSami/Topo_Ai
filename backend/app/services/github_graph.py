@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.models.topology import (
@@ -17,6 +16,10 @@ from app.models.topology import (
     GraphSnapshot,
     Relationship,
     RelationshipType,
+)
+from app.services.canonical_identity import (
+    canonical_git_commit_identity,
+    canonical_git_repository_identity,
 )
 
 
@@ -66,41 +69,25 @@ class CommitImageCandidate:
     source_entity_id: str | None
 
 
-def _host_identifier(
-    api_url: str,
-) -> str:
-    hostname = (
-        urlparse(api_url).hostname
-        or "github"
-    )
-
-    return re.sub(
-        r"[^a-zA-Z0-9._-]+",
-        "_",
-        hostname,
-    )
-
-
 def _repository_entity_id(
     api_url: str,
     repository_id: Any,
 ) -> str:
-    host = _host_identifier(api_url)
-
-    return (
-        f"github:{host}:"
-        f"repository:{repository_id}"
-    )
+    return canonical_git_repository_identity(
+        provider="github",
+        api_url=api_url,
+        repository_native_id=repository_id,
+    ).canonical_id
 
 
 def _commit_entity_id(
     repository_entity_id: str,
     sha: str,
 ) -> str:
-    return (
-        f"{repository_entity_id}:"
-        f"commit:{sha.lower()}"
-    )
+    return canonical_git_commit_identity(
+        repository_canonical_id=repository_entity_id,
+        commit_sha=sha,
+    ).canonical_id
 
 
 def _relationship_id(
@@ -307,14 +294,13 @@ def augment_snapshot_with_github(
         or full_name
     )
 
-    repository_id = (
-        _repository_entity_id(
-            api_url=api_url,
-            repository_id=(
-                repository_database_id
-            ),
-        )
+    repository_identity = canonical_git_repository_identity(
+        provider="github",
+        api_url=api_url,
+        repository_native_id=repository_database_id,
+        repository_name=full_name,
     )
+    repository_id = repository_identity.canonical_id
 
     evidence_id = (
         f"evidence:github-enrichment:"
@@ -331,6 +317,10 @@ def augment_snapshot_with_github(
         source_system="github",
         external_id=str(
             repository_database_id
+        ),
+        aliases=repository_identity.aliases,
+        identity_version=(
+            repository_identity.identity_version
         ),
         environment=None,
         observed_at=generated_at,
@@ -386,12 +376,13 @@ def augment_snapshot_with_github(
 
         sha = sha_value.lower()
 
-        commit_id = _commit_entity_id(
-            repository_entity_id=(
+        commit_identity = canonical_git_commit_identity(
+            repository_canonical_id=(
                 repository_id
             ),
-            sha=sha,
+            commit_sha=sha,
         )
+        commit_id = commit_identity.canonical_id
 
         commit_data = item.get("commit")
 
@@ -441,6 +432,10 @@ def augment_snapshot_with_github(
             name=sha[:12],
             source_system="github",
             external_id=sha,
+            aliases=commit_identity.aliases,
+            identity_version=(
+                commit_identity.identity_version
+            ),
             environment=None,
             observed_at=generated_at,
             confidence=1.0,

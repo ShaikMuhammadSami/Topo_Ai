@@ -92,6 +92,24 @@ class Entity(BaseModel):
         description="Original identifier used by the source system.",
     )
 
+    aliases: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Explicit, deterministic legacy graph identifiers that may "
+            "resolve to this entity within the entity's source scope."
+        ),
+    )
+
+    identity_version: str = Field(
+        default="legacy",
+        min_length=1,
+        description=(
+            "Version of the source-specific graph identity algorithm. "
+            "Snapshots created before TC-1 load as legacy without being "
+            "rewritten."
+        ),
+    )
+
     environment: str | None = None
 
     observed_at: datetime

@@ -16,6 +16,9 @@ from app.models.topology import (
     Relationship,
     RelationshipType,
 )
+from app.services.canonical_identity import (
+    canonical_azure_identity,
+)
 
 
 KIND_MAP = {
@@ -256,14 +259,11 @@ def _relationship_type(
 def _azure_entity_id(
     resource_id: str,
 ) -> str:
-    return (
-        "azure:"
-        + _digest(
-            _normalise_id(
-                resource_id
-            )
-        )
-    )
+    return canonical_azure_identity(
+        subscription_id=None,
+        resource_type="AzureResource",
+        resource_id=resource_id,
+    ).canonical_id
 
 
 def _reference_ids(
@@ -477,11 +477,16 @@ def enrich_snapshot_with_azure(
         if not resource_id:
             continue
 
-        entity_id = (
-            _azure_entity_id(
-                resource_id
-            )
+        identity = canonical_azure_identity(
+            subscription_id=(
+                str(value["account_id"])
+                if value.get("account_id")
+                else None
+            ),
+            resource_type=resource_type,
+            resource_id=resource_id,
         )
+        entity_id = identity.canonical_id
 
         raw_properties = value.get(
             "properties",
@@ -546,7 +551,11 @@ def enrich_snapshot_with_azure(
                     ),
                     source_system="azure",
                     external_id=(
-                        resource_id
+                        identity.source_native_id
+                    ),
+                    aliases=identity.aliases,
+                    identity_version=(
+                        identity.identity_version
                     ),
                     environment=(
                         agent.environment

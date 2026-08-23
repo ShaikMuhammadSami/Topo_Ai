@@ -27,6 +27,13 @@ from app.models.topology import (
     Entity,
     GraphSnapshot,
 )
+from app.models.canonical_identity import (
+    CanonicalIdentityResolutionStatus,
+    CanonicalIdentityResolutionStrategy,
+)
+from app.services.canonical_identity import (
+    resolve_snapshot_entity_identity,
+)
 
 
 def _digest(
@@ -653,38 +660,12 @@ def correlate_change_event(
         )
     )
 
-    entities_by_id = {
-        entity.id: entity
-        for entity in snapshot.entities
-    }
-
-    external_index: dict[
-        str,
-        list[Entity],
-    ] = {}
-
-    name_index: dict[
-        str,
-        list[Entity],
-    ] = {}
-
     token_index: dict[
         str,
         list[Entity],
     ] = {}
 
     for entity in snapshot.entities:
-        if entity.external_id:
-            external_index.setdefault(
-                entity.external_id.lower(),
-                [],
-            ).append(entity)
-
-        name_index.setdefault(
-            entity.name.lower(),
-            [],
-        ).append(entity)
-
         for token in _entity_tokens(
             entity
         ):
@@ -712,160 +693,89 @@ def correlate_change_event(
         ):
             continue
 
-        entity_id = ref.get(
-            "entity_id"
+        entity_id = ref.get("entity_id")
+        native_id = (
+            ref.get("external_id")
+            or ref.get("provider_resource_id")
+        )
+        resolution = resolve_snapshot_entity_identity(
+            snapshot,
+            identifier=(
+                str(entity_id)
+                if entity_id
+                else None
+            ),
+            source_native_id=(
+                str(native_id)
+                if native_id
+                else None
+            ),
+            kind=(
+                str(ref["kind"])
+                if ref.get("kind")
+                else None
+            ),
+            name=(
+                str(ref["name"])
+                if ref.get("name")
+                else None
+            ),
+            cluster_name=(
+                str(ref["cluster_name"])
+                if ref.get("cluster_name")
+                else record.cluster_name
+            ),
+            namespace=(
+                str(ref["namespace"])
+                if ref.get("namespace")
+                else record.namespace
+            ),
+            account_id=record.account_id,
+            project_id=(
+                record.account_id
+                if record.source == "gcp_audit_log"
+                else None
+            ),
+            subscription_id=(
+                record.account_id
+                if record.source == "azure_activity_log"
+                else None
+            ),
         )
 
         if (
-            entity_id
-            and entity_id
-            in entities_by_id
+            resolution.status
+            != CanonicalIdentityResolutionStatus.RESOLVED
+            or not resolution.resolved_entity_id
         ):
-            _upsert_link(
-                session,
-                event_id=event_id,
-                entity_id=entity_id,
-                link_type=(
-                    ChangeEntityLinkType
-                    .EXPLICIT
-                ),
-                confidence=1.0,
-                reason=(
-                    "Event explicitly "
-                    "referenced this "
-                    "topology entity."
-                ),
-                snapshot_id=(
-                    snapshot.snapshot_id
-                ),
-            )
+            continue
 
-        for key in (
-            "external_id",
-            "provider_resource_id",
-        ):
-            value = ref.get(key)
-
-            if not value:
-                continue
-
-            normalized = str(
-                value
-            ).lower()
-
-            for entity in (
-                external_index.get(
-                    normalized,
-                    [],
-                )
-            ):
-                _upsert_link(
-                    session,
-                    event_id=event_id,
-                    entity_id=entity.id,
-                    link_type=(
-                        ChangeEntityLinkType
-                        .AUTOMATIC
-                    ),
-                    confidence=0.98,
-                    reason=(
-                        "Resource identifier "
-                        "matched entity "
-                        "external ID."
-                    ),
-                    snapshot_id=(
-                        snapshot.snapshot_id
-                    ),
-                )
-
-            for entity in (
-                token_index.get(
-                    normalized,
-                    [],
-                )
-            ):
-                _upsert_link(
-                    session,
-                    event_id=event_id,
-                    entity_id=entity.id,
-                    link_type=(
-                        ChangeEntityLinkType
-                        .AUTOMATIC
-                    ),
-                    confidence=0.92,
-                    reason=(
-                        "Resource identifier "
-                        "matched an entity "
-                        "property or label."
-                    ),
-                    snapshot_id=(
-                        snapshot.snapshot_id
-                    ),
-                )
-
-        name = ref.get("name")
-
-        if name:
-            candidates = name_index.get(
-                str(name).lower(),
-                [],
-            )
-
-            for entity in candidates:
-                confidence = 0.70
-
-                expected_kind = str(
-                    ref.get("kind")
-                    or ""
-                ).lower()
-
-                if (
-                    expected_kind
-                    and entity.kind.lower()
-                    == expected_kind
-                ):
-                    confidence += 0.15
-
-                expected_namespace = str(
-                    ref.get("namespace")
-                    or ""
-                ).lower()
-
-                entity_namespace = str(
-                    entity.properties.get(
-                        "namespace",
-                        "",
-                    )
-                ).lower()
-
-                if (
-                    expected_namespace
-                    and expected_namespace
-                    == entity_namespace
-                ):
-                    confidence += 0.10
-
-                _upsert_link(
-                    session,
-                    event_id=event_id,
-                    entity_id=entity.id,
-                    link_type=(
-                        ChangeEntityLinkType
-                        .AUTOMATIC
-                    ),
-                    confidence=min(
-                        confidence,
-                        0.97,
-                    ),
-                    reason=(
-                        "Entity name/kind/"
-                        "namespace matched "
-                        "topology."
-                    ),
-                    snapshot_id=(
-                        snapshot.snapshot_id
-                    ),
-                )
+        explicit = bool(entity_id)
+        confidence_by_strategy = {
+            CanonicalIdentityResolutionStrategy.CANONICAL_ID: 1.0,
+            CanonicalIdentityResolutionStrategy.SOURCE_NATIVE_ID: 0.98,
+            CanonicalIdentityResolutionStrategy.SCOPED_ALIAS: 0.97,
+            CanonicalIdentityResolutionStrategy.SOURCE_FALLBACK: 0.95,
+        }
+        _upsert_link(
+            session,
+            event_id=event_id,
+            entity_id=resolution.resolved_entity_id,
+            link_type=(
+                ChangeEntityLinkType.EXPLICIT
+                if explicit
+                else ChangeEntityLinkType.AUTOMATIC
+            ),
+            confidence=confidence_by_strategy.get(
+                resolution.strategy,
+                0.90,
+            ),
+            reason=(
+                "Canonical identity resolution matched the event "
+                f"reference by {resolution.strategy.value}."
+            ),
+            snapshot_id=snapshot.snapshot_id,
+        )
 
     event_tokens = {
         str(value).strip().lower()
@@ -1109,10 +1019,22 @@ def ingest_change_event(
             )
         )
 
-    # Explicit entity IDs should
-    # immediately become links.
+    # When a topology is available, defer explicit references to the
+    # canonical resolver below. Without a topology, retain the historical
+    # behavior of preserving the supplied reference as an explicit link.
+    has_correlation_snapshot = bool(
+        correlation_snapshot_id
+        or _latest_snapshot(
+            session,
+            cluster_name=request.cluster_name,
+        )
+    )
+
     for ref in request.entity_refs:
         if not ref.entity_id:
+            continue
+
+        if auto_correlate and has_correlation_snapshot:
             continue
 
         _upsert_link(

@@ -14,6 +14,9 @@ from app.models.topology import (
     Relationship,
     RelationshipType,
 )
+from app.services.canonical_identity import (
+    canonical_container_image_identity,
+)
 
 
 DIGEST_PATTERN = re.compile(
@@ -153,22 +156,10 @@ def _image_entity_id(
     parsed: ParsedImageReference,
     digest: str | None,
 ) -> str:
-    if digest:
-        return (
-            f"artifact:container-image:"
-            f"{digest.lower()}"
-        )
-
-    reference_hash = sha256(
-        parsed.normalized_reference.encode(
-            "utf-8"
-        )
-    ).hexdigest()[:24]
-
-    return (
-        f"artifact:container-image:"
-        f"reference:{reference_hash}"
-    )
+    return canonical_container_image_identity(
+        normalized_reference=parsed.normalized_reference,
+        digest=digest,
+    ).canonical_id
 
 
 def _relationship_id(
@@ -344,12 +335,13 @@ def augment_snapshot_with_container_images(
             for candidate_digest in (
                 candidate_digests
             ):
-                artifact_id = (
-                    _image_entity_id(
-                        parsed=parsed,
-                        digest=candidate_digest,
-                    )
+                artifact_identity = canonical_container_image_identity(
+                    normalized_reference=(
+                        parsed.normalized_reference
+                    ),
+                    digest=candidate_digest,
                 )
+                artifact_id = artifact_identity.canonical_id
 
                 artifact = (
                     artifact_entities.get(
@@ -388,9 +380,11 @@ def augment_snapshot_with_container_images(
                             "kubernetes"
                         ),
                         external_id=(
-                            candidate_digest
-                            or parsed
-                            .normalized_reference
+                            artifact_identity.source_native_id
+                        ),
+                        aliases=artifact_identity.aliases,
+                        identity_version=(
+                            artifact_identity.identity_version
                         ),
                         environment=None,
                         observed_at=(

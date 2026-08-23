@@ -52,6 +52,9 @@ from app.services.continuous_lifecycle import (
 from app.services.topology_checkpoint import (
     persist_topology_checkpoint,
 )
+from app.services.canonical_identity import (
+    canonical_kubernetes_identity,
+)
 
 def _enum_member(
     enum_type: type,
@@ -107,24 +110,13 @@ def _entity_id(
     namespace: str | None,
     name: str,
 ) -> str:
-    identity = (
-        uid
-        or _stable_digest(
-            "|".join(
-                [
-                    cluster_name,
-                    kind,
-                    namespace or "",
-                    name,
-                ]
-            )
-        )
-    )
-
-    return (
-        f"k8s:{cluster_name}:"
-        f"{kind.lower()}:{identity}"
-    )
+    return canonical_kubernetes_identity(
+        cluster_name=cluster_name,
+        kind=kind,
+        name=name,
+        namespace=namespace,
+        uid=uid,
+    ).canonical_id
 
 
 def _relationship_id(
@@ -183,7 +175,7 @@ def build_agent_snapshot(
         submission.collected_at
     )
 
-    cluster_id = _entity_id(
+    cluster_identity = canonical_kubernetes_identity(
         cluster_name=(
             submission.cluster_name
         ),
@@ -192,6 +184,7 @@ def build_agent_snapshot(
         namespace=None,
         name=submission.cluster_name,
     )
+    cluster_id = cluster_identity.canonical_id
 
     entities.append(
         Entity(
@@ -205,6 +198,10 @@ def build_agent_snapshot(
             source_system="kubernetes",
             external_id=(
                 submission.cluster_name
+            ),
+            aliases=cluster_identity.aliases,
+            identity_version=(
+                cluster_identity.identity_version
             ),
             environment=(
                 submission.environment
@@ -252,7 +249,7 @@ def build_agent_snapshot(
             else None
         )
 
-        entity_id = _entity_id(
+        identity = canonical_kubernetes_identity(
             cluster_name=(
                 submission.cluster_name
             ),
@@ -261,6 +258,7 @@ def build_agent_snapshot(
             namespace=namespace,
             name=name,
         )
+        entity_id = identity.canonical_id
 
         properties = {
             key: value
@@ -280,7 +278,13 @@ def build_agent_snapshot(
                 kind=kind_name,
                 name=name,
                 source_system="kubernetes",
-                external_id=uid,
+                external_id=(
+                    identity.source_native_id
+                ),
+                aliases=identity.aliases,
+                identity_version=(
+                    identity.identity_version
+                ),
                 environment=(
                     submission.environment
                 ),

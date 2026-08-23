@@ -16,6 +16,9 @@ from app.models.topology import (
     Relationship,
     RelationshipType,
 )
+from app.services.canonical_identity import (
+    canonical_aws_identity,
+)
 
 
 KIND_MAP = {
@@ -156,45 +159,17 @@ def _relationship_type(
 def _entity_id(
     value: dict[str, Any],
 ) -> str:
-    identity = "|".join(
-        [
-            str(
-                value.get(
-                    "provider",
-                    "aws",
-                )
-            ),
-            str(
-                value.get(
-                    "account_id",
-                    "",
-                )
-            ),
-            str(
-                value.get(
-                    "region",
-                    "",
-                )
-            ),
-            str(
-                value.get(
-                    "resource_type",
-                    "",
-                )
-            ),
-            str(
-                value.get(
-                    "resource_id",
-                    "",
-                )
-            ),
-        ]
-    )
-
-    return (
-        "aws:"
-        + _digest(identity)
-    )
+    return canonical_aws_identity(
+        account_id=str(value.get("account_id", "")),
+        region=str(value.get("region", "")),
+        resource_type=str(value.get("resource_type", "")),
+        resource_id=str(value.get("resource_id", "")),
+        arn=(
+            str(value["arn"])
+            if value.get("arn")
+            else None
+        ),
+    ).canonical_id
 
 
 def enrich_snapshot_with_aws(
@@ -364,9 +339,18 @@ def enrich_snapshot_with_aws(
         if not resource_id:
             continue
 
-        entity_id = _entity_id(
-            value
+        identity = canonical_aws_identity(
+            account_id=account_id,
+            region=region,
+            resource_type=resource_type,
+            resource_id=resource_id,
+            arn=(
+                str(value["arn"])
+                if value.get("arn")
+                else None
+            ),
         )
+        entity_id = identity.canonical_id
 
         properties = {
             **(
@@ -422,12 +406,11 @@ def enrich_snapshot_with_aws(
                     ),
                     source_system="aws",
                     external_id=(
-                        str(
-                            value.get(
-                                "arn"
-                            )
-                            or resource_id
-                        )
+                        identity.source_native_id
+                    ),
+                    aliases=identity.aliases,
+                    identity_version=(
+                        identity.identity_version
                     ),
                     environment=(
                         agent.environment
