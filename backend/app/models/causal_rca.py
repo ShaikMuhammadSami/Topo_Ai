@@ -14,6 +14,7 @@ from app.models.canonical_identity import (
     CanonicalIdentityResolution,
 )
 from app.models.causal_candidates import CausalCandidateSelectionAudit
+from app.models.causal_relevance import CandidateCausalRelevanceAudit
 from app.models.confidence_semantics import CausalConfidenceSemantics
 from app.models.temporal import TemporalMetadata
 from app.models.topology import (
@@ -501,6 +502,22 @@ class CausalAnalysisResponse(BaseModel):
         description=(
             "Deterministic raw-rank and eligibility audit for every "
             "incident change candidate considered by this generation."
+        ),
+    )
+
+    causal_relevance_policy_version: str | None = Field(
+        default=None,
+        description=(
+            "Semantic source-to-effect path policy used for this immutable "
+            "analysis generation. Historical payloads load with null."
+        ),
+    )
+
+    candidate_relevance_audit: list[CandidateCausalRelevanceAudit] = Field(
+        default_factory=list,
+        description=(
+            "Pinned-topology semantic relevance result for every selected "
+            "primary causal candidate."
         ),
     )
 
