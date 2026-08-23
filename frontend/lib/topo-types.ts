@@ -1867,11 +1867,75 @@ export type BriefingOutcome = {
   evidence_references: string[]
 }
 
+export type CausalEvidenceStance =
+  | "supporting"
+  | "contradicting"
+  | "missing"
+
+export type CausalEvidenceClaimType =
+  | "source_change"
+  | "temporal_precedence"
+  | "identity_resolution"
+  | "entity_linkage"
+  | "topology_path"
+  | "relationship_provenance"
+  | "runtime_failure"
+  | "artifact_provenance"
+  | "event_lineage"
+
+export type CausalEvidenceSourceReference = {
+  reference_type: string
+  reference_id: string
+  source_system: string | null
+  attributes: Record<string, unknown>
+}
+
+export type CausalEvidenceLedgerItem = {
+  evidence_id: string
+  hypothesis_id: string
+  stance: CausalEvidenceStance
+  claim_type: CausalEvidenceClaimType
+  summary: string
+  reason: string
+  source_category:
+    | "change"
+    | "temporal"
+    | "identity"
+    | "topology"
+    | "signal"
+    | "artifact"
+    | "lineage"
+  source_references: CausalEvidenceSourceReference[]
+  entity_ids: string[]
+  relationship_ids: string[]
+  change_event_ids: string[]
+  signal_ids: string[]
+  snapshot_id: string | null
+  temporal: Record<string, unknown> | null
+  incident_boundary_at: string | null
+  relationship: Record<string, unknown> | null
+  identity_resolution: Record<string, unknown> | null
+  quality: "direct" | "strong" | "limited" | "legacy" | "unknown"
+  why_it_matters: string
+  expectation_basis: string | null
+  ledger_version: string
+}
+
+export type CausalEvidenceLedger = {
+  ledger_version: string
+  hypothesis_id: string
+  snapshot_id: string | null
+  supporting: CausalEvidenceLedgerItem[]
+  contradicting: CausalEvidenceLedgerItem[]
+  missing: CausalEvidenceLedgerItem[]
+}
+
 export type IncidentBriefing = {
   incident: BriefingIncident
   summary: BriefingSummary
   root_cause: BriefingRootCause
   causal_evidence: BriefingEvidenceReference[]
+  causal_evidence_ledger: CausalEvidenceLedger | null
   recent_relevant_changes: BriefingRelevantChange[]
   dependency_path: BriefingCausalPathStep[]
   blast_radius: BriefingBlastRadius | null

@@ -17,7 +17,7 @@ def save_causal_analysis(
     *,
     analysis: CausalAnalysisResponse,
     commit: bool = True,
-) -> None:
+) -> CausalAnalysisResponse:
     record = session.get(
         CausalAnalysisRecord,
         analysis.analysis_id,
@@ -67,42 +67,18 @@ def save_causal_analysis(
         session.add(record)
 
     else:
-        record.generated_at = (
-            analysis.generated_at
+        # A causal analysis ID identifies one immutable generation. Repeated
+        # calculation with the same deterministic fingerprint returns the
+        # original persisted payload instead of silently changing its ledger,
+        # generated_at, or conclusions.
+        return CausalAnalysisResponse.model_validate_json(
+            record.payload_json
         )
-
-        record.algorithm_version = (
-            analysis.algorithm_version
-        )
-
-        record.candidate_count = (
-            analysis.candidate_count
-        )
-
-        record.hypothesis_count = (
-            analysis.hypothesis_count
-        )
-
-        record.top_hypothesis_score = (
-            top.score
-            if top
-            else None
-        )
-
-        record.top_root_event_id = (
-            top.root_event_id
-            if top
-            else None
-        )
-
-        record.payload_json = (
-            analysis.model_dump_json()
-        )
-
-        record.updated_at = now
 
     if commit:
         session.commit()
+
+    return analysis
 
 
 def load_causal_analysis(

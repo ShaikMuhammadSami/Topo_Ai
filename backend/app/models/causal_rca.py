@@ -7,7 +7,21 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    model_validator,
 )
+
+from app.models.canonical_identity import (
+    CanonicalIdentityResolution,
+)
+from app.models.temporal import TemporalMetadata
+from app.models.topology import (
+    RelationshipOrigin,
+    RelationshipProvenanceCompleteness,
+    RelationshipSourceReference,
+)
+
+
+CAUSAL_EVIDENCE_LEDGER_VERSION = "tc4.v1"
 
 
 class CausalNodeType(str, Enum):
@@ -44,6 +58,202 @@ class CausalConfidenceLevel(str, Enum):
     LOW = "low"
     MEDIUM = "medium"
     HIGH = "high"
+
+
+class CausalEvidenceStance(str, Enum):
+    SUPPORTING = "supporting"
+    CONTRADICTING = "contradicting"
+    MISSING = "missing"
+
+
+class CausalEvidenceClaimType(str, Enum):
+    SOURCE_CHANGE = "source_change"
+    TEMPORAL_PRECEDENCE = "temporal_precedence"
+    IDENTITY_RESOLUTION = "identity_resolution"
+    ENTITY_LINKAGE = "entity_linkage"
+    TOPOLOGY_PATH = "topology_path"
+    RELATIONSHIP_PROVENANCE = "relationship_provenance"
+    RUNTIME_FAILURE = "runtime_failure"
+    ARTIFACT_PROVENANCE = "artifact_provenance"
+    EVENT_LINEAGE = "event_lineage"
+
+
+class CausalEvidenceQuality(str, Enum):
+    DIRECT = "direct"
+    STRONG = "strong"
+    LIMITED = "limited"
+    LEGACY = "legacy"
+    UNKNOWN = "unknown"
+
+
+class CausalEvidenceSourceCategory(str, Enum):
+    CHANGE = "change"
+    TEMPORAL = "temporal"
+    IDENTITY = "identity"
+    TOPOLOGY = "topology"
+    SIGNAL = "signal"
+    ARTIFACT = "artifact"
+    LINEAGE = "lineage"
+
+
+class CausalEvidenceSourceReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reference_type: str = Field(min_length=1)
+    reference_id: str = Field(min_length=1)
+    source_system: str | None = None
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class CausalRelationshipEvidenceReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    relationship_id: str
+    predicate: str
+    direction: str
+    origin: RelationshipOrigin | None = None
+    source_component: str | None = None
+    source_references: list[RelationshipSourceReference] = Field(
+        default_factory=list,
+    )
+    linker_version: str | None = None
+    completeness: RelationshipProvenanceCompleteness
+
+
+class CausalEvidenceLedgerItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_id: str
+    hypothesis_id: str
+    stance: CausalEvidenceStance
+    claim_type: CausalEvidenceClaimType
+    summary: str
+    reason: str
+    source_category: CausalEvidenceSourceCategory
+    source_references: list[CausalEvidenceSourceReference] = Field(
+        default_factory=list,
+    )
+    entity_ids: list[str] = Field(default_factory=list)
+    relationship_ids: list[str] = Field(default_factory=list)
+    change_event_ids: list[str] = Field(default_factory=list)
+    signal_ids: list[str] = Field(default_factory=list)
+    snapshot_id: str | None = None
+    temporal: TemporalMetadata | None = None
+    incident_boundary_at: str | None = None
+    relationship: CausalRelationshipEvidenceReference | None = None
+    identity_resolution: CanonicalIdentityResolution | None = None
+    quality: CausalEvidenceQuality
+    why_it_matters: str
+    expectation_basis: str | None = None
+    ledger_version: str = CAUSAL_EVIDENCE_LEDGER_VERSION
+
+    @model_validator(mode="after")
+    def validate_defensibility(self) -> "CausalEvidenceLedgerItem":
+        has_reference = bool(
+            self.source_references
+            or self.entity_ids
+            or self.relationship_ids
+            or self.change_event_ids
+            or self.signal_ids
+            or self.snapshot_id
+        )
+        if not has_reference:
+            raise ValueError(
+                "Causal ledger evidence requires a defensible reference"
+            )
+        claim_is_defensible = {
+            CausalEvidenceClaimType.SOURCE_CHANGE: bool(
+                self.change_event_ids
+            ),
+            CausalEvidenceClaimType.TEMPORAL_PRECEDENCE: bool(
+                self.change_event_ids and self.incident_boundary_at
+            ),
+            CausalEvidenceClaimType.IDENTITY_RESOLUTION: bool(
+                self.change_event_ids and self.identity_resolution is not None
+            ),
+            CausalEvidenceClaimType.ENTITY_LINKAGE: bool(
+                self.change_event_ids
+                and (self.entity_ids or self.source_references)
+            ),
+            CausalEvidenceClaimType.TOPOLOGY_PATH: bool(
+                self.snapshot_id
+                and self.entity_ids
+                and (
+                    self.relationship_ids
+                    or self.stance == CausalEvidenceStance.MISSING
+                )
+            ),
+            CausalEvidenceClaimType.RELATIONSHIP_PROVENANCE: bool(
+                self.snapshot_id and self.relationship_ids
+            ),
+            CausalEvidenceClaimType.RUNTIME_FAILURE: bool(
+                self.signal_ids
+            ),
+            CausalEvidenceClaimType.ARTIFACT_PROVENANCE: bool(
+                self.snapshot_id
+                and self.entity_ids
+                and self.relationship_ids
+            ),
+            CausalEvidenceClaimType.EVENT_LINEAGE: bool(
+                len(self.change_event_ids) >= 2
+            ),
+        }[self.claim_type]
+        if not claim_is_defensible:
+            raise ValueError(
+                "Causal ledger evidence lacks the references required by "
+                f"claim type '{self.claim_type.value}'"
+            )
+        if (
+            self.stance == CausalEvidenceStance.MISSING
+            and not self.expectation_basis
+        ):
+            raise ValueError(
+                "Missing evidence requires an explicit expectation basis"
+            )
+        if (
+            self.stance != CausalEvidenceStance.MISSING
+            and self.expectation_basis is not None
+        ):
+            raise ValueError(
+                "expectation_basis is reserved for missing evidence"
+            )
+        return self
+
+
+class CausalEvidenceLedger(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ledger_version: str = CAUSAL_EVIDENCE_LEDGER_VERSION
+    hypothesis_id: str
+    snapshot_id: str | None = None
+    supporting: list[CausalEvidenceLedgerItem] = Field(
+        default_factory=list,
+    )
+    contradicting: list[CausalEvidenceLedgerItem] = Field(
+        default_factory=list,
+    )
+    missing: list[CausalEvidenceLedgerItem] = Field(
+        default_factory=list,
+    )
+
+    @model_validator(mode="after")
+    def validate_stance_buckets(self) -> "CausalEvidenceLedger":
+        buckets = (
+            (self.supporting, CausalEvidenceStance.SUPPORTING),
+            (self.contradicting, CausalEvidenceStance.CONTRADICTING),
+            (self.missing, CausalEvidenceStance.MISSING),
+        )
+        for items, expected_stance in buckets:
+            for item in items:
+                if item.hypothesis_id != self.hypothesis_id:
+                    raise ValueError(
+                        "Ledger item belongs to a different hypothesis"
+                    )
+                if item.stance != expected_stance:
+                    raise ValueError(
+                        "Ledger item is stored in the wrong stance bucket"
+                    )
+        return self
 
 
 class CausalAnalysisRequest(BaseModel):
@@ -232,6 +442,14 @@ class CausalHypothesis(BaseModel):
         str
     ] = Field(
         default_factory=list
+    )
+
+    evidence_ledger: CausalEvidenceLedger | None = Field(
+        default=None,
+        description=(
+            "TC-4 durable evidence ledger. Historical analyses load with "
+            "this field absent/null and are not retroactively enriched."
+        ),
     )
 
     chain: list[

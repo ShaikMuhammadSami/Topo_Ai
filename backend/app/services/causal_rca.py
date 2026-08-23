@@ -18,6 +18,7 @@ from app.db.models import (
     utc_now_iso,
 )
 from app.models.causal_rca import (
+    CAUSAL_EVIDENCE_LEDGER_VERSION,
     CausalAnalysisRequest,
     CausalAnalysisResponse,
     CausalChainStep,
@@ -38,6 +39,10 @@ from app.models.topology import (
 )
 from app.repositories.causal_analysis_repository import (
     save_causal_analysis,
+)
+from app.repositories.signal_repository import load_signal
+from app.services.causal_evidence_ledger import (
+    build_hypothesis_evidence_ledger,
 )
 from app.services.incident_change_analysis import (
     analyze_incident_change_events,
@@ -1611,6 +1616,18 @@ def analyze_causal_rca(
 
     raw_hypotheses = []
 
+    primary_signal = None
+    primary_signal_id = getattr(
+        incident,
+        "primary_signal_id",
+        None,
+    )
+    if primary_signal_id:
+        primary_signal = load_signal(
+            session,
+            str(primary_signal_id),
+        )
+
     for candidate in candidates:
         event = candidate.event
 
@@ -2065,6 +2082,17 @@ def analyze_causal_rca(
                         supporting_evidence_ids
                     )
                 ),
+                evidence_ledger=build_hypothesis_evidence_ledger(
+                    hypothesis_id=hypothesis_id,
+                    candidate=candidate,
+                    candidate_by_event=candidate_by_event,
+                    event_chain=event_chain,
+                    entity_path=entity_path,
+                    incident=incident,
+                    incident_time=incident_time,
+                    snapshot=snapshot,
+                    primary_signal=primary_signal,
+                ),
                 chain=chain_steps,
             )
         )
@@ -2126,6 +2154,8 @@ def analyze_causal_rca(
             ),
         "algorithm":
             ALGORITHM_VERSION,
+        "evidence_ledger":
+            CAUSAL_EVIDENCE_LEDGER_VERSION,
     }
 
     analysis_id = _stable_id(
@@ -2198,7 +2228,7 @@ def analyze_causal_rca(
     )
 
     if persist:
-        save_causal_analysis(
+        analysis = save_causal_analysis(
             session,
             analysis=analysis,
         )

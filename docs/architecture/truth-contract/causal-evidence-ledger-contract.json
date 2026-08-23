@@ -1,0 +1,185 @@
+{
+  "schema_version": "1.0",
+  "contract": "TC-4 causal evidence ledger",
+  "ledger_version": "tc4.v1",
+  "runtime_models": {
+    "ledger": "app.models.causal_rca.CausalEvidenceLedger",
+    "item": "app.models.causal_rca.CausalEvidenceLedgerItem",
+    "owner": "app.services.causal_evidence_ledger.build_hypothesis_evidence_ledger"
+  },
+  "stances": ["supporting", "contradicting", "missing"],
+  "quality": ["direct", "strong", "limited", "legacy", "unknown"],
+  "source_categories": ["change", "temporal", "identity", "topology", "signal", "artifact", "lineage"],
+  "evidence_identity": {
+    "algorithm": "deterministic canonical JSON plus SHA-256 prefix",
+    "includes": [
+      "ledger_version",
+      "hypothesis_id",
+      "stance",
+      "claim_type",
+      "stable source reference type/id/source system",
+      "entity_ids",
+      "relationship_ids",
+      "change_event_ids",
+      "signal_ids",
+      "snapshot_id"
+    ],
+    "excludes": [
+      "summary prose",
+      "reason prose",
+      "why_it_matters prose",
+      "expectation_basis prose",
+      "source reference attributes",
+      "recorded_at",
+      "observed_at",
+      "quality labels",
+      "provenance serialization order"
+    ]
+  },
+  "persistence": {
+    "storage": "embedded in each persisted CausalHypothesis within CausalAnalysisRecord.payload",
+    "new_table": false,
+    "generation_immutable": true,
+    "same_analysis_id_overwrite": false,
+    "late_evidence": "creates a new deterministic analysis generation when the evidence input fingerprint changes",
+    "legacy_analysis": "ledger remains absent; evidence is not backfilled or fabricated"
+  },
+  "historical_correctness": {
+    "topology_source": "the snapshot pinned by CausalAnalysisResponse.topology_snapshot_id",
+    "latest_snapshot_fallback": false,
+    "future_snapshot_backfill": false
+  },
+  "ranking": {
+    "algorithm_version": "13c-causal-v1",
+    "changed_by_tc4": false,
+    "ledger_item_counts_affect_score": false,
+    "weights_changed": false
+  },
+  "prohibited_authoritative_sources": [
+    "OpenAI or another LLM",
+    "incident similarity",
+    "incident memory",
+    "historical response intelligence",
+    "response plans",
+    "incident outcome"
+  ],
+  "active_claim_types": [
+    {
+      "claim_type": "source_change",
+      "allowed_stances": ["supporting"],
+      "source_domains": ["13A/13B durable change event"],
+      "required_references": ["change_event_id"],
+      "optional_references": ["external_id", "repository", "commit_sha"],
+      "identity_relevance": "none by itself",
+      "relationship_relevance": "none by itself",
+      "temporal_relevance": "evaluated separately by temporal_precedence",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "Confirms that the selected hypothesis contains a durable change event; it does not prove causation."
+    },
+    {
+      "claim_type": "temporal_precedence",
+      "allowed_stances": ["supporting", "contradicting", "missing"],
+      "source_domains": ["TC-3 change-event temporal metadata", "incident boundary"],
+      "required_references": ["change_event_id", "incident_boundary_at"],
+      "optional_references": ["source_event_at", "observed_at", "recorded_at", "time_quality", "time_origin"],
+      "identity_relevance": "none",
+      "relationship_relevance": "none",
+      "temporal_relevance": "authoritative pre-incident effective time supports; authoritative post-incident effective time contradicts; weak authority is explicit missing context",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "Temporal precedence is necessary evidence for many change hypotheses but never sufficient proof of causation."
+    },
+    {
+      "claim_type": "identity_resolution",
+      "allowed_stances": ["supporting", "missing"],
+      "source_domains": ["TC-1 canonical identity resolver", "change entity reference"],
+      "required_references": ["change_event_id", "CanonicalIdentityResolution"],
+      "optional_references": ["entity_id", "candidate_entity_ids", "native_id", "scope"],
+      "identity_relevance": "authoritative; only resolved identities support",
+      "relationship_relevance": "resolved entity can anchor later topology claims",
+      "temporal_relevance": "resolution occurs within the pinned snapshot generation",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "Ambiguous and unresolved references are missing evidence, never positive evidence and never fuzzy-resolved."
+    },
+    {
+      "claim_type": "entity_linkage",
+      "allowed_stances": ["supporting", "contradicting"],
+      "source_domains": ["13A ChangeEntityLinkRecord", "incident/change scope"],
+      "required_references": ["change_event_id", "entity_id or exact incompatible scope"],
+      "optional_references": ["change_entity_link_id", "cluster", "namespace", "environment"],
+      "identity_relevance": "uses durable links created by accepted TC-1 correlation",
+      "relationship_relevance": "anchors the change to an entity used by the existing 13C path",
+      "temporal_relevance": "link is interpreted in the causal analysis generation",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "Only exact scope incompatibility or a deterministic resolved-identity versus durable-link conflict is contradiction; absence of a link is not automatically contradiction."
+    },
+    {
+      "claim_type": "topology_path",
+      "allowed_stances": ["supporting", "missing"],
+      "source_domains": ["existing 13C entity path", "pinned GraphSnapshot"],
+      "required_references": ["snapshot_id", "relationship_id", "source_entity_id", "target_entity_id"],
+      "optional_references": ["predicate", "direction"],
+      "identity_relevance": "path endpoints use canonical topology entity IDs",
+      "relationship_relevance": "authoritative path claim over real pinned relationships",
+      "temporal_relevance": "always bound to the analysis snapshot, never latest topology",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "A missing path is recorded only when a durable change/entity anchor makes the expectation defensible."
+    },
+    {
+      "claim_type": "relationship_provenance",
+      "allowed_stances": ["supporting", "missing"],
+      "source_domains": ["TC-2 RelationshipProvenance"],
+      "required_references": ["snapshot_id", "relationship_id", "predicate", "provenance completeness"],
+      "optional_references": ["origin", "source_component", "source_references", "linker_version"],
+      "identity_relevance": "provenance source references may contain stable provider or object IDs",
+      "relationship_relevance": "explains why a relationship exists and which component asserted it",
+      "temporal_relevance": "relationship is read only from the pinned analysis snapshot",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "Legacy or partial provenance is missing evidence rather than contradiction; TC-4 does not upgrade old relationships."
+    },
+    {
+      "claim_type": "runtime_failure",
+      "allowed_stances": ["supporting", "missing"],
+      "source_domains": ["durable NormalizedSignal", "incident primary signal reference"],
+      "required_references": ["signal_id when the incident names a primary signal"],
+      "optional_references": ["involved_entity_id", "object UID", "signal temporal metadata", "category", "reason"],
+      "identity_relevance": "stable involved entity or provider object identity can anchor the observed failure",
+      "relationship_relevance": "none unless already represented in topology",
+      "temporal_relevance": "preserves TC-3 signal time without treating receipt time as occurrence",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "No missing item is emitted when no signal reference was ever promised; missing is bounded to an explicit unavailable primary signal."
+    },
+    {
+      "claim_type": "artifact_provenance",
+      "allowed_stances": ["supporting", "missing"],
+      "source_domains": ["pinned topology artifact entity", "workload-to-artifact relationship"],
+      "required_references": ["snapshot_id", "artifact entity_id", "relationship_id"],
+      "optional_references": ["immutable digest", "requested tag", "producer/build event"],
+      "identity_relevance": "immutable digest is direct; mutable tag/reference is limited",
+      "relationship_relevance": "uses the real workload-to-artifact relationship in the pinned snapshot",
+      "temporal_relevance": "artifact state is bounded to the pinned topology snapshot",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "This is evidence explanation, not proof that a build produced an image unless a durable producer reference exists."
+    },
+    {
+      "claim_type": "event_lineage",
+      "allowed_stances": ["supporting"],
+      "source_domains": ["existing 13C causal event chain", "durable change events"],
+      "required_references": ["predecessor_change_event_id", "successor_change_event_id"],
+      "optional_references": ["repository", "commit_sha", "pipeline identifiers"],
+      "identity_relevance": "stable event IDs keep lineage generation-specific",
+      "relationship_relevance": "represents the existing selected causal-event edge, not a new graph traversal",
+      "temporal_relevance": "lineage events retain their own TC-3 metadata in their other evidence items",
+      "RCA_score_input_today": false,
+      "maturity": "implemented",
+      "known_limitations": "Only lineage already selected by 13C is exposed; TC-4 does not create or rank new lineage edges."
+    }
+  ]
+}

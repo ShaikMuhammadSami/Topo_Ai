@@ -1851,6 +1851,9 @@ def build_incident_briefing(
         causal_evidence=_causal_evidence(
             analysis
         ),
+        causal_evidence_ledger=(
+            hypothesis.evidence_ledger
+        ),
         recent_relevant_changes=(
             _relevant_changes(analysis)
         ),

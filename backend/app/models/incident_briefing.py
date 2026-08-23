@@ -12,6 +12,7 @@ from app.models.incident_memory import (
     HistoricalAiStatus,
     HistoricalSupportLevel,
 )
+from app.models.causal_rca import CausalEvidenceLedger
 from app.models.incident_outcome import (
     ActionEffectiveness,
     RcaVerdict,
@@ -475,6 +476,7 @@ class IncidentBriefing(BriefingModel):
     causal_evidence: list[
         BriefingEvidenceReference
     ] = Field(default_factory=list)
+    causal_evidence_ledger: CausalEvidenceLedger | None = None
     recent_relevant_changes: list[
         BriefingRelevantChange
     ] = Field(default_factory=list)
