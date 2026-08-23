@@ -23,7 +23,12 @@ from app.models.topology import (
     EvidenceType,
     GraphSnapshot,
     Relationship,
+    RelationshipOrigin,
     RelationshipType,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -385,8 +390,9 @@ class KubernetesCollector:
             source_entity_id: str,
             target_entity_id: str,
             relationship_type: RelationshipType,
-            confidence: float = 1.0,
             properties: dict[str, Any] | None = None,
+            origin: RelationshipOrigin = RelationshipOrigin.OBSERVED,
+            source_references: list | None = None,
         ) -> None:
             relationship = Relationship(
                 id=self._relationship_id(
@@ -399,9 +405,31 @@ class KubernetesCollector:
                 relationship_type=relationship_type,
                 source_system="kubernetes",
                 observed_at=collected_at,
-                confidence=confidence,
                 directed=True,
                 evidence_ids=[evidence_id],
+                provenance=relationship_provenance(
+                    predicate=relationship_type,
+                    origin=origin,
+                    source_component=(
+                        "backend.app.collectors.kubernetes_collector"
+                    ),
+                    source_references=[
+                        source_reference(
+                            reference_type="graph_entity_id",
+                            reference=source_entity_id,
+                            source_system="topo",
+                            attributes={"role": "subject"},
+                        ),
+                        source_reference(
+                            reference_type="graph_entity_id",
+                            reference=target_entity_id,
+                            source_system="topo",
+                            attributes={"role": "object"},
+                        ),
+                        *(source_references or []),
+                    ],
+                    linker_version="kubernetes-collector-linker:v1",
+                ),
                 properties=properties or {},
             )
 
@@ -635,6 +663,22 @@ class KubernetesCollector:
                         relationship_type=(
                             RelationshipType.OWNS
                         ),
+                        origin=RelationshipOrigin.DECLARED,
+                        source_references=[
+                            source_reference(
+                                reference_type=(
+                                    "kubernetes_owner_reference_uid"
+                                ),
+                                reference=owner.uid,
+                                source_system="kubernetes",
+                                attributes={
+                                    "owner_kind": owner.kind,
+                                    "child_uid": str(
+                                        replica_set.metadata.uid or ""
+                                    ),
+                                },
+                            )
+                        ],
                     )
 
         for pod in pods:
@@ -742,6 +786,22 @@ class KubernetesCollector:
                         relationship_type=(
                             RelationshipType.RUNS
                         ),
+                        origin=RelationshipOrigin.DECLARED,
+                        source_references=[
+                            source_reference(
+                                reference_type=(
+                                    "kubernetes_owner_reference_uid"
+                                ),
+                                reference=owner.uid,
+                                source_system="kubernetes",
+                                attributes={
+                                    "owner_kind": owner.kind,
+                                    "child_uid": str(
+                                        pod.metadata.uid or ""
+                                    ),
+                                },
+                            )
+                        ],
                     )
 
         for service in services:
@@ -850,6 +910,22 @@ class KubernetesCollector:
                         properties={
                             "selector": selector,
                         },
+                        origin=RelationshipOrigin.DERIVED,
+                        source_references=[
+                            source_reference(
+                                reference_type="kubernetes_selector",
+                                reference=selector,
+                                source_system="kubernetes",
+                                attributes={
+                                    "service_uid": str(
+                                        service.metadata.uid or ""
+                                    ),
+                                    "pod_uid": str(
+                                        pod.metadata.uid or ""
+                                    ),
+                                },
+                            )
+                        ],
                     )
 
         evidence = Evidence(

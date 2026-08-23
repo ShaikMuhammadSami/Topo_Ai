@@ -14,7 +14,12 @@ from app.models.topology import (
     EntityType,
     GraphSnapshot,
     Relationship,
+    RelationshipOrigin,
     RelationshipType,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -96,6 +101,12 @@ def enrich_runtime_inventory(
     entity_ids = {
         entity.id
         for entity in entities
+    }
+
+    native_references = {
+        entity.id: entity.external_id
+        for entity in entities
+        if entity.external_id
     }
 
     relationship_keys = {
@@ -180,6 +191,9 @@ def enrich_runtime_inventory(
         properties:
             dict[str, Any] | None = None,
     ) -> str:
+        if external_id:
+            native_references[entity_id] = external_id
+
         if entity_id in entity_ids:
             return entity_id
 
@@ -218,6 +232,7 @@ def enrich_runtime_inventory(
         relation_name: str,
         properties:
             dict[str, Any] | None = None,
+        source_references: list[Any] | None = None,
     ) -> None:
         relation = (
             _relationship_type(
@@ -250,9 +265,31 @@ def enrich_runtime_inventory(
                     "topo-agent"
                 ),
                 observed_at=observed_at,
-                confidence=1.0,
                 directed=True,
                 evidence_ids=[],
+                provenance=relationship_provenance(
+                    predicate=relation,
+                    origin=RelationshipOrigin.OBSERVED,
+                    source_component=(
+                        "backend.app.services.agent_runtime_enrichment"
+                    ),
+                    source_references=[
+                        source_reference(
+                            reference_type="runtime_entity_native_id",
+                            reference=native_references.get(source_id),
+                            source_system="topo-agent",
+                            attributes={"role": "subject"},
+                        ),
+                        source_reference(
+                            reference_type="runtime_entity_native_id",
+                            reference=native_references.get(target_id),
+                            source_system="topo-agent",
+                            attributes={"role": "object"},
+                        ),
+                        *(source_references or []),
+                    ],
+                    linker_version="runtime-inventory-linker:v1",
+                ),
                 properties=(
                     properties or {}
                 ),

@@ -18,6 +18,7 @@ from app.models.topology import (
     EntityType,
     GraphSnapshot,
     Relationship,
+    RelationshipOrigin,
     RelationshipType,
 )
 from app.repositories.agent_repository import (
@@ -54,6 +55,10 @@ from app.services.topology_checkpoint import (
 )
 from app.services.canonical_identity import (
     canonical_kubernetes_identity,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 def _enum_member(
@@ -319,6 +324,8 @@ def build_agent_snapshot(
         relation_name: str,
         evidence:
             list[str] | None = None,
+        origin: RelationshipOrigin = RelationshipOrigin.OBSERVED,
+        source_references: list[Any] | None = None,
     ) -> None:
         key = (
             source_id,
@@ -349,10 +356,34 @@ def build_agent_snapshot(
                 relationship_type=relation,
                 source_system="kubernetes",
                 observed_at=observed_at,
-                confidence=1.0,
                 directed=True,
                 evidence_ids=(
                     evidence or []
+                ),
+                provenance=relationship_provenance(
+                    predicate=relation,
+                    origin=origin,
+                    source_component=(
+                        "backend.app.services.agent_snapshot_ingest"
+                    ),
+                    source_references=[
+                        source_reference(
+                            reference_type="graph_entity_id",
+                            reference=source_id,
+                            source_system="topo",
+                            attributes={"role": "subject"},
+                        ),
+                        source_reference(
+                            reference_type="graph_entity_id",
+                            reference=target_id,
+                            source_system="topo",
+                            attributes={"role": "object"},
+                        ),
+                        *(source_references or []),
+                    ],
+                    linker_version=(
+                        "kubernetes-agent-inventory-linker:v1"
+                    ),
                 ),
                 properties={},
             )
@@ -503,6 +534,15 @@ def build_agent_snapshot(
                 source_id=owner_id,
                 target_id=child_id,
                 relation_name="OWNS",
+                origin=RelationshipOrigin.DECLARED,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_owner_reference_uid",
+                        reference=item.get("owner_uid"),
+                        source_system="kubernetes",
+                        attributes={"child_uid": item.get("uid")},
+                    )
+                ],
             )
 
     for item in inventory.get(
@@ -524,6 +564,15 @@ def build_agent_snapshot(
                 source_id=owner_id,
                 target_id=pod_id,
                 relation_name="OWNS",
+                origin=RelationshipOrigin.DECLARED,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_owner_reference_uid",
+                        reference=item.get("owner_uid"),
+                        source_system="kubernetes",
+                        attributes={"child_uid": item.get("uid")},
+                    )
+                ],
             )
 
         node_name = item.get(
@@ -548,6 +597,15 @@ def build_agent_snapshot(
                     relation_name=(
                         "ATTACHED_TO"
                     ),
+                    origin=RelationshipOrigin.DECLARED,
+                    source_references=[
+                        source_reference(
+                            reference_type="kubernetes_node_name",
+                            reference=node_name,
+                            source_system="kubernetes",
+                            attributes={"pod_uid": item.get("uid")},
+                        )
+                    ],
                 )
 
     pods = inventory.get(
@@ -619,6 +677,18 @@ def build_agent_snapshot(
                     source_id=service_id,
                     target_id=pod_id,
                     relation_name="SELECTS",
+                    origin=RelationshipOrigin.DERIVED,
+                    source_references=[
+                        source_reference(
+                            reference_type="kubernetes_selector",
+                            reference=selector,
+                            source_system="kubernetes",
+                            attributes={
+                                "service_uid": service.get("uid"),
+                                "pod_uid": pod.get("uid"),
+                            },
+                        )
+                    ],
                 )
 
     for ingress in inventory.get(
@@ -665,6 +735,15 @@ def build_agent_snapshot(
                     relation_name=(
                         "ROUTES_TO"
                     ),
+                    origin=RelationshipOrigin.DECLARED,
+                    source_references=[
+                        source_reference(
+                            reference_type="kubernetes_ingress_backend",
+                            reference=backend,
+                            source_system="kubernetes",
+                            attributes={"ingress_uid": ingress.get("uid")},
+                        )
+                    ],
                 )
 
     for endpoint_slice in (
@@ -725,6 +804,17 @@ def build_agent_snapshot(
                     relation_name=(
                         "ROUTES_TO"
                     ),
+                    source_references=[
+                        source_reference(
+                            reference_type="kubernetes_endpoint_target_uid",
+                            reference=target_uid,
+                            source_system="kubernetes",
+                            attributes={
+                                "service_name": service_name,
+                                "namespace": namespace,
+                            },
+                        )
+                    ],
                 )
 
     snapshot_identity = "|".join(

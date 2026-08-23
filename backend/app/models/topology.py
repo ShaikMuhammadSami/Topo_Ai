@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class EntityType(str, Enum):
@@ -50,6 +50,58 @@ class RelationshipType(str, Enum):
     AFFECTS = "affects"
     DERIVED_FROM = "derived_from"
     UNKNOWN = "unknown"
+
+
+class RelationshipOrigin(str, Enum):
+    """How a relationship assertion entered the topology graph."""
+
+    OBSERVED = "observed"
+    DECLARED = "declared"
+    DERIVED = "derived"
+    INFERRED = "inferred"
+
+
+class RelationshipProvenanceCompleteness(str, Enum):
+    COMPLETE = "complete"
+    PARTIAL = "partial"
+    LEGACY_UNSPECIFIED = "legacy_unspecified"
+
+
+class RelationshipConfidenceSemantics(str, Enum):
+    """A score is a deterministic heuristic, not a probability."""
+
+    HEURISTIC_SCORE = "heuristic_score"
+
+
+class RelationshipSourceReference(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reference_type: str = Field(min_length=1)
+    reference: str = Field(min_length=1)
+    source_system: str = Field(min_length=1)
+    attributes: dict[str, Any] = Field(default_factory=dict)
+
+
+class RelationshipProvenance(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    origin: RelationshipOrigin
+    source_component: str = Field(min_length=1)
+    source_references: list[RelationshipSourceReference] = Field(
+        default_factory=list,
+    )
+    linker_version: str = Field(min_length=1)
+    completeness: RelationshipProvenanceCompleteness
+
+
+class RelationshipHistoricalValidation(BaseModel):
+    """Optional later validation; deliberately separate from origin."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    historically_confirmed: bool
+    validated_at: datetime | None = None
+    evidence_ids: list[str] = Field(default_factory=list)
 
 
 class EvidenceType(str, Enum):
@@ -143,17 +195,71 @@ class Relationship(BaseModel):
 
     observed_at: datetime
 
-    confidence: float = Field(
-        default=1.0,
+    confidence: float | None = Field(
+        default=None,
         ge=0.0,
         le=1.0,
+        description=(
+            "Optional deterministic heuristic score. It is not a "
+            "calibrated probability. Observed and declared edges omit it."
+        ),
     )
+
+    confidence_semantics: (
+        RelationshipConfidenceSemantics | None
+    ) = None
 
     directed: bool = True
 
     evidence_ids: list[str] = Field(default_factory=list)
 
+    provenance: RelationshipProvenance | None = Field(
+        default=None,
+        description=(
+            "TC-2 assertion provenance. Historical edges without this "
+            "field remain legacy/unspecified and are not rewritten."
+        ),
+    )
+
+    historical_validation: (
+        RelationshipHistoricalValidation | None
+    ) = Field(
+        default=None,
+        description=(
+            "Independent historical outcome validation, when available."
+        ),
+    )
+
     properties: dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_tc2_confidence(self) -> "Relationship":
+        if self.provenance is None:
+            return self
+
+        if self.confidence is None:
+            if self.confidence_semantics is not None:
+                raise ValueError(
+                    "confidence_semantics requires a confidence value"
+                )
+            return self
+
+        if self.provenance.origin != RelationshipOrigin.INFERRED:
+            raise ValueError(
+                "Only inferred TC-2 relationships may carry a numeric "
+                "relationship confidence"
+            )
+
+        if (
+            self.confidence_semantics
+            != RelationshipConfidenceSemantics.HEURISTIC_SCORE
+        ):
+            raise ValueError(
+                "Inferred relationship confidence must be labeled as a "
+                "heuristic score"
+            )
+
+        return self
 
 
 class Evidence(BaseModel):

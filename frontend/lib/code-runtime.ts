@@ -170,11 +170,13 @@ export function buildCodeRuntimeChains(
         ...workloadRelationships.map(
           (item) => item.confidence,
         ),
-      ]
-
-      const confidence = Math.min(
-        ...confidenceValues,
+      ].filter(
+        (value): value is number => value !== null,
       )
+
+      const confidence = confidenceValues.length
+        ? Math.min(...confidenceValues)
+        : 0
 
       chains.push({
         id: `${commit.id}:${workflowRun.id}:${image.id}`,

@@ -15,9 +15,14 @@ from app.models.topology import (
     Entity,
     GraphSnapshot,
     Relationship,
+    RelationshipOrigin,
 )
 from app.services.canonical_identity import (
     canonical_kubernetes_identity,
+)
+from app.services.relationship_provenance import (
+    relationship_provenance,
+    source_reference,
 )
 
 
@@ -206,6 +211,8 @@ def _add_relationship(
     relationship_type: str,
     observed_at: datetime,
     properties: dict[str, Any] | None = None,
+    origin: RelationshipOrigin = RelationshipOrigin.OBSERVED,
+    source_references: list[Any] | None = None,
 ) -> None:
     key = (
         source_id,
@@ -227,9 +234,31 @@ def _add_relationship(
         relationship_type=relationship_type,
         source_system="kubernetes",
         observed_at=observed_at,
-        confidence=1.0,
         directed=True,
         evidence_ids=[],
+        provenance=relationship_provenance(
+            predicate=relationship_type,
+            origin=origin,
+            source_component=(
+                "backend.app.services.network_topology_enricher"
+            ),
+            source_references=[
+                source_reference(
+                    reference_type="graph_entity_id",
+                    reference=source_id,
+                    source_system="topo",
+                    attributes={"role": "subject"},
+                ),
+                source_reference(
+                    reference_type="graph_entity_id",
+                    reference=target_id,
+                    source_system="topo",
+                    attributes={"role": "object"},
+                ),
+                *(source_references or []),
+            ],
+            linker_version="kubernetes-network-linker:v1",
+        ),
         properties=properties or {},
     )
 
@@ -651,6 +680,20 @@ def enrich_kubernetes_network_topology(
                     properties={
                         "selector": selector,
                     },
+                    origin=RelationshipOrigin.DERIVED,
+                    source_references=[
+                        source_reference(
+                            reference_type="kubernetes_selector",
+                            reference=selector,
+                            source_system="kubernetes",
+                            attributes={
+                                "service_uid": service_uid,
+                                "pod_uid": str(
+                                    pod.metadata.uid or ""
+                                ),
+                            },
+                        )
+                    ],
                 )
 
         if (
@@ -699,6 +742,15 @@ def enrich_kubernetes_network_topology(
                     "resolves_to"
                 ),
                 observed_at=observed_at,
+                origin=RelationshipOrigin.DECLARED,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_external_name",
+                        reference=host,
+                        source_system="kubernetes",
+                        attributes={"service_uid": service_uid},
+                    )
+                ],
             )
 
     # Ingress → Service routes.
@@ -824,6 +876,15 @@ def enrich_kubernetes_network_topology(
                         ]
                     ),
                 },
+                origin=RelationshipOrigin.DECLARED,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_ingress_backend",
+                        reference=backend,
+                        source_system="kubernetes",
+                        attributes={"ingress_uid": ingress_uid},
+                    )
+                ],
             )
 
     # Service → EndpointSlice → Pod/IP.
@@ -937,6 +998,14 @@ def enrich_kubernetes_network_topology(
                     "exposes"
                 ),
                 observed_at=observed_at,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_service_name_label",
+                        reference=service_name,
+                        source_system="kubernetes",
+                        attributes={"endpoint_slice_uid": slice_uid},
+                    )
+                ],
             )
 
         for endpoint in (
@@ -987,6 +1056,14 @@ def enrich_kubernetes_network_topology(
                             or []
                         ),
                     },
+                    source_references=[
+                        source_reference(
+                            reference_type="kubernetes_endpoint_target_uid",
+                            reference=target_ref.uid,
+                            source_system="kubernetes",
+                            attributes={"endpoint_slice_uid": slice_uid},
+                        )
+                    ],
                 )
 
                 continue
@@ -1129,6 +1206,18 @@ def enrich_kubernetes_network_topology(
                         NETWORK_ANNOTATION_OUTBOUND,
                     "port": port,
                 },
+                origin=RelationshipOrigin.DECLARED,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_annotation",
+                        reference=outbound_value,
+                        source_system="kubernetes",
+                        attributes={
+                            "annotation": NETWORK_ANNOTATION_OUTBOUND,
+                            "pod_uid": str(pod.metadata.uid or ""),
+                        },
+                    )
+                ],
             )
 
         dependencies = (
@@ -1182,6 +1271,18 @@ def enrich_kubernetes_network_topology(
                         "declared_by":
                             NETWORK_ANNOTATION_DEPENDS_ON,
                     },
+                    origin=RelationshipOrigin.DECLARED,
+                    source_references=[
+                        source_reference(
+                            reference_type="kubernetes_annotation",
+                            reference=dependency,
+                            source_system="kubernetes",
+                            attributes={
+                                "annotation": NETWORK_ANNOTATION_DEPENDS_ON,
+                                "pod_uid": str(pod.metadata.uid or ""),
+                            },
+                        )
+                    ],
                 )
 
     metadata = dict(
