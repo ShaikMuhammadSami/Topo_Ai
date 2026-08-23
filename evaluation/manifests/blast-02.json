@@ -1,0 +1,57 @@
+{
+  "causal_intent": {
+    "affected_entity": "failed_pod",
+    "failure_mode": "CrashLoopBackOff",
+    "root_change": "targeted_pod_liveness_failure",
+    "root_entity": "failed_pod"
+  },
+  "description": "One of two selected backend Pods fails while a healthy sibling keeps the Service operational.",
+  "distractors": [],
+  "environment_requirements": {"kubernetes": true, "minimum_ready_nodes": 1, "network_image_pull": true},
+  "expected_behavior": {
+    "accepted_top_causes": [],
+    "known_failure_label": "runtime failure without a durable supported source change may require abstention",
+    "should_abstain": true
+  },
+  "expected_blast_radius": {
+    "explicitly_unaffected": ["scenario_namespace", "root_service", "healthy_pod"],
+    "impact_truth": {
+      "direct_failure": ["failed_pod"],
+      "operationally_impacted": [],
+      "ownership_rollup": ["root_replicaset", "root_deployment"],
+      "structural_context": ["scenario_namespace"],
+      "unaffected": ["root_service", "healthy_pod"]
+    },
+    "required_affected": ["failed_pod", "root_replicaset", "root_deployment"]
+  },
+  "expected_confidence_semantics": {"calibrated_probability": null, "calibration_status": "not_calibrated", "score_type": "heuristic_ranking"},
+  "expected_evidence": {
+    "expected_missing": ["durable_source_change"],
+    "forbidden_support": ["root_service", "healthy_pod"],
+    "required_claim_types": ["identity_resolution"]
+  },
+  "expected_incident": {"accepted_affected_aliases": ["failed_pod"], "expected_count": 1, "expected_scope_alias": "failed_pod"},
+  "expected_path": {
+    "forbidden_hops": [],
+    "optional_hops": [
+      {"from": "root_service", "predicate": "selects", "to": "failed_pod"},
+      {"from": "root_service", "predicate": "selects", "to": "healthy_pod"}
+    ],
+    "required_hops": [
+      {"from": "root_deployment", "predicate": "owns", "to": "root_replicaset"},
+      {"from": "root_replicaset", "predicate": "owns", "to": "failed_pod"}
+    ]
+  },
+  "family": "kubernetes_blast_partial_backend_availability",
+  "non_causes": ["root_service", "healthy_pod"],
+  "objects": {
+    "failed_pod": {"kind": "Pod", "role": "direct_failure"},
+    "healthy_pod": {"kind": "Pod", "role": "unaffected_ready_backend"},
+    "root_deployment": {"kind": "Deployment", "role": "ownership_rollup"},
+    "root_replicaset": {"kind": "ReplicaSet", "role": "ownership_rollup"},
+    "root_service": {"kind": "Service", "role": "operationally_healthy"},
+    "scenario_namespace": {"kind": "Namespace", "role": "structural_context"}
+  },
+  "scenario_id": "blast-02",
+  "scenario_version": "eval-1.scenario.v1"
+}

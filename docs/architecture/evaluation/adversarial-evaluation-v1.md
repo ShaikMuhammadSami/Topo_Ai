@@ -76,6 +76,13 @@ required affected and explicitly unaffected objects, evidence expectations,
 TC-5 invariants, and abstention behavior. Ephemeral UIDs never appear in a
 manifest.
 
+BR-0 blast manifests optionally refine those two blast sets with five disjoint
+provider-truth classes: `direct_failure`, `ownership_rollup`,
+`operationally_impacted`, `structural_context`, and `unaffected`. The first
+three must exactly equal `required_affected`; the last two must exactly equal
+`explicitly_unaffected`. These classes are independent evaluation truth and do
+not add impact semantics to product models.
+
 ## Execution and provider verification
 
 Every action records its type, logical target, provider UID, time, before and
@@ -133,6 +140,12 @@ facts, never expected facts.
   insufficient/incomplete/contested-with-gaps evidence state.
 - time metrics: seconds from the independently receipted causal fault action to
   first incident observation, durable RCA generation, and useful briefing.
+- `blast_false_positive_paths`: product dependency paths for independently
+  declared false positives, enriched only from the incident-pinned snapshot
+  with relationship IDs, predicates, directions, and provenance.
+- `blast_false_positive_count_by_predicate` and
+  `blast_false_positive_count_by_path_pattern`: deterministic hop-occurrence
+  inventories; they are diagnostic counts, not product accuracy rates.
 
 Every run also enforces TC-5: `score_type=heuristic_ranking`,
 `calibration_status=not_calibrated`, and `calibrated_probability=null`.
@@ -156,8 +169,9 @@ verify the provider scenario is `HARNESS_ERROR`. There is no infinite polling.
 ## Isolation, safety, and cleanup
 
 Every run uses a temporary SQLite backend database and temporary agent home.
-The enrolled agent is namespace-scoped. Namespaces must match
-`^topo-eval-[abcd]-[a-z0-9]{6,12}$` and carry
+The enrolled agent is namespace-scoped. Namespaces must match the guarded
+Sentinel or BR-0 forms
+`topo-eval-{a|b|c|d|blast-01|blast-02|blast-03}-<run-id>` and carry
 `topo.ai/evaluation-run=<run-id>`. Cleanup re-reads and validates both name and
 label before requesting deletion. Processes are terminated before temporary
 state is removed. Results are written to ignored `evaluation/results/`.
@@ -180,6 +194,19 @@ and credentials do not become fixtures.
 - D: one failing and one structurally nearby but operationally independent
   workload, measuring current blast overreach without repairing it.
 
+## BR-0 permanent blast scenarios
+
+- `blast-01`: isolates false operational propagation through Namespace
+  containment.
+- `blast-02`: holds one selected Pod in CrashLoopBackOff while another selected
+  Pod and one Service endpoint remain Ready.
+- `blast-03`: makes both selected backends unavailable and proves the Service
+  has zero Ready endpoints while an unrelated workload remains healthy.
+
+Run one with `python -m evaluation run blast-01`. Run the four-case pre-repair
+blast set with `python -m evaluation run-blast`. `run-all` deliberately remains
+the original four-Sentinel command.
+
 ## Future release gates
 
 These targets are **FUTURE RELEASE GATES**, not results validated by the
@@ -201,7 +228,8 @@ product accuracy percentage.
 ## Known EVAL-1 limitations
 
 The harness currently supports Kubernetes, one active namespace per isolated
-agent, and the four sentinel families. It uses `kubectl` rather than a direct
+agent, the four Sentinel families, and three BR-0 blast families. It uses
+`kubectl` rather than a direct
 Python Kubernetes client, measures observation time with bounded polling, and
 evaluates unsupported critical claims only where the manifest provides an
 explicit conflict. It does not simulate application traffic, prove business

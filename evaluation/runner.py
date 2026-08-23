@@ -8,18 +8,17 @@ import tempfile
 import time
 import uuid
 from dataclasses import asdict
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from evaluation import HARNESS_VERSION
+from evaluation.blast_scenarios import KubernetesBlastScenario
 from evaluation.contracts import (
     EvaluationResult,
     EvaluationStatus,
     ProviderVerification,
     ScenarioManifest,
     TopoObservation,
-    deterministic_json,
 )
 from evaluation.evaluator import IndependentEvaluator
 from evaluation.kubernetes import Kubectl, utc_now
@@ -303,14 +302,19 @@ def run_scenario(
 ) -> tuple[EvaluationResult, Path]:
     manifest = ScenarioManifest.load(manifest_path(scenario_id))
     run_id = uuid.uuid4().hex[:8]
-    namespace = f"topo-eval-{scenario_id[-1]}-{run_id}"
+    namespace_token = scenario_id if scenario_id.startswith("blast-") else scenario_id[-1]
+    namespace = f"topo-eval-{namespace_token}-{run_id}"
     started_at = utc_now()
     kubectl = Kubectl(context)
     environment = kubectl.validate_prerequisites()
     environment["isolated_backend_database"] = True
     environment["isolated_agent_state"] = True
     managed = ManagedTopoEnvironment(namespace, context, timeout_seconds)
-    sentinel = KubernetesSentinel(manifest, kubectl, namespace, run_id)
+    scenario = (
+        KubernetesBlastScenario(manifest, kubectl, namespace, run_id)
+        if scenario_id.startswith("blast-")
+        else KubernetesSentinel(manifest, kubectl, namespace, run_id)
+    )
     receipt: dict[str, Any] = {}
     provider = ProviderVerification(
         verification_version="eval-1.provider.v1",
@@ -324,21 +328,19 @@ def run_scenario(
     metrics: dict[str, Any] = {}
     assertions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
-    namespace_created = False
 
     try:
         managed.start_backend()
-        sentinel.prepare()
-        namespace_created = True
+        scenario.prepare()
         first_deployment = next(
             str(value.get("metadata", {}).get("name"))
-            for alias, value in sentinel.objects.items()
+            for alias, value in scenario.objects.items()
             if alias.endswith("deployment")
         )
         environment.update(managed.start_agent(kubectl, run_id))
         initial = managed.wait_for_initial_snapshot(first_deployment)
         environment["initial_snapshot_id"] = initial.get("snapshot_id")
-        execution_receipt, provider = sentinel.execute()
+        execution_receipt, provider = scenario.execute()
         receipt = receipt_dict(execution_receipt)
         try:
             topo = _capture_topo(managed.client, namespace, timeout_seconds)
@@ -363,14 +365,19 @@ def run_scenario(
         warnings.append(managed.diagnostics())
         status = EvaluationStatus.HARNESS_ERROR
     finally:
-        if namespace_created:
-            try:
-                kubectl.cleanup_namespace(namespace, run_id)
+        try:
+            existing_namespace = kubectl.get(
+                "namespace",
+                namespace,
+                allow_missing=True,
+            )
+            if existing_namespace is not None:
                 environment["namespace_cleanup_requested"] = True
+                kubectl.cleanup_namespace(namespace, run_id)
                 environment["namespace_cleanup_completed"] = True
-            except Exception as exc:
-                warnings.append(f"Cleanup failed: {exc}")
-                status = EvaluationStatus.HARNESS_ERROR
+        except Exception as exc:
+            warnings.append(f"Cleanup failed: {exc}")
+            status = EvaluationStatus.HARNESS_ERROR
         try:
             managed.close()
         except Exception as exc:

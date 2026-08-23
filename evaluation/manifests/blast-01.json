@@ -1,0 +1,59 @@
+{
+  "causal_intent": {
+    "affected_entity": "failed_pod",
+    "failure_mode": "ImagePullBackOff",
+    "root_change": "root_deployment_image_change",
+    "root_entity": "root_deployment"
+  },
+  "description": "A failed workload and a healthy unrelated workload share only structural namespace containment.",
+  "distractors": [],
+  "environment_requirements": {"kubernetes": true, "minimum_ready_nodes": 1, "network_image_pull": true},
+  "expected_behavior": {
+    "accepted_top_causes": [
+      {"entity_alias": "root_deployment", "title_contains_all": ["deployment configuration changed"]}
+    ],
+    "should_abstain": false
+  },
+  "expected_blast_radius": {
+    "explicitly_unaffected": ["scenario_namespace", "healthy_deployment", "healthy_pod", "healthy_service"],
+    "impact_truth": {
+      "direct_failure": ["failed_pod"],
+      "operationally_impacted": [],
+      "ownership_rollup": ["root_replicaset", "root_deployment"],
+      "structural_context": ["scenario_namespace"],
+      "unaffected": ["healthy_deployment", "healthy_pod", "healthy_service"]
+    },
+    "required_affected": ["failed_pod", "root_replicaset", "root_deployment"]
+  },
+  "expected_confidence_semantics": {"calibrated_probability": null, "calibration_status": "not_calibrated", "score_type": "heuristic_ranking"},
+  "expected_evidence": {
+    "expected_missing": [],
+    "forbidden_support": ["scenario_namespace", "healthy_deployment", "healthy_pod", "healthy_service"],
+    "required_claim_types": ["source_change", "identity_resolution", "topology_path"]
+  },
+  "expected_incident": {"accepted_affected_aliases": ["failed_pod"], "expected_count": 1, "expected_scope_alias": "failed_pod"},
+  "expected_path": {
+    "forbidden_hops": [
+      {"from": "healthy_deployment", "to": "failed_pod"},
+      {"from": "healthy_service", "to": "failed_pod"}
+    ],
+    "optional_hops": [],
+    "required_hops": [
+      {"from": "root_deployment", "predicate": "owns", "to": "root_replicaset"},
+      {"from": "root_replicaset", "predicate": "owns", "to": "failed_pod"}
+    ]
+  },
+  "family": "kubernetes_blast_structural_containment",
+  "non_causes": ["healthy_deployment", "healthy_pod", "healthy_service"],
+  "objects": {
+    "failed_pod": {"kind": "Pod", "role": "direct_failure"},
+    "healthy_deployment": {"kind": "Deployment", "role": "unaffected"},
+    "healthy_pod": {"kind": "Pod", "role": "unaffected"},
+    "healthy_service": {"kind": "Service", "role": "unaffected"},
+    "root_deployment": {"kind": "Deployment", "role": "ownership_rollup"},
+    "root_replicaset": {"kind": "ReplicaSet", "role": "ownership_rollup"},
+    "scenario_namespace": {"kind": "Namespace", "role": "structural_context"}
+  },
+  "scenario_id": "blast-01",
+  "scenario_version": "eval-1.scenario.v1"
+}

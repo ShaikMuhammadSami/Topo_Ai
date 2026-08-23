@@ -1,0 +1,68 @@
+{
+  "causal_intent": {
+    "affected_entity": "failed_pod_1",
+    "failure_mode": "ImagePullBackOff",
+    "root_change": "root_deployment_image_change",
+    "root_entity": "root_deployment"
+  },
+  "description": "All selected backend Pods fail, leaving the Service with zero Ready endpoints while an unrelated workload remains healthy.",
+  "distractors": [],
+  "environment_requirements": {"kubernetes": true, "minimum_ready_nodes": 1, "network_image_pull": true},
+  "expected_behavior": {
+    "accepted_top_causes": [
+      {"entity_alias": "root_deployment", "title_contains_all": ["deployment configuration changed"]}
+    ],
+    "should_abstain": false
+  },
+  "expected_blast_radius": {
+    "explicitly_unaffected": ["scenario_namespace", "unrelated_deployment", "unrelated_pod", "unrelated_service"],
+    "impact_truth": {
+      "direct_failure": ["failed_pod_1", "failed_pod_2"],
+      "operationally_impacted": ["root_service"],
+      "ownership_rollup": ["root_replicaset", "root_deployment"],
+      "structural_context": ["scenario_namespace"],
+      "unaffected": ["unrelated_deployment", "unrelated_pod", "unrelated_service"]
+    },
+    "required_affected": ["failed_pod_1", "failed_pod_2", "root_replicaset", "root_deployment", "root_service"]
+  },
+  "expected_confidence_semantics": {"calibrated_probability": null, "calibration_status": "not_calibrated", "score_type": "heuristic_ranking"},
+  "expected_evidence": {
+    "expected_missing": [],
+    "forbidden_support": ["unrelated_deployment", "unrelated_pod", "unrelated_service"],
+    "required_claim_types": ["source_change", "identity_resolution", "topology_path"]
+  },
+  "expected_incident": {
+    "accepted_affected_aliases": ["failed_pod_1", "failed_pod_2"],
+    "expected_count": 1,
+    "expected_scope_alias": "failed_pod_1"
+  },
+  "expected_path": {
+    "forbidden_hops": [
+      {"from": "unrelated_deployment", "to": "failed_pod_1"},
+      {"from": "unrelated_service", "to": "failed_pod_1"}
+    ],
+    "optional_hops": [
+      {"from": "root_service", "predicate": "selects", "to": "failed_pod_1"},
+      {"from": "root_service", "predicate": "selects", "to": "failed_pod_2"}
+    ],
+    "required_hops": [
+      {"from": "root_deployment", "predicate": "owns", "to": "root_replicaset"},
+      {"from": "root_replicaset", "predicate": "owns", "to": "failed_pod_1"}
+    ]
+  },
+  "family": "kubernetes_blast_complete_backend_loss",
+  "non_causes": ["unrelated_deployment", "unrelated_pod", "unrelated_service"],
+  "objects": {
+    "failed_pod_1": {"kind": "Pod", "role": "direct_failure"},
+    "failed_pod_2": {"kind": "Pod", "role": "direct_failure"},
+    "root_deployment": {"kind": "Deployment", "role": "ownership_rollup"},
+    "root_replicaset": {"kind": "ReplicaSet", "role": "ownership_rollup"},
+    "root_service": {"kind": "Service", "role": "operationally_impacted"},
+    "scenario_namespace": {"kind": "Namespace", "role": "structural_context"},
+    "unrelated_deployment": {"kind": "Deployment", "role": "unaffected"},
+    "unrelated_pod": {"kind": "Pod", "role": "unaffected"},
+    "unrelated_service": {"kind": "Service", "role": "unaffected"}
+  },
+  "scenario_id": "blast-03",
+  "scenario_version": "eval-1.scenario.v1"
+}

@@ -33,6 +33,14 @@ REQUIRED_MANIFEST_KEYS = {
     "expected_behavior",
 }
 
+IMPACT_TRUTH_CLASSES = {
+    "direct_failure",
+    "ownership_rollup",
+    "operationally_impacted",
+    "structural_context",
+    "unaffected",
+}
+
 
 @dataclass(frozen=True)
 class ScenarioManifest:
@@ -79,6 +87,48 @@ def validate_manifest(value: Any) -> None:
     blast = value["expected_blast_radius"]
     references.extend(str(item) for item in blast["required_affected"])
     references.extend(str(item) for item in blast["explicitly_unaffected"])
+    impact_truth = blast.get("impact_truth")
+    if impact_truth is not None:
+        if set(impact_truth) != IMPACT_TRUTH_CLASSES:
+            raise ValueError(
+                "impact_truth must define exactly: "
+                + ", ".join(sorted(IMPACT_TRUTH_CLASSES))
+            )
+        class_members = [
+            str(alias)
+            for class_name in sorted(IMPACT_TRUTH_CLASSES)
+            for alias in impact_truth[class_name]
+        ]
+        if len(class_members) != len(set(class_members)):
+            raise ValueError("impact_truth classes must be disjoint.")
+        references.extend(class_members)
+        affected_classes = {
+            str(alias)
+            for class_name in (
+                "direct_failure",
+                "ownership_rollup",
+                "operationally_impacted",
+            )
+            for alias in impact_truth[class_name]
+        }
+        unaffected_classes = {
+            str(alias)
+            for class_name in ("structural_context", "unaffected")
+            for alias in impact_truth[class_name]
+        }
+        if affected_classes != set(blast["required_affected"]):
+            raise ValueError(
+                "required_affected must equal direct_failure + ownership_rollup + "
+                "operationally_impacted."
+            )
+        if unaffected_classes != set(blast["explicitly_unaffected"]):
+            raise ValueError(
+                "explicitly_unaffected must equal structural_context + unaffected."
+            )
+    references.extend(
+        str(item)
+        for item in value["expected_incident"].get("accepted_affected_aliases", [])
+    )
     for hop_group in ("required_hops", "optional_hops", "forbidden_hops"):
         for hop in value["expected_path"][hop_group]:
             references.extend((str(hop["from"]), str(hop["to"])))
