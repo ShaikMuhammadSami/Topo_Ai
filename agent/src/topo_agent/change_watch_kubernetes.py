@@ -189,24 +189,26 @@ class KubernetesChangePoller:
             ):
                 continue
 
-            timestamp = (
+            source_timestamp = (
                 item.event_time
                 or item.last_timestamp
                 or item.first_timestamp
             )
 
-            if timestamp is None:
+            if source_timestamp is None:
                 continue
 
-            if (
-                timestamp.tzinfo
-                is None
-            ):
-                timestamp = (
-                    timestamp.replace(
-                        tzinfo=timezone.utc
-                    )
+            source_time_available = (
+                source_timestamp.tzinfo
+                is not None
+            )
+            timestamp = (
+                source_timestamp.astimezone(
+                    timezone.utc
                 )
+                if source_time_available
+                else now
+            )
 
             if timestamp < start:
                 continue
@@ -265,30 +267,35 @@ class KubernetesChangePoller:
                     int(item.count or 1),
                     1,
                 )
-                first_observed_at = (
+                first_source_timestamp = (
                     item.first_timestamp
                     or item.event_time
-                    or timestamp
+                    or source_timestamp
                 )
-                last_observed_at = (
+                last_source_timestamp = (
                     item.last_timestamp
                     or item.event_time
-                    or timestamp
+                    or source_timestamp
                 )
-
-                if first_observed_at.tzinfo is None:
-                    first_observed_at = (
-                        first_observed_at.replace(
-                            tzinfo=timezone.utc
-                        )
+                failure_source_time_available = (
+                    first_source_timestamp.tzinfo
+                    is not None
+                )
+                first_observed_at = (
+                    first_source_timestamp.astimezone(
+                        timezone.utc
                     )
-
-                if last_observed_at.tzinfo is None:
-                    last_observed_at = (
-                        last_observed_at.replace(
-                            tzinfo=timezone.utc
-                        )
+                    if failure_source_time_available
+                    else now
+                )
+                last_observed_at = (
+                    last_source_timestamp.astimezone(
+                        timezone.utc
                     )
+                    if last_source_timestamp.tzinfo
+                    is not None
+                    else now
+                )
 
                 failure_version_key = (
                     event_uid
@@ -345,6 +352,41 @@ class KubernetesChangePoller:
                         "last_observed_at": (
                             last_observed_at.isoformat()
                         ),
+                        "temporal": {
+                            "temporal_version": "tc3.v1",
+                            "effective_at": (
+                                first_observed_at.isoformat()
+                            ),
+                            "source_event_at": (
+                                first_observed_at.isoformat()
+                                if failure_source_time_available
+                                else None
+                            ),
+                            "observed_at": now.isoformat(),
+                            "recorded_at": None,
+                            "valid_from": None,
+                            "valid_to": None,
+                            "time_origin": (
+                                "source_reported"
+                                if failure_source_time_available
+                                else "topo_observed"
+                            ),
+                            "time_quality": (
+                                "exact"
+                                if failure_source_time_available
+                                else "fallback"
+                            ),
+                            "source_field": (
+                                "KubernetesEvent.first_timestamp/"
+                                "event_time"
+                                if failure_source_time_available
+                                else "topo_agent.observed_at"
+                            ),
+                            "source_time_authoritative": (
+                                failure_source_time_available
+                            ),
+                            "status": "complete",
+                        },
                         "occurrence_count": (
                             occurrence_count
                         ),
@@ -460,6 +502,15 @@ class KubernetesChangePoller:
                             reason,
                         "event_type":
                             item.type,
+                        "_temporal": {
+                            "source_time_available": (
+                                source_time_available
+                            ),
+                            "source_field": (
+                                "KubernetesEvent.event_time/"
+                                "last_timestamp/first_timestamp"
+                            ),
+                        },
                     },
                     "raw_payload": {},
                 }

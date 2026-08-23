@@ -266,6 +266,14 @@ class AzureActivityChangePoller:
                                     item.get(
                                         "resourceGroupName"
                                     ),
+                                "_temporal": {
+                                    "source_time_available": bool(
+                                        item.get("eventTimestamp")
+                                    ),
+                                    "source_field": (
+                                        "AzureActivityLog.eventTimestamp"
+                                    ),
+                                },
                             },
                             "raw_payload": {},
                         }

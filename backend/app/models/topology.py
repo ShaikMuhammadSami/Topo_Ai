@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.models.temporal import TemporalMetadata
+
 
 class EntityType(str, Enum):
     APPLICATION = "application"
@@ -166,6 +168,13 @@ class Entity(BaseModel):
 
     observed_at: datetime
 
+    temporal: TemporalMetadata | None = Field(
+        default=None,
+        description=(
+            "TC-3 time interpretation. Missing on historical snapshots."
+        ),
+    )
+
     confidence: float = Field(
         default=1.0,
         ge=0.0,
@@ -194,6 +203,13 @@ class Relationship(BaseModel):
     source_system: str
 
     observed_at: datetime
+
+    temporal: TemporalMetadata | None = Field(
+        default=None,
+        description=(
+            "Observation and optional validity semantics for this edge."
+        ),
+    )
 
     confidence: float | None = Field(
         default=None,
@@ -275,6 +291,8 @@ class Evidence(BaseModel):
 
     observed_at: datetime
 
+    temporal: TemporalMetadata | None = None
+
     related_entity_ids: list[str] = Field(default_factory=list)
 
     related_relationship_ids: list[str] = Field(default_factory=list)
@@ -290,6 +308,13 @@ class GraphSnapshot(BaseModel):
     snapshot_id: str = Field(min_length=3)
 
     collected_at: datetime
+
+    temporal: TemporalMetadata | None = Field(
+        default=None,
+        description=(
+            "Separates inventory collection from backend persistence time."
+        ),
+    )
 
     collector_name: str
 

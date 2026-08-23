@@ -56,6 +56,8 @@ def record_to_summary(
         snapshot_id=record.snapshot_id,
         schema_version=record.schema_version,
         collected_at=record.collected_at,
+        recorded_at=record.created_at,
+        temporal=snapshot.temporal,
         collector_name=record.collector_name,
         collector_version=record.collector_version,
         cluster_name=record.cluster_name,

@@ -720,6 +720,8 @@ def ingest_change_source_webhook(
                 session,
                 request=event,
                 auto_correlate=True,
+                source_time_trusted=True,
+                observed_at=delivery.received_at,
                 commit=False,
             )
 
@@ -930,6 +932,10 @@ def replay_dead_letter(
                 session,
                 request=event,
                 auto_correlate=True,
+                source_time_trusted=True,
+                # Replay preserves the first authenticated delivery time;
+                # replay processing time remains in delivery.processed_at.
+                observed_at=delivery.received_at,
                 commit=False,
             )
 

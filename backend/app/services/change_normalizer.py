@@ -9,6 +9,12 @@ from app.models.changes import (
     ChangeType,
     NormalizedChange,
 )
+from app.models.temporal import (
+    TemporalMetadata,
+    TemporalStatus,
+    TimeOrigin,
+    TimeQuality,
+)
 from app.models.topology import (
     Entity,
     GraphSnapshot,
@@ -379,6 +385,15 @@ def normalize_snapshot_changes(
     before: GraphSnapshot,
     after: GraphSnapshot,
 ) -> list[NormalizedChange]:
+    detected_temporal = TemporalMetadata(
+        effective_at=after.collected_at,
+        observed_at=after.collected_at,
+        time_origin=TimeOrigin.DERIVED,
+        time_quality=TimeQuality.BOUNDED,
+        source_field="GraphSnapshot.collected_at",
+        source_time_authoritative=False,
+        status=TemporalStatus.PARTIAL,
+    )
     diff = compare_snapshots(
         before=before,
         after=after,
@@ -495,6 +510,7 @@ def normalize_snapshot_changes(
                 detected_at=(
                     after.collected_at
                 ),
+                temporal=detected_temporal,
                 from_snapshot_id=(
                     before.snapshot_id
                 ),
@@ -705,6 +721,7 @@ def normalize_snapshot_changes(
                 detected_at=(
                     after.collected_at
                 ),
+                temporal=detected_temporal,
                 from_snapshot_id=(
                     before.snapshot_id
                 ),

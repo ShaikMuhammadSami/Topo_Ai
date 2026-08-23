@@ -20,6 +20,21 @@ def _now() -> str:
     ).isoformat()
 
 
+def _temporal_metadata(
+    *,
+    source_value: Any,
+    source_field: str,
+    metadata: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        **(metadata or {}),
+        "_temporal": {
+            "source_time_available": bool(source_value),
+            "source_field": source_field,
+        },
+    }
+
+
 def _nested(
     value: Any,
     *keys: str,
@@ -132,6 +147,7 @@ def normalize_github(
             payload.get("after")
             or head.get("id")
         )
+        source_time = head.get("timestamp")
 
         return [
             ChangeEventCreate(
@@ -158,33 +174,22 @@ def normalize_github(
                 ),
                 actor=actor,
                 occurred_at=(
-                    head.get(
-                        "timestamp"
-                    )
+                    source_time
                     or _now()
                 ),
                 repository=repository,
                 commit_sha=commit_sha,
                 entity_refs=refs,
-                metadata={
-                    "ref":
-                        payload.get("ref"),
-                    "before":
-                        payload.get(
-                            "before"
-                        ),
-                    "after":
-                        payload.get(
-                            "after"
-                        ),
-                    "commit_count":
-                        len(
-                            payload.get(
-                                "commits",
-                                [],
-                            )
-                        ),
-                },
+                metadata=_temporal_metadata(
+                    source_value=source_time,
+                    source_field="GitHub.head_commit.timestamp",
+                    metadata={
+                        "ref": payload.get("ref"),
+                        "before": payload.get("before"),
+                        "after": payload.get("after"),
+                        "commit_count": len(payload.get("commits", [])),
+                    },
+                ),
                 **base,
             )
         ]
@@ -202,6 +207,7 @@ def normalize_github(
             )
             or {}
         )
+        source_time = value.get("updated_at") or value.get("started_at")
 
         return [
             ChangeEventCreate(
@@ -225,12 +231,7 @@ def normalize_github(
                 ),
                 actor=actor,
                 occurred_at=(
-                    value.get(
-                        "updated_at"
-                    )
-                    or value.get(
-                        "started_at"
-                    )
+                    source_time
                     or _now()
                 ),
                 repository=repository,
@@ -252,16 +253,14 @@ def normalize_github(
                     or "observed"
                 ),
                 entity_refs=refs,
-                metadata={
-                    "run_number":
-                        value.get(
-                            "run_number"
-                        ),
-                    "html_url":
-                        value.get(
-                            "html_url"
-                        ),
-                },
+                metadata=_temporal_metadata(
+                    source_value=source_time,
+                    source_field="GitHubActions.updated_at/started_at",
+                    metadata={
+                        "run_number": value.get("run_number"),
+                        "html_url": value.get("html_url"),
+                    },
+                ),
                 **base,
             )
         ]
@@ -293,6 +292,10 @@ def normalize_github(
                 "id"
             )
         )
+        source_time = (
+            deployment_status.get("updated_at")
+            or deployment.get("updated_at")
+        )
 
         return [
             ChangeEventCreate(
@@ -316,12 +319,7 @@ def normalize_github(
                 ),
                 actor=actor,
                 occurred_at=(
-                    deployment_status.get(
-                        "updated_at"
-                    )
-                    or deployment.get(
-                        "updated_at"
-                    )
+                    source_time
                     or _now()
                 ),
                 environment=(
@@ -360,6 +358,13 @@ def normalize_github(
                     or "observed"
                 ),
                 entity_refs=refs,
+                metadata=_temporal_metadata(
+                    source_value=source_time,
+                    source_field=(
+                        "GitHub.deployment_status.updated_at/"
+                        "deployment.updated_at"
+                    ),
+                ),
             )
         ]
 
@@ -417,6 +422,14 @@ def normalize_gitlab(
     }
 
     if "push" in object_kind:
+        commits = payload.get("commits", [])
+        last_commit = (
+            commits[-1]
+            if isinstance(commits, list) and commits
+            and isinstance(commits[-1], dict)
+            else {}
+        )
+        source_time = last_commit.get("timestamp")
         return [
             ChangeEventCreate(
                 source=(
@@ -435,20 +448,20 @@ def normalize_gitlab(
                     f"{payload.get('ref')}"
                 ),
                 actor=actor,
-                occurred_at=_now(),
+                occurred_at=source_time or _now(),
                 repository=repository,
                 commit_sha=(
                     payload.get("after")
                 ),
                 entity_refs=refs,
-                metadata={
-                    "ref":
-                        payload.get("ref"),
-                    "before":
-                        payload.get(
-                            "before"
-                        ),
-                },
+                metadata=_temporal_metadata(
+                    source_value=source_time,
+                    source_field="GitLab.commits[-1].timestamp",
+                    metadata={
+                        "ref": payload.get("ref"),
+                        "before": payload.get("before"),
+                    },
+                ),
                 **base,
             )
         ]
@@ -460,6 +473,7 @@ def normalize_gitlab(
             )
             or {}
         )
+        source_time = attrs.get("finished_at") or attrs.get("created_at")
 
         return [
             ChangeEventCreate(
@@ -482,12 +496,7 @@ def normalize_gitlab(
                 ),
                 actor=actor,
                 occurred_at=(
-                    attrs.get(
-                        "finished_at"
-                    )
-                    or attrs.get(
-                        "created_at"
-                    )
+                    source_time
                     or _now()
                 ),
                 repository=repository,
@@ -501,6 +510,10 @@ def normalize_gitlab(
                     or "observed"
                 ),
                 entity_refs=refs,
+                metadata=_temporal_metadata(
+                    source_value=source_time,
+                    source_field="GitLab.pipeline.finished_at/created_at",
+                ),
                 **base,
             )
         ]
@@ -538,6 +551,10 @@ def normalize_gitlab(
                 "environment"
             ]
         )
+        source_time = (
+            _nested(payload, "deployment", "updated_at")
+            or payload.get("status_changed_at")
+        )
 
         return [
             ChangeEventCreate(
@@ -559,7 +576,7 @@ def normalize_gitlab(
                     f"{environment}"
                 ),
                 actor=actor,
-                occurred_at=_now(),
+                occurred_at=source_time or _now(),
                 environment=environment,
                 cluster_name=(
                     base[
@@ -574,6 +591,12 @@ def normalize_gitlab(
                 repository=repository,
                 status=str(status),
                 entity_refs=refs,
+                metadata=_temporal_metadata(
+                    source_value=source_time,
+                    source_field=(
+                        "GitLab.deployment.updated_at/status_changed_at"
+                    ),
+                ),
             )
         ]
 
@@ -611,6 +634,7 @@ def normalize_jenkins(
     build_number = payload.get(
         "build_number"
     )
+    source_time = payload.get("occurred_at")
 
     refs = []
 
@@ -650,9 +674,7 @@ def normalize_jenkins(
             ),
             actor=payload.get("actor"),
             occurred_at=(
-                payload.get(
-                    "occurred_at"
-                )
+                source_time
                 or _now()
             ),
             environment=(
@@ -702,14 +724,14 @@ def normalize_jenkins(
                 )
             ),
             entity_refs=refs,
-            metadata={
-                "build_number":
-                    build_number,
-                "build_url":
-                    payload.get(
-                        "build_url"
-                    ),
-            },
+            metadata=_temporal_metadata(
+                source_value=source_time,
+                source_field="Jenkins.occurred_at",
+                metadata={
+                    "build_number": build_number,
+                    "build_url": payload.get("build_url"),
+                },
+            ),
         )
     ]
 
@@ -784,6 +806,14 @@ def normalize_azure_devops(
             "0",
         )
     )
+    source_time = (
+        resource.get("date")
+        if event_type == "git.push"
+        else (
+            resource.get("finishTime")
+            or resource.get("startTime")
+        )
+    ) or payload.get("createdDate")
 
     return [
         ChangeEventCreate(
@@ -816,12 +846,7 @@ def normalize_azure_devops(
                 )
             ),
             occurred_at=(
-                payload.get(
-                    "createdDate"
-                )
-                or resource.get(
-                    "finishTime"
-                )
+                source_time
                 or _now()
             ),
             environment=(
@@ -862,12 +887,17 @@ def normalize_azure_devops(
                     config
                 )
             ),
-            metadata={
-                "event_type":
-                    event_type,
-                "resource_id":
-                    resource.get("id"),
-            },
+            metadata=_temporal_metadata(
+                source_value=source_time,
+                source_field=(
+                    "AzureDevOps.resource.date/finishTime/"
+                    "startTime/createdDate"
+                ),
+                metadata={
+                    "event_type": event_type,
+                    "resource_id": resource.get("id"),
+                },
+            ),
         )
     ]
 
@@ -927,6 +957,10 @@ def normalize_terraform_cloud(
             )
             or trigger
         )
+        source_time = (
+            notification.get("run_updated_at")
+            or payload.get("run_created_at")
+        )
 
         # Applying/completed represent
         # actual infrastructure change.
@@ -967,12 +1001,7 @@ def normalize_terraform_cloud(
                     )
                 ),
                 occurred_at=(
-                    notification.get(
-                        "run_updated_at"
-                    )
-                    or payload.get(
-                        "run_created_at"
-                    )
+                    source_time
                     or _now()
                 ),
                 environment=(
@@ -994,24 +1023,20 @@ def normalize_terraform_cloud(
                         config
                     )
                 ),
-                metadata={
-                    "run_id":
-                        run_id,
-                    "run_url":
-                        payload.get(
-                            "run_url"
-                        ),
-                    "workspace_id":
-                        payload.get(
-                            "workspace_id"
-                        ),
-                    "workspace_name":
-                        workspace,
-                    "organization":
-                        organization,
-                    "trigger":
-                        trigger,
-                },
+                metadata=_temporal_metadata(
+                    source_value=source_time,
+                    source_field=(
+                        "Terraform.run_updated_at/run_created_at"
+                    ),
+                    metadata={
+                        "run_id": run_id,
+                        "run_url": payload.get("run_url"),
+                        "workspace_id": payload.get("workspace_id"),
+                        "workspace_name": workspace,
+                        "organization": organization,
+                        "trigger": trigger,
+                    },
+                ),
             )
         )
 

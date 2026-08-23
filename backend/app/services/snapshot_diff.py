@@ -27,6 +27,7 @@ IDENTITY_REPRESENTATION_FIELDS = {
     "aliases",
     "identity_version",
     "observed_at",
+    "temporal",
 }
 
 
@@ -96,6 +97,7 @@ def relationship_material_data(
             "confidence_semantics",
             "provenance",
             "historical_validation",
+            "temporal",
         },
     )
     if endpoint_id_map:

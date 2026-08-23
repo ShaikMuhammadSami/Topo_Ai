@@ -15,6 +15,34 @@ from app.models.signals import (
 from app.services.incident_grouping import (
     incident_fingerprint,
 )
+from app.models.temporal import (
+    TemporalStatus,
+    TimeOrigin,
+)
+from app.services.temporal_semantics import (
+    observation_temporal_metadata,
+    parse_utc,
+)
+
+
+def _new_signal_temporal(
+    signal: NormalizedSignal,
+    *,
+    recorded_at: str,
+):
+    if signal.temporal is not None:
+        return signal.temporal.model_copy(
+            update={
+                "recorded_at": parse_utc(recorded_at),
+                "status": TemporalStatus.COMPLETE,
+            }
+        )
+    return observation_temporal_metadata(
+        observed_at=signal.first_observed_at,
+        recorded_at=recorded_at,
+        origin=TimeOrigin.TOPO_OBSERVED,
+        source_field="NormalizedSignal.first_observed_at",
+    )
 
 def save_signals(
     session: Session,
@@ -34,6 +62,14 @@ def save_signals(
         )
 
         if record is None:
+            signal = signal.model_copy(
+                update={
+                    "temporal": _new_signal_temporal(
+                        signal,
+                        recorded_at=now,
+                    )
+                }
+            )
             record = SignalRecord(
                 signal_id=(
                     signal.signal_id
@@ -140,6 +176,10 @@ def save_signals(
                         or signal
                         .involved_entity_id
                     ),
+                    "temporal": (
+                        existing_signal.temporal
+                        or signal.temporal
+                    ),
                 }
             )
 
@@ -214,6 +254,11 @@ def _record_to_summary(
         ),
         last_observed_at=(
             signal.last_observed_at
+        ),
+        temporal=signal.temporal,
+        recorded_at=parse_utc(
+            record.created_at,
+            allow_legacy_naive=True,
         ),
         occurrence_count=(
             signal.occurrence_count

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 from topo_agent.change_watch import (
@@ -298,3 +299,123 @@ def test_kubernetes_watch_obeys_discovery_namespace_scope(
 
     assert poller.poll() == []
     assert calls == ["checkout", "payments"]
+
+
+def test_kubernetes_failure_preserves_source_and_agent_observation_time(
+    monkeypatch,
+) -> None:
+    source_time = datetime(
+        2026,
+        8,
+        20,
+        10,
+        3,
+        tzinfo=timezone.utc,
+    )
+    event = SimpleNamespace(
+        reason="ImagePullBackOff",
+        event_time=source_time,
+        first_timestamp=source_time,
+        last_timestamp=source_time,
+        involved_object=SimpleNamespace(
+            namespace="payments",
+            kind="Pod",
+            name="payments-abc",
+            uid="pod-uid",
+        ),
+        metadata=SimpleNamespace(
+            namespace="payments",
+            uid="event-uid",
+        ),
+        reporting_component="kubelet",
+        count=1,
+        message="image pull failed",
+        action=None,
+        type="Warning",
+    )
+
+    class _Api:
+        def list_namespaced_event(self, namespace):
+            assert namespace == "payments"
+            return SimpleNamespace(items=[event])
+
+    monkeypatch.setattr(
+        "topo_agent.change_watch_kubernetes.config.load_incluster_config",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "topo_agent.change_watch_kubernetes.client.CoreV1Api",
+        lambda: _Api(),
+    )
+    poller = KubernetesChangePoller(
+        cluster_name="production",
+        namespaces=["payments"],
+    )
+    poller.last_poll = source_time - timedelta(seconds=1)
+    assert poller.poll() == []
+    signal = poller.drain_failure_signals()[0]
+    temporal = signal["temporal"]
+    assert temporal["source_event_at"] == source_time.isoformat()
+    assert temporal["effective_at"] == source_time.isoformat()
+    assert temporal["time_origin"] == "source_reported"
+    assert temporal["time_quality"] == "exact"
+    assert temporal["source_time_authoritative"] is True
+    assert datetime.fromisoformat(temporal["observed_at"]) >= source_time
+
+
+def test_kubernetes_failure_does_not_treat_naive_source_time_as_utc(
+    monkeypatch,
+) -> None:
+    naive_source_time = datetime.now(
+        timezone.utc
+    ).replace(tzinfo=None)
+    event = SimpleNamespace(
+        reason="ImagePullBackOff",
+        event_time=naive_source_time,
+        first_timestamp=naive_source_time,
+        last_timestamp=naive_source_time,
+        involved_object=SimpleNamespace(
+            namespace="payments",
+            kind="Pod",
+            name="payments-abc",
+            uid="pod-uid",
+        ),
+        metadata=SimpleNamespace(
+            namespace="payments",
+            uid="event-uid",
+        ),
+        reporting_component="kubelet",
+        count=1,
+        message="image pull failed",
+        action=None,
+        type="Warning",
+    )
+
+    class _Api:
+        def list_namespaced_event(self, namespace):
+            assert namespace == "payments"
+            return SimpleNamespace(items=[event])
+
+    monkeypatch.setattr(
+        "topo_agent.change_watch_kubernetes.config.load_incluster_config",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "topo_agent.change_watch_kubernetes.client.CoreV1Api",
+        lambda: _Api(),
+    )
+    poller = KubernetesChangePoller(
+        cluster_name="production",
+        namespaces=["payments"],
+    )
+    poller.last_poll = datetime.now(
+        timezone.utc
+    ) - timedelta(seconds=1)
+    assert poller.poll() == []
+    signal = poller.drain_failure_signals()[0]
+    temporal = signal["temporal"]
+    assert temporal["source_event_at"] is None
+    assert temporal["effective_at"] == temporal["observed_at"]
+    assert temporal["time_origin"] == "topo_observed"
+    assert temporal["time_quality"] == "fallback"
+    assert temporal["source_time_authoritative"] is False

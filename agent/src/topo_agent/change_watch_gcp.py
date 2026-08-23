@@ -239,6 +239,10 @@ class GcpAuditChangePoller:
                                 payload.get(
                                     "serviceName"
                                 ),
+                            "_temporal": {
+                                "source_time_available": bool(timestamp),
+                                "source_field": "GCPAuditLog.timestamp",
+                            },
                         },
                         "raw_payload": {},
                     }

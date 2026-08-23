@@ -27,12 +27,18 @@ from app.models.topology import (
     Entity,
     GraphSnapshot,
 )
+from app.models.temporal import TimeOrigin, TimeQuality
 from app.models.canonical_identity import (
     CanonicalIdentityResolutionStatus,
     CanonicalIdentityResolutionStrategy,
 )
 from app.services.canonical_identity import (
     resolve_snapshot_entity_identity,
+)
+from app.services.temporal_semantics import (
+    build_temporal_metadata,
+    change_event_temporal,
+    safe_snapshot_record_at_or_before,
 )
 
 
@@ -408,6 +414,7 @@ def change_event_view(
         actor=record.actor,
         occurred_at=record.occurred_at,
         received_at=record.received_at,
+        temporal=change_event_temporal(record),
         environment=record.environment,
         provider=record.provider,
         account_id=record.account_id,
@@ -460,36 +467,6 @@ def load_change_event(
     return session.get(
         ChangeEventRecord,
         event_id,
-    )
-
-
-def _latest_snapshot(
-    session: Session,
-    *,
-    cluster_name: str | None,
-) -> SnapshotRecord | None:
-    statement = select(
-        SnapshotRecord
-    )
-
-    if cluster_name:
-        statement = statement.where(
-            SnapshotRecord.cluster_name
-            == cluster_name
-        )
-
-    statement = (
-        statement
-        .order_by(
-            SnapshotRecord
-            .collected_at
-            .desc()
-        )
-        .limit(1)
-    )
-
-    return session.scalar(
-        statement
     )
 
 
@@ -620,19 +597,20 @@ def correlate_change_event(
                 ),
             )
 
-    # 3. External operational events
-    # such as GitHub/Jenkins/Terraform
-    # may use the current topology when
-    # no historical snapshot is supplied.
+    # 3. External operational events may use only a scope-compatible
+    # checkpoint observed at or before their effective event time. A late
+    # delivery must never link itself against an arbitrary future/latest
+    # topology.
     else:
-        snapshot_record = (
-            _latest_snapshot(
+        if record.cluster_name:
+            snapshot_record = safe_snapshot_record_at_or_before(
                 session,
-                cluster_name=(
-                    record.cluster_name
+                cluster_name=record.cluster_name,
+                namespace=record.namespace,
+                boundary_at=(
+                    change_event_temporal(record).effective_at
                 ),
             )
-        )
     # Explicit links can exist even
     # without any snapshot.
     if snapshot_record is None:
@@ -851,6 +829,11 @@ def ingest_change_event(
     auto_correlate: bool = True,
     correlation_snapshot_id:
         str | None = None,
+    source_time_trusted: bool = False,
+    observed_at: str | None = None,
+    source_field: str | None = None,
+    source_time_origin: TimeOrigin = TimeOrigin.SOURCE_REPORTED,
+    source_time_quality: TimeQuality = TimeQuality.EXACT,
     commit: bool = True,
 ) -> ChangeEventReceipt:
     fingerprint = _event_fingerprint(
@@ -879,8 +862,33 @@ def ingest_change_event(
         risk_score
     )
 
+    temporal_hint = request.metadata.get("_temporal", {})
+    if not isinstance(temporal_hint, dict):
+        temporal_hint = {}
+    source_available = temporal_hint.get(
+        "source_time_available",
+        True,
+    )
+    trusted = bool(source_time_trusted and source_available)
+    temporal = build_temporal_metadata(
+        source_event_at=request.occurred_at,
+        observed_at=observed_at or now,
+        recorded_at=now,
+        source_time_trusted=trusted,
+        source_field=(
+            source_field
+            or temporal_hint.get("source_field")
+            or "ChangeEventCreate.occurred_at"
+        ),
+        source_origin=source_time_origin,
+        source_quality=source_time_quality,
+    )
     metadata = {
-        **request.metadata,
+        **{
+            key: value
+            for key, value in request.metadata.items()
+            if key != "_temporal"
+        },
         "entity_refs": [
             item.model_dump(
                 mode="json"
@@ -889,6 +897,7 @@ def ingest_change_event(
                 request.entity_refs
             )
         ],
+        "temporal": temporal.model_dump(mode="json"),
     }
 
     created = existing is None
@@ -913,9 +922,13 @@ def ingest_change_event(
             summary=request.summary,
             actor=request.actor,
             occurred_at=(
-                request.occurred_at
+                temporal.effective_at.isoformat()
             ),
-            received_at=now,
+            received_at=(
+                temporal.observed_at
+                or temporal.recorded_at
+                or temporal.effective_at
+            ).isoformat(),
             environment=(
                 request.environment
             ),
@@ -1008,6 +1021,12 @@ def ingest_change_event(
             record.metadata_json
         )
 
+        # A redelivery can add non-temporal context, but it must not replace
+        # the original effective/observation/recorded interpretation with a
+        # later backend receipt time.
+        if "temporal" in old_metadata:
+            metadata["temporal"] = old_metadata["temporal"]
+
         old_metadata.update(
             metadata
         )
@@ -1022,13 +1041,16 @@ def ingest_change_event(
     # When a topology is available, defer explicit references to the
     # canonical resolver below. Without a topology, retain the historical
     # behavior of preserving the supplied reference as an explicit link.
-    has_correlation_snapshot = bool(
-        correlation_snapshot_id
-        or _latest_snapshot(
-            session,
-            cluster_name=request.cluster_name,
+    has_correlation_snapshot = bool(correlation_snapshot_id)
+    if not has_correlation_snapshot and record.cluster_name:
+        has_correlation_snapshot = bool(
+            safe_snapshot_record_at_or_before(
+                session,
+                cluster_name=record.cluster_name,
+                namespace=record.namespace,
+                boundary_at=change_event_temporal(record).effective_at,
+            )
         )
-    )
 
     for ref in request.entity_refs:
         if not ref.entity_id:

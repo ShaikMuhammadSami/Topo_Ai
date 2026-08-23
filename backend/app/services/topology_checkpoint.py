@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import SnapshotRecord
@@ -32,6 +32,9 @@ from app.services.change_event_bridge import (
 )
 from app.services.change_normalizer import (
     normalize_snapshot_changes,
+)
+from app.services.temporal_semantics import (
+    safe_snapshot_record_at_or_before,
 )
 
 
@@ -82,7 +85,7 @@ def is_topology_affecting_change_event(
 def _canonical_entity(entity) -> dict[str, Any]:
     return entity.model_dump(
         mode="json",
-        exclude={"observed_at"},
+        exclude={"observed_at", "temporal"},
     )
 
 
@@ -94,6 +97,7 @@ def _canonical_relationship(
         exclude={
             "observed_at",
             "evidence_ids",
+            "temporal",
         },
     )
 
@@ -176,28 +180,12 @@ def latest_checkpoint_at_or_before(
     observed_at: str,
     namespace: str | None = None,
 ) -> GraphSnapshot | None:
-    statement = select(SnapshotRecord).where(
-        SnapshotRecord.cluster_name
-        == cluster_name,
-        SnapshotRecord.collected_at
-        <= observed_at,
+    record = safe_snapshot_record_at_or_before(
+        session,
+        cluster_name=cluster_name,
+        namespace=namespace,
+        boundary_at=observed_at,
     )
-
-    if namespace:
-        statement = statement.where(
-            or_(
-                SnapshotRecord.namespace
-                == namespace,
-                SnapshotRecord.namespace == "*",
-                SnapshotRecord.namespace.is_(None),
-            )
-        )
-
-    statement = statement.order_by(
-        SnapshotRecord.collected_at.desc()
-    ).limit(1)
-
-    record = session.scalar(statement)
 
     if record is None:
         return None

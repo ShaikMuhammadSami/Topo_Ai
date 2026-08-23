@@ -4,6 +4,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.temporal import TemporalMetadata
+
 
 class ChangeType(str, Enum):
     ENTITY_ADDED = "entity_added"
@@ -50,6 +52,8 @@ class NormalizedChange(BaseModel):
 
     detected_at: datetime
 
+    temporal: TemporalMetadata | None = None
+
     from_snapshot_id: str
     to_snapshot_id: str
 
@@ -94,6 +98,8 @@ class ChangeSummary(BaseModel):
     summary: str
 
     detected_at: datetime
+
+    temporal: TemporalMetadata | None = None
 
     from_snapshot_id: str
     to_snapshot_id: str

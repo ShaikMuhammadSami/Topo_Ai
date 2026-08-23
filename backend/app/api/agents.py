@@ -17,6 +17,7 @@ from app.db.database import (
 )
 from app.db.models import (
     TopoAgentRecord,
+    utc_now_iso,
 )
 from app.models.agents import (
     AgentConfigView,
@@ -628,6 +629,12 @@ def submit_change_events(
                     ),
 
                     auto_correlate=True,
+
+                    # Agent identity is authenticated. Source-native time
+                    # is still accepted only when its producer labeled it
+                    # available and supplied an aware value.
+                    source_time_trusted=True,
+                    observed_at=utc_now_iso(),
 
                     # Commit the complete
                     # batch atomically.
