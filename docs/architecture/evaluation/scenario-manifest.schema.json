@@ -4,7 +4,7 @@
   "additionalProperties": false,
   "properties": {
     "scenario_version": {"const": "eval-1.scenario.v1"},
-    "scenario_id": {"pattern": "^sentinel-[a-z0-9-]+$", "type": "string"},
+    "scenario_id": {"pattern": "^(?:sentinel|blast)-[a-z0-9-]+$", "type": "string"},
     "family": {"minLength": 1, "type": "string"},
     "description": {"minLength": 1, "type": "string"},
     "environment_requirements": {"type": "object"},
@@ -48,7 +48,13 @@
       "additionalProperties": false,
       "properties": {
         "expected_count": {"minimum": 0, "type": "integer"},
-        "expected_scope_alias": {"type": "string"}
+        "expected_scope_alias": {"type": "string"},
+        "accepted_affected_aliases": {
+          "items": {"type": "string"},
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        }
       },
       "required": ["expected_count", "expected_scope_alias"],
       "type": "object"
@@ -57,7 +63,19 @@
       "additionalProperties": false,
       "properties": {
         "required_affected": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
-        "explicitly_unaffected": {"items": {"type": "string"}, "type": "array", "uniqueItems": true}
+        "explicitly_unaffected": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+        "impact_truth": {
+          "additionalProperties": false,
+          "properties": {
+            "direct_failure": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+            "ownership_rollup": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+            "operationally_impacted": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+            "structural_context": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+            "unaffected": {"items": {"type": "string"}, "type": "array", "uniqueItems": true}
+          },
+          "required": ["direct_failure", "ownership_rollup", "operationally_impacted", "structural_context", "unaffected"],
+          "type": "object"
+        }
       },
       "required": ["required_affected", "explicitly_unaffected"],
       "type": "object"

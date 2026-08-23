@@ -23,7 +23,7 @@
     "provider_verification": {"$ref": "#/$defs/provider_verification"},
     "topo_observation": {"$ref": "#/$defs/topo_observation"},
     "metric_results": {
-      "additionalProperties": {"type": ["boolean", "number", "integer", "null"]},
+      "additionalProperties": {"type": ["array", "boolean", "number", "integer", "null", "object"]},
       "type": "object"
     },
     "assertions": {"items": {"type": "object"}, "type": "array"},

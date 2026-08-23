@@ -6,7 +6,9 @@ from pathlib import Path
 from evaluation.runner import RESULTS_DIR, run_scenario
 
 
-SCENARIOS = ("sentinel-a", "sentinel-b", "sentinel-c", "sentinel-d")
+SENTINEL_SCENARIOS = ("sentinel-a", "sentinel-b", "sentinel-c", "sentinel-d")
+BLAST_SCENARIOS = ("blast-01", "blast-02", "blast-03")
+SCENARIOS = SENTINEL_SCENARIOS + BLAST_SCENARIOS
 
 
 def main() -> int:
@@ -21,8 +23,20 @@ def main() -> int:
     run_all.add_argument("--context")
     run_all.add_argument("--timeout", type=float, default=240.0)
     run_all.add_argument("--output-dir", type=Path, default=RESULTS_DIR)
+    run_blast = subparsers.add_parser(
+        "run-blast",
+        help="Run Sentinel D plus the three permanent BR-0 scenarios sequentially",
+    )
+    run_blast.add_argument("--context")
+    run_blast.add_argument("--timeout", type=float, default=240.0)
+    run_blast.add_argument("--output-dir", type=Path, default=RESULTS_DIR)
     arguments = parser.parse_args()
-    scenarios = SCENARIOS if arguments.command == "run-all" else (arguments.scenario,)
+    if arguments.command == "run-all":
+        scenarios = SENTINEL_SCENARIOS
+    elif arguments.command == "run-blast":
+        scenarios = ("sentinel-d",) + BLAST_SCENARIOS
+    else:
+        scenarios = (arguments.scenario,)
     exit_code = 0
     for scenario in scenarios:
         result, path = run_scenario(

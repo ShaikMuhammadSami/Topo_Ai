@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 import subprocess
-import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -12,7 +11,9 @@ from evaluation.topo_client import bounded_wait
 
 
 EVALUATION_LABEL = "topo.ai/evaluation-run"
-SAFE_NAMESPACE = re.compile(r"^topo-eval-[abcd]-[a-z0-9]{6,12}$")
+SAFE_NAMESPACE = re.compile(
+    r"^topo-eval-(?:[abcd]|blast-(?:01|02|03))-[a-z0-9]{6,12}$"
+)
 
 
 def utc_now() -> str:
@@ -118,8 +119,24 @@ class Kubectl:
                 return None
             raise
 
-    def create_deployment(self, namespace: str, name: str, image: str, run_id: str) -> dict[str, Any]:
-        self.run("create", "deployment", name, "-n", namespace, f"--image={image}", "--replicas=1")
+    def create_deployment(
+        self,
+        namespace: str,
+        name: str,
+        image: str,
+        run_id: str,
+        *,
+        replicas: int = 1,
+    ) -> dict[str, Any]:
+        self.run(
+            "create",
+            "deployment",
+            name,
+            "-n",
+            namespace,
+            f"--image={image}",
+            f"--replicas={replicas}",
+        )
         self.run(
             "label",
             "deployment",
@@ -136,17 +153,129 @@ class Kubectl:
         self.run("label", "service", name, "-n", namespace, f"{EVALUATION_LABEL}={run_id}", "--overwrite")
         return self.get("service", name, namespace=namespace) or {}
 
-    def wait_ready(self, namespace: str, name: str, timeout_seconds: float = 180.0) -> dict[str, Any]:
+    def wait_ready(
+        self,
+        namespace: str,
+        name: str,
+        *,
+        replicas: int = 1,
+        timeout_seconds: float = 180.0,
+    ) -> dict[str, Any]:
         return bounded_wait(
             lambda: self.get("deployment", name, namespace=namespace),
             lambda value: bool(
                 value
-                and value.get("status", {}).get("availableReplicas", 0) >= 1
+                and value.get("status", {}).get("availableReplicas", 0) >= replicas
                 and value.get("status", {}).get("observedGeneration", 0)
                 >= value.get("metadata", {}).get("generation", 0)
             ),
             timeout_seconds=timeout_seconds,
             interval_seconds=3,
+        )
+
+    def use_recreate_strategy(self, namespace: str, deployment: str) -> dict[str, Any]:
+        patch = '{"spec":{"strategy":{"type":"Recreate","rollingUpdate":null}}}'
+        self.run(
+            "patch",
+            "deployment",
+            deployment,
+            "-n",
+            namespace,
+            "--type=merge",
+            "-p",
+            patch,
+        )
+        return self.get("deployment", deployment, namespace=namespace) or {}
+
+    def configure_persistent_failure_probe(
+        self,
+        namespace: str,
+        deployment: str,
+    ) -> dict[str, Any]:
+        current = self.get("deployment", deployment, namespace=namespace) or {}
+        containers = current.get("spec", {}).get("template", {}).get("spec", {}).get("containers", [])
+        if not containers:
+            raise RuntimeError(f"Deployment {deployment} has no container.")
+        patch = json.dumps(
+            {
+                "spec": {
+                    "template": {
+                        "spec": {
+                            "containers": [
+                                {
+                                    "name": containers[0]["name"],
+                                    "livenessProbe": {
+                                        "exec": {
+                                            "command": [
+                                                "/bin/sh",
+                                                "-c",
+                                                "test ! -f /topo-eval-state/fail",
+                                            ]
+                                        },
+                                        "failureThreshold": 1,
+                                        "initialDelaySeconds": 1,
+                                        "periodSeconds": 1,
+                                        "timeoutSeconds": 1,
+                                    },
+                                    "volumeMounts": [
+                                        {
+                                            "name": "topo-eval-state",
+                                            "mountPath": "/topo-eval-state",
+                                        }
+                                    ],
+                                }
+                            ],
+                            "volumes": [
+                                {"name": "topo-eval-state", "emptyDir": {}}
+                            ],
+                        }
+                    }
+                }
+            },
+            separators=(",", ":"),
+        )
+        self.run(
+            "patch",
+            "deployment",
+            deployment,
+            "-n",
+            namespace,
+            "--type=strategic",
+            "-p",
+            patch,
+        )
+        return self.get("deployment", deployment, namespace=namespace) or {}
+
+    def deployment_pods(self, namespace: str, deployment: str) -> list[dict[str, Any]]:
+        deployment_object = self.get("deployment", deployment, namespace=namespace) or {}
+        selector = deployment_object.get("spec", {}).get("selector", {}).get("matchLabels", {})
+        selector_text = ",".join(f"{key}={value}" for key, value in sorted(selector.items()))
+        pod_list = self.get("pods", namespace=namespace, selector=selector_text) or {"items": []}
+        return sorted(
+            pod_list.get("items", []),
+            key=lambda item: str(item.get("metadata", {}).get("name") or ""),
+        )
+
+    @staticmethod
+    def pod_ready(pod: dict[str, Any]) -> bool:
+        return any(
+            condition.get("type") == "Ready" and condition.get("status") == "True"
+            for condition in pod.get("status", {}).get("conditions", [])
+        )
+
+    def wait_deployment_pods_ready(
+        self,
+        namespace: str,
+        deployment: str,
+        *,
+        replicas: int,
+        timeout_seconds: float = 180.0,
+    ) -> list[dict[str, Any]]:
+        return bounded_wait(
+            lambda: self.deployment_pods(namespace, deployment),
+            lambda pods: len(pods) == replicas and all(self.pod_ready(pod) for pod in pods),
+            timeout_seconds=timeout_seconds,
+            interval_seconds=2,
         )
 
     def set_image(self, namespace: str, deployment: str, image: str) -> dict[str, Any]:
@@ -183,6 +312,78 @@ class Kubectl:
             interval_seconds=3,
         )
 
+    def wait_image_pull_failures(
+        self,
+        namespace: str,
+        deployment: str,
+        *,
+        expected: int,
+        timeout_seconds: float = 180.0,
+    ) -> list[dict[str, Any]]:
+        def failing_pods() -> list[dict[str, Any]]:
+            return [
+                pod
+                for pod in self.deployment_pods(namespace, deployment)
+                if self.pod_failure_reason(pod) in {"ImagePullBackOff", "ErrImagePull"}
+            ]
+
+        return bounded_wait(
+            failing_pods,
+            lambda pods: len(pods) >= expected,
+            timeout_seconds=timeout_seconds,
+            interval_seconds=3,
+        )
+
+    def induce_single_pod_crashloop(
+        self,
+        namespace: str,
+        deployment: str,
+        *,
+        timeout_seconds: float = 180.0,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Crash exactly one selected Pod while its sibling continues serving."""
+        initial = self.wait_deployment_pods_ready(
+            namespace,
+            deployment,
+            replicas=2,
+            timeout_seconds=timeout_seconds,
+        )
+        target_name = str(initial[0].get("metadata", {}).get("name") or "")
+        target_uid = str(initial[0].get("metadata", {}).get("uid") or "")
+        if not target_name or not target_uid:
+            raise RuntimeError("Could not establish the target Pod's stable provider identity.")
+
+        self.run(
+            "exec",
+            target_name,
+            "-n",
+            namespace,
+            "--",
+            "/bin/sh",
+            "-c",
+            "touch /topo-eval-state/fail",
+            timeout=20,
+        )
+
+        failed = bounded_wait(
+            lambda: self.get("pod", target_name, namespace=namespace),
+            lambda pod: bool(
+                pod
+                and str(pod.get("metadata", {}).get("uid") or "") == target_uid
+                and self.pod_failure_reason(pod) == "CrashLoopBackOff"
+            ),
+            timeout_seconds=timeout_seconds,
+            interval_seconds=2,
+        )
+        siblings = [
+            pod
+            for pod in self.deployment_pods(namespace, deployment)
+            if str(pod.get("metadata", {}).get("uid") or "") != target_uid
+        ]
+        if not siblings or not all(self.pod_ready(pod) for pod in siblings):
+            raise RuntimeError("The independent healthy sibling Pod did not remain Ready.")
+        return failed, siblings
+
     def ready_service_endpoint_count(self, namespace: str, service: str) -> int:
         endpoint_slices = self.get(
             "endpointslices",
@@ -195,6 +396,63 @@ class Kubectl:
                 if endpoint.get("conditions", {}).get("ready") is not False:
                     count += len(endpoint.get("addresses", []))
         return count
+
+    def service_endpoint_truth(self, namespace: str, service: str) -> dict[str, Any]:
+        service_object = self.get("service", service, namespace=namespace) or {}
+        endpoint_slices = self.get(
+            "endpointslices",
+            namespace=namespace,
+            selector=f"kubernetes.io/service-name={service}",
+        ) or {"items": []}
+        slices: list[dict[str, Any]] = []
+        ready_target_uids: list[str] = []
+        for endpoint_slice in sorted(
+            endpoint_slices.get("items", []),
+            key=lambda item: str(item.get("metadata", {}).get("name") or ""),
+        ):
+            targets: list[dict[str, Any]] = []
+            for endpoint in endpoint_slice.get("endpoints", []):
+                target_ref = endpoint.get("targetRef") or {}
+                ready = endpoint.get("conditions", {}).get("ready") is not False
+                target_uid = str(target_ref.get("uid") or "")
+                if ready and target_uid:
+                    ready_target_uids.append(target_uid)
+                targets.append(
+                    {
+                        "addresses": sorted(str(value) for value in endpoint.get("addresses", [])),
+                        "ready": ready,
+                        "target_kind": target_ref.get("kind"),
+                        "target_name": target_ref.get("name"),
+                        "target_uid": target_uid or None,
+                    }
+                )
+            slices.append(
+                {
+                    "name": endpoint_slice.get("metadata", {}).get("name"),
+                    "uid": endpoint_slice.get("metadata", {}).get("uid"),
+                    "targets": targets,
+                }
+            )
+        return {
+            "service_uid": service_object.get("metadata", {}).get("uid"),
+            "selector": service_object.get("spec", {}).get("selector", {}),
+            "endpoint_slices": slices,
+            "ready_endpoint_count": sum(
+                len(target["addresses"])
+                for endpoint_slice in slices
+                for target in endpoint_slice["targets"]
+                if target["ready"]
+            ),
+            "ready_target_uids": sorted(set(ready_target_uids)),
+        }
+
+    @staticmethod
+    def pod_failure_reason(pod: dict[str, Any]) -> str | None:
+        for status in pod.get("status", {}).get("containerStatuses", []):
+            reason = status.get("state", {}).get("waiting", {}).get("reason")
+            if reason:
+                return str(reason)
+        return None
 
     @staticmethod
     def provider_object(logical_name: str, value: dict[str, Any]) -> ProviderObject:

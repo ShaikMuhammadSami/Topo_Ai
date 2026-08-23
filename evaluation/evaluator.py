@@ -34,6 +34,105 @@ def _latency(start: str | None, end: str | None) -> float | None:
     return max(0.0, (right - left).total_seconds())
 
 
+def blast_false_positive_path_attribution(
+    manifest: ScenarioManifest,
+    topo: TopoObservation,
+    alias_entity_ids: dict[str, list[str]],
+) -> list[dict[str, Any]]:
+    """Attribute declared false positives using only the incident-pinned snapshot."""
+    snapshot = topo.snapshot or {}
+    blast = topo.blast_radius or {}
+    blast_entities = {
+        str(item.get("entity_id")): item
+        for item in blast.get("affected_entities", [])
+        if item.get("entity_id")
+    }
+    entities = {
+        str(item.get("id")): item
+        for item in snapshot.get("entities", [])
+        if item.get("id")
+    }
+    paths_by_target: dict[str, list[list[str]]] = {}
+    for value in blast.get("dependency_paths", []):
+        path = [str(item) for item in value.get("path", [])]
+        if path:
+            paths_by_target.setdefault(path[-1], []).append(path)
+    relationships = sorted(
+        snapshot.get("relationships", []),
+        key=lambda item: str(item.get("id") or ""),
+    )
+    attributed: list[dict[str, Any]] = []
+    for alias in sorted(manifest.value["expected_blast_radius"]["explicitly_unaffected"]):
+        for entity_id in sorted(set(alias_entity_ids.get(alias, [])) & set(blast_entities)):
+            candidate_paths = sorted(
+                paths_by_target.get(entity_id, []),
+                key=lambda path: (len(path), path),
+            )
+            path = candidate_paths[0] if candidate_paths else []
+            terminal_predicate = str(blast_entities[entity_id].get("relationship") or "")
+            hops: list[dict[str, Any]] = []
+            for index, (left, right) in enumerate(zip(path, path[1:])):
+                candidates = [
+                    relationship
+                    for relationship in relationships
+                    if {
+                        str(relationship.get("source_entity_id") or ""),
+                        str(relationship.get("target_entity_id") or ""),
+                    }
+                    == {left, right}
+                ]
+                if index == len(path) - 2 and terminal_predicate:
+                    predicate_matches = [
+                        relationship
+                        for relationship in candidates
+                        if str(relationship.get("relationship_type") or "")
+                        == terminal_predicate
+                    ]
+                    if predicate_matches:
+                        candidates = predicate_matches
+                selected = candidates[0] if candidates else {}
+                source = str(selected.get("source_entity_id") or "")
+                target = str(selected.get("target_entity_id") or "")
+                direction = (
+                    "forward"
+                    if source == left and target == right
+                    else "reverse"
+                    if source == right and target == left
+                    else "unavailable"
+                )
+                hops.append(
+                    {
+                        "from_entity_id": left,
+                        "to_entity_id": right,
+                        "relationship_id": selected.get("id"),
+                        "predicate": selected.get("relationship_type"),
+                        "traversal_direction": direction,
+                        "declared_directed": selected.get("directed"),
+                        "provenance": selected.get("provenance"),
+                        "alternative_relationship_ids": [
+                            item.get("id") for item in candidates[1:] if item.get("id")
+                        ],
+                    }
+                )
+            entity = entities.get(entity_id, {})
+            attributed.append(
+                {
+                    "false_positive_alias": alias,
+                    "false_positive_entity_id": entity_id,
+                    "false_positive_entity_kind": entity.get("kind"),
+                    "false_positive_entity_name": entity.get("name"),
+                    "path_entity_ids": path,
+                    "hops": hops,
+                    "path_source": (
+                        "product_dependency_paths_enriched_from_pinned_snapshot"
+                        if path
+                        else "unavailable"
+                    ),
+                }
+            )
+    return attributed
+
+
 class IndependentEvaluator:
     """Compare immutable manifest/provider truth with read-only Topo output."""
 
@@ -75,6 +174,10 @@ class IndependentEvaluator:
             alias_entity_ids[alias] = sorted(set(matches))
 
         affected_alias = manifest.value["causal_intent"]["affected_entity"]
+        accepted_affected_aliases = manifest.value["expected_incident"].get(
+            "accepted_affected_aliases",
+            [affected_alias],
+        )
         incident = topo.incident or {}
         affected_id = incident.get("affected_entity_id")
         expected_incident_count = int(manifest.value["expected_incident"]["expected_count"])
@@ -92,14 +195,19 @@ class IndependentEvaluator:
         metrics["identity_resolved"] = bool(affected_id)
         metrics["identity_correct"] = (
             bool(affected_id)
-            and affected_id in alias_entity_ids.get(affected_alias, [])
+            and any(
+                affected_id in alias_entity_ids.get(alias, [])
+                for alias in accepted_affected_aliases
+            )
         )
         self._assert(
             assertions,
             failures,
             "affected_identity",
             metrics["identity_correct"],
-            f"Affected entity must resolve to provider object '{affected_alias}'.",
+            "Affected entity must resolve to one of the provider-native accepted aliases: "
+            + ", ".join(accepted_affected_aliases)
+            + ".",
         )
 
         analysis = topo.causal_analysis or {}
@@ -142,6 +250,29 @@ class IndependentEvaluator:
 
         blast = self._blast_metrics(manifest, topo, alias_entity_ids)
         metrics.update(blast)
+        false_positive_paths = blast_false_positive_path_attribution(
+            manifest,
+            topo,
+            alias_entity_ids,
+        )
+        predicate_counts: dict[str, int] = {}
+        path_pattern_counts: dict[str, int] = {}
+        for item in false_positive_paths:
+            patterns: list[str] = []
+            for hop in item["hops"]:
+                predicate = str(hop.get("predicate") or "unavailable")
+                direction = str(hop.get("traversal_direction") or "unavailable")
+                predicate_counts[predicate] = predicate_counts.get(predicate, 0) + 1
+                patterns.append(f"{predicate}:{direction}")
+            pattern = " > ".join(patterns) if patterns else "path-unavailable"
+            path_pattern_counts[pattern] = path_pattern_counts.get(pattern, 0) + 1
+        metrics["blast_false_positive_paths"] = false_positive_paths
+        metrics["blast_false_positive_count_by_predicate"] = dict(
+            sorted(predicate_counts.items())
+        )
+        metrics["blast_false_positive_count_by_path_pattern"] = dict(
+            sorted(path_pattern_counts.items())
+        )
         self._assert(assertions, failures, "blast_required", blast["blast_radius_false_negative_count"] == 0, "Required affected entities must be present.")
         self._assert(assertions, failures, "blast_unaffected", blast["blast_radius_false_positive_count"] == 0, "Explicitly unaffected entities must be absent.")
 
@@ -304,6 +435,9 @@ class IndependentEvaluator:
         fp = found_unaffected
         fn = len(required) - found_required
         return {
+            "provider_affected_count": len(required),
+            "provider_explicitly_unaffected_count": len(unaffected),
+            "topo_blast_count": len(blast_ids),
             "blast_radius_true_positive_count": tp,
             "blast_radius_false_positive_count": fp,
             "blast_radius_false_negative_count": fn,
