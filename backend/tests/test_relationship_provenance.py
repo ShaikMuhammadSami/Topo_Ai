@@ -53,6 +53,7 @@ from app.services.relationship_provenance import (
     relationship_provenance,
     source_reference,
 )
+from app.services import runtime_snapshot_enrichment
 from app.services.runtime_snapshot_enrichment import (
     enrich_snapshot_with_runtime_dependencies,
 )
@@ -755,7 +756,16 @@ def test_runtime_network_edge_is_observed_with_native_references() -> None:
     )
 
 
-def test_tetragon_edge_references_real_runtime_dependency_record() -> None:
+def test_tetragon_edge_references_real_runtime_dependency_record(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        runtime_snapshot_enrichment,
+        "datetime",
+        SimpleNamespace(
+            now=lambda tz: NOW,
+        ),
+    )
     session = _session()
     session.add(
         RuntimeDependencyRecord(
