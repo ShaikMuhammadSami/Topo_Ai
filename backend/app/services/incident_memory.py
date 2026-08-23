@@ -40,8 +40,8 @@ from app.repositories.incident_record_repository import (
 from app.repositories.topology_snapshot_repository import (
     load_topology_snapshot,
 )
-from app.services.blast_radius import (
-    traverse_blast_radius,
+from app.services.topology_neighborhood import (
+    traverse_topology_neighborhood,
 )
 from app.services.business_impact import (
     calculate_incident_ownership_impact,
@@ -591,7 +591,7 @@ def build_incident_feature_profile(
     if snapshot is not None and topology_seed:
         topology_neighbor_ids = [
             entity_id
-            for entity_id in traverse_blast_radius(
+            for entity_id in traverse_topology_neighborhood(
                 topology_seed,
                 snapshot.relationships,
                 NEIGHBORHOOD_HOPS,
@@ -601,7 +601,7 @@ def build_incident_feature_profile(
 
         if not affected_entity_ids:
             affected_entity_ids = (
-                traverse_blast_radius(
+                traverse_topology_neighborhood(
                     topology_seed,
                     snapshot.relationships,
                     FALLBACK_AFFECTED_HOPS,

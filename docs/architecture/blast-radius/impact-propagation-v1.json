@@ -1,0 +1,177 @@
+{
+  "contract": "topoai-blast-impact-policy",
+  "policy_version": "blast-impact-v1",
+  "impact_score_semantics": "distance_heuristic_not_probability",
+  "active_predicates": [
+    "attached_to",
+    "calls",
+    "contains",
+    "depends_on",
+    "exposes",
+    "owns",
+    "produces",
+    "protects",
+    "resolves_to",
+    "routes_to",
+    "runs",
+    "selects",
+    "triggers",
+    "uses"
+  ],
+  "policies": [
+    {
+      "predicate": "attached_to",
+      "relationship_direction": "attached object -> target",
+      "impact_semantic": "operational_impact",
+      "allowed_traversal": "reverse",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "operational_impact", "aggregate_impact"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "calls",
+      "relationship_direction": "caller -> destination",
+      "impact_semantic": "operational_impact",
+      "allowed_traversal": "reverse",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "operational_impact", "aggregate_impact"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "contains",
+      "relationship_direction": "scope -> member",
+      "impact_semantic": "structural_context",
+      "allowed_traversal": "none",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": [],
+      "maturity": "non_propagating",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "depends_on",
+      "relationship_direction": "dependent -> dependency",
+      "impact_semantic": "operational_impact",
+      "allowed_traversal": "reverse",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "operational_impact", "aggregate_impact"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "exposes",
+      "relationship_direction": "resource -> endpoint",
+      "impact_semantic": "operational_impact",
+      "allowed_traversal": "forward",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "operational_impact", "aggregate_impact"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "owns",
+      "relationship_direction": "owner -> owned",
+      "impact_semantic": "ownership_rollup",
+      "allowed_traversal": "reverse",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "ownership_rollup"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "produces",
+      "relationship_direction": "producer -> artifact",
+      "impact_semantic": "unknown_unproven",
+      "allowed_traversal": "none",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": [],
+      "maturity": "unsupported_for_impact_v1",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "protects",
+      "relationship_direction": "control -> protected resource",
+      "impact_semantic": "unknown_unproven",
+      "allowed_traversal": "none",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": [],
+      "maturity": "unsupported_for_impact_v1",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "resolves_to",
+      "relationship_direction": "name/service -> target",
+      "impact_semantic": "operational_impact",
+      "allowed_traversal": "reverse",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "operational_impact", "aggregate_impact"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "routes_to",
+      "relationship_direction": "routing source -> destination",
+      "impact_semantic": "aggregate_impact",
+      "allowed_traversal": "conditional_reverse",
+      "conditional": true,
+      "aggregate_evaluator": "kubernetes_service_backend_availability_v1",
+      "can_expand_from_states": ["direct_failure", "observed_co_failure"],
+      "maturity": "conditional",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "runs",
+      "relationship_direction": "host/workload/owner -> running object",
+      "impact_semantic": "operational_impact",
+      "allowed_traversal": "forward",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "operational_impact", "aggregate_impact"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "selects",
+      "relationship_direction": "Service -> Pod",
+      "impact_semantic": "aggregate_impact",
+      "allowed_traversal": "conditional_reverse",
+      "conditional": true,
+      "aggregate_evaluator": "kubernetes_service_backend_availability_v1",
+      "can_expand_from_states": ["direct_failure", "observed_co_failure"],
+      "maturity": "conditional",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "triggers",
+      "relationship_direction": "trigger source -> triggered execution",
+      "impact_semantic": "unknown_unproven",
+      "allowed_traversal": "none",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": [],
+      "maturity": "unsupported_for_impact_v1",
+      "policy_version": "blast-impact-v1"
+    },
+    {
+      "predicate": "uses",
+      "relationship_direction": "consumer -> dependency/artifact",
+      "impact_semantic": "operational_impact",
+      "allowed_traversal": "reverse",
+      "conditional": false,
+      "aggregate_evaluator": null,
+      "can_expand_from_states": ["direct_failure", "observed_co_failure", "operational_impact", "aggregate_impact"],
+      "maturity": "supported",
+      "policy_version": "blast-impact-v1"
+    }
+  ]
+}
