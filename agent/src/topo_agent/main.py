@@ -172,6 +172,117 @@ def _runtime(
     )
 
 
+def _build_change_watch_runner(
+    config: AgentConfig,
+    client: AgentApiClient,
+) -> ChangeWatchRunner:
+    logger = logging.getLogger(
+        "topo-agent"
+    )
+    runner = ChangeWatchRunner(
+        client=client,
+        interval_seconds=(
+            config
+            .change_watch_interval_seconds
+        ),
+        defer_failure_signals=True,
+    )
+
+    if config.change_watch_kubernetes:
+        try:
+            runner.register(
+                "kubernetes",
+                KubernetesChangePoller(
+                    cluster_name=(
+                        config.cluster_name
+                    ),
+                    namespaces=config.namespaces,
+                    kube_context=config.kube_context,
+                    overlap_seconds=(
+                        config
+                        .change_watch_overlap_seconds
+                    ),
+                ),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "Kubernetes change watch is unavailable; "
+                "periodic topology reconciliation remains "
+                "active: %s",
+                exc,
+            )
+
+    if config.change_watch_aws:
+        try:
+            runner.register(
+                "aws",
+                AwsCloudTrailChangePoller(
+                    regions=config.aws_regions,
+                    profile=config.aws_profile,
+                    overlap_seconds=(
+                        config
+                        .change_watch_overlap_seconds
+                    ),
+                ),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "AWS change watch is unavailable; periodic "
+                "topology reconciliation remains active: %s",
+                exc,
+            )
+
+    if config.change_watch_azure:
+        try:
+            runner.register(
+                "azure",
+                AzureActivityChangePoller(
+                    subscription_ids=(
+                        config
+                        .azure_subscription_ids
+                    ),
+                    overlap_seconds=(
+                        config
+                        .change_watch_overlap_seconds
+                    ),
+                ),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "Azure change watch is unavailable; "
+                "periodic topology reconciliation remains "
+                "active: %s",
+                exc,
+            )
+
+    if config.change_watch_gcp:
+        try:
+            runner.register(
+                "gcp",
+                GcpAuditChangePoller(
+                    project_ids=(
+                        config.gcp_project_ids
+                    ),
+                    overlap_seconds=(
+                        config
+                        .change_watch_overlap_seconds
+                    ),
+                ),
+            )
+
+        except Exception as exc:
+            logger.warning(
+                "GCP change watch is unavailable; periodic "
+                "topology reconciliation remains active: %s",
+                exc,
+            )
+
+    return runner
+
+
 @app.command("version")
 def version() -> None:
     typer.echo(
@@ -643,7 +754,9 @@ def collect(
         )
 
         receipt = (
-            runner.collect_once()
+            runner.collect_once(
+                checkpoint_reason="manual"
+            )
         )
 
         console.print_json(
@@ -689,6 +802,12 @@ def run(
         client=client,
         plugin_manager=manager,
         buffer=buffer,
+        change_watch_runner=(
+            _build_change_watch_runner(
+                config,
+                client,
+            )
+        ),
     )
 
     try:
@@ -720,17 +839,9 @@ def watch_changes(
             "Topo Agent is not enrolled."
         )
 
-    client = AgentApiClient(
-        backend_url=(
-            config.backend_url
-        ),
-        token=token,
-        timeout_seconds=(
-            config.timeout_seconds
-        ),
-        verify_tls=(
-            config.verify_tls
-        ),
+    client = _client(
+        config,
+        token,
     )
 
     runner = ChangeWatchRunner(
@@ -751,6 +862,8 @@ def watch_changes(
                 cluster_name=(
                     config.cluster_name
                 ),
+                namespaces=config.namespaces,
+                kube_context=config.kube_context,
                 overlap_seconds=(
                     config
                     .change_watch_overlap_seconds

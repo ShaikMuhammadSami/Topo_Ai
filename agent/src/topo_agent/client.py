@@ -207,52 +207,65 @@ class AgentApiClient:
             "/api/v1/agent/snapshots",
             json_body=submission,
         )
+
     def sensor_heartbeat(
-    self,
-    request: dict[str, Any],
+        self,
+        request: dict[str, Any],
     ) -> dict[str, Any]:
         return self._request(
-         "POST",
-         (
-             "/api/v1/agent/"
-             "runtime/heartbeat"
+            "POST",
+            (
+                "/api/v1/agent/"
+                "runtime/heartbeat"
             ),
             json_body=request,
         )
 
 
     def submit_runtime_batch(
-    self,
-    request: dict[str, Any],
+        self,
+        request: dict[str, Any],
     ) -> dict[str, Any]:
         return self._request(
-         "POST",
-         (
-             "/api/v1/agent/"
-             "runtime/batches"
+            "POST",
+            (
+                "/api/v1/agent/"
+                "runtime/batches"
             ),
-         json_body=request,
+            json_body=request,
         )
 
-def submit_change_events(
-    self,
-    events: list[dict[str, Any]],
-) -> dict[str, Any]:
-    value = self._request(
-        "POST",
-        "/api/v1/agent/change-events",
-        json_body={
-            "events": events,
-        },
-    )
-
-    if not isinstance(
-        value,
-        dict,
-    ):
-        raise RuntimeError(
-            "Invalid change-event "
-            "batch response."
+    def submit_change_events(
+        self,
+        events: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            "/api/v1/agent/change-events",
+            json_body={
+                "events": events,
+            },
         )
 
-    return value
+        if not isinstance(
+            value,
+            dict,
+        ):
+            raise RuntimeError(
+                "Invalid change-event "
+                "batch response."
+            )
+
+        return value
+
+    def submit_failure_signals(
+        self,
+        signals: list[dict[str, Any]],
+    ) -> dict[str, Any]:
+        return self._request(
+            "POST",
+            "/api/v1/agent/signals",
+            json_body={
+                "signals": signals,
+            },
+        )

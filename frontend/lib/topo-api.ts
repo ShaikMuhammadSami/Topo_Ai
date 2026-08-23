@@ -53,6 +53,7 @@ import type {
   PostIncidentReportSummary,
   ReportActionStatus,
   IncidentBriefing,
+  IncidentLifecycleStatus,
 } from "@/lib/topo-types"
 
 
@@ -732,6 +733,18 @@ export function getIncidentBriefing(
     {
       signal: options?.signal,
     },
+  )
+}
+
+export function getIncidentLifecycleStatus(
+  incidentId: string,
+  options?: { signal?: AbortSignal },
+): Promise<IncidentLifecycleStatus> {
+  return apiRequest<IncidentLifecycleStatus>(
+    `/api/v1/incidents/${encodeURIComponent(
+      incidentId,
+    )}/lifecycle-status`,
+    { signal: options?.signal },
   )
 }
 export function createWebhookEndpoint(

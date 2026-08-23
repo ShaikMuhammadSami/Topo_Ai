@@ -25,6 +25,10 @@ from app.models.signals import (
     SignalSeverity,
     SignalSummary,
 )
+from app.models.lifecycle_automation import (
+    FailureSignalBatchRequest,
+    FailureSignalBatchResult,
+)
 from app.repositories.signal_repository import (
     list_signals,
     load_signal,
@@ -33,13 +37,22 @@ from app.repositories.signal_repository import (
 from app.repositories.snapshot_repository import (
     load_snapshot,
 )
-from app.services.incident_orchestrator import (
-    orchestrate_signal,
-)
 from app.services.incident_grouping import (
     incident_fingerprint,
     is_failure_signal,
     signal_priority_key,
+)
+from app.services.continuous_lifecycle import (
+    ingest_failure_signal_batch,
+)
+from app.models.lifecycle_automation import (
+    TopologyCheckpointReason,
+)
+from app.services.network_topology_enricher import (
+    enrich_kubernetes_network_topology,
+)
+from app.services.topology_checkpoint import (
+    persist_topology_checkpoint,
 )
 
 def _select_representative_signals(
@@ -68,22 +81,30 @@ def _select_representative_signals(
         key=signal_priority_key,
         reverse=True,
     )
-# FAILURE_SIGNAL_SEVERITIES = {
-#     SignalSeverity.WARNING,
-#     SignalSeverity.ERROR,
-#     SignalSeverity.CRITICAL,
-# }
-
-
-# def _is_failure_signal(
-#     severity: SignalSeverity,
-# ) -> bool:
-#     return severity in FAILURE_SIGNAL_SEVERITIES
-
 router = APIRouter(
     prefix="/api/v1/signals",
     tags=["signals"],
 )
+
+
+@router.post(
+    "/ingest",
+    response_model=FailureSignalBatchResult,
+    status_code=status.HTTP_201_CREATED,
+)
+def ingest_normalized_failure_signals(
+    request: FailureSignalBatchRequest,
+    session: Session = Depends(get_session),
+) -> FailureSignalBatchResult:
+    """
+    Deterministic internal signal contract for current
+    and future authenticated source adapters.
+    """
+
+    return ingest_failure_signal_batch(
+        session=session,
+        signals=request.signals,
+    )
 
 
 @router.post(
@@ -92,15 +113,18 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
 )
 def ingest_kubernetes_events(
-    snapshot_id: str = Query(
+    snapshot_id: str | None = Query(
+        default=None,
         description=(
-            "Stored topology snapshot used "
+            "Optional stored topology snapshot used "
             "to map Kubernetes object UIDs "
-            "to canonical entity IDs."
+            "to canonical entity IDs. When omitted, "
+            "Topo performs and checkpoints discovery "
+            "automatically."
         )
     ),
     auto_orchestrate: bool = Query(
-        default=False,
+        default=True,
     ),
     auto_orchestrate_grouped: bool = Query(
        default=True,
@@ -144,56 +168,80 @@ def ingest_kubernetes_events(
         get_session
     ),
 ) -> SignalIngestionResult:
-    snapshot = load_snapshot(
-        session=session,
-        snapshot_id=snapshot_id,
-    )
-
-    if snapshot is None:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"Snapshot not found: "
-                f"{snapshot_id}"
-            ),
+    try:
+        snapshot = (
+            load_snapshot(
+                session=session,
+                snapshot_id=snapshot_id,
+            )
+            if snapshot_id
+            else None
         )
 
-    cluster_name = (
-        snapshot.scope.get(
+        if snapshot_id and snapshot is None:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Snapshot not found: "
+                    f"{snapshot_id}"
+                ),
+            )
+
+        namespace_value = (
+            snapshot.scope.get("namespace")
+            if snapshot is not None
+            else None
+        )
+        namespace = (
+            None
+            if namespace_value in (None, "*")
+            else namespace_value
+        )
+        kubernetes = KubernetesCollector(
+            namespace=namespace
+        )
+
+        if snapshot is None:
+            discovered = (
+                enrich_kubernetes_network_topology(
+                    kubernetes.collect()
+                )
+            )
+            checkpoint = (
+                persist_topology_checkpoint(
+                    session=session,
+                    snapshot=discovered,
+                    reason=(
+                        TopologyCheckpointReason
+                        .PERIODIC_RECONCILE
+                    ),
+                    derive_changes=True,
+                )
+            )
+            snapshot_id = checkpoint.snapshot_id
+            snapshot = load_snapshot(
+                session=session,
+                snapshot_id=snapshot_id,
+            )
+
+        if snapshot is None:
+            raise RuntimeError(
+                "Automatic topology checkpoint "
+                "could not be loaded."
+            )
+
+        cluster_name = snapshot.scope.get(
             "cluster"
         )
-    )
 
-    if not cluster_name:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Snapshot does not contain "
-                "a cluster scope."
-            ),
-        )
-
-    namespace_value = (
-        snapshot.scope.get(
-            "namespace"
-        )
-    )
-
-    namespace = (
-        None
-        if namespace_value in (
-            None,
-            "*",
-        )
-        else namespace_value
-    )
-
-    try:
-        kubernetes = (
-            KubernetesCollector(
-                namespace=namespace
+        if not cluster_name:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "Snapshot does not contain "
+                    "a cluster scope."
+                ),
             )
-        )
 
         event_collector = (
             KubernetesEventCollector(
@@ -217,7 +265,7 @@ def ingest_kubernetes_events(
             signal.model_copy(
                 update={
                     "topology_snapshot_id": (
-                     snapshot_id
+                    snapshot.snapshot_id
                     )
                 }
             )
@@ -240,70 +288,49 @@ def ingest_kubernetes_events(
             detail=str(exc),
         ) from exc
 
-    created_count, updated_count = (
-        save_signals(
-            session=session,
-            signals=signals,
+    lifecycle_result = None
+
+    if auto_orchestrate:
+        lifecycle_result = (
+            ingest_failure_signal_batch(
+                session=session,
+                signals=signals,
+            )
         )
-    )
-    # orchestration_results = []
+        created_count = (
+            lifecycle_result
+            .created_signal_count
+        )
+        updated_count = (
+            lifecycle_result
+            .updated_signal_count
+        )
 
-    # if auto_orchestrate:
-    #     qualifying_signals = [
-    #     signal
-    #     for signal in signals
-    #     if _is_failure_signal(
-    #         signal.severity
-    #     )
-    #     ]
-
+    else:
+        created_count, updated_count = (
+            save_signals(
+                session=session,
+                signals=signals,
+            )
+        )
     qualifying_signals = [
         signal
         for signal in signals
         if is_failure_signal(signal)
     ]
-    # orchestration_results = []
     if auto_orchestrate_grouped:
-          selected_signals = (
-              _select_representative_signals(
-                   qualifying_signals
-                )
+        selected_signals = (
+            _select_representative_signals(
+                qualifying_signals
             )
+        )
     else:
-         selected_signals = sorted(
-              qualifying_signals,
-              key=signal_priority_key,
-              reverse=True,
-            )
-    orchestration_results = []  
-    if auto_orchestrate:
-        for signal in selected_signals[
-           :orchestration_limit
-        ]:
-            result = orchestrate_signal(
-                session=session,
-                signal_id=signal.signal_id,
-                lookback_minutes=(
-                    orchestration_lookback_minutes
-                ),
-                grace_minutes=(
-                    orchestration_grace_minutes
-                ),
-                max_graph_hops=(
-                    orchestration_max_graph_hops
-                ),
-                max_hypotheses=(
-                 orchestration_max_hypotheses
-                ),
-                minimum_recommendation_score=(
-                    orchestration_minimum_recommendation_score
-                ),
-                max_recommendations=(
-                    orchestration_max_recommendations
-                ),
-                require_failure_severity=True,
-            )
-            orchestration_results.append(result)
+        selected_signals = sorted(
+            qualifying_signals,
+            key=signal_priority_key,
+            reverse=True,
+        )
+    orchestration_results = []
     mapped_count = sum(
         1
         for signal in signals
@@ -344,20 +371,51 @@ def ingest_kubernetes_events(
           len(qualifying_signals)
          - len(selected_signals),
         ),
-        orchestrated_count=len(
-          orchestration_results
+        orchestrated_count=(
+            len(lifecycle_result.results)
+            if lifecycle_result is not None
+            else 0
         ),
         skipped_orchestration_count=(
            max(
               0,
                len(qualifying_signals)
-             - len(orchestration_results),
+             - (
+                 len(lifecycle_result.results)
+                 if lifecycle_result is not None
+                 else 0
+             ),
             )
             if auto_orchestrate
             else 0
         ),
         orchestration_results=(
            orchestration_results
+        ),
+        incident_created_count=(
+            lifecycle_result
+            .incident_created_count
+            if lifecycle_result is not None
+            else 0
+        ),
+        incident_correlated_count=(
+            lifecycle_result
+            .incident_correlated_count
+            if lifecycle_result is not None
+            else 0
+        ),
+        automatic_analysis_states=(
+            [
+                result
+                .automatic_analysis_state
+                .value
+                for result in (
+                    lifecycle_result.results
+                    if lifecycle_result
+                    is not None
+                    else []
+                )
+            ]
         ),
     )
 

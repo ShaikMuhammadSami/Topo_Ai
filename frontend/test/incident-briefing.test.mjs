@@ -17,6 +17,7 @@ import {
 } from "../lib/incident-briefing.ts"
 import {
   getIncidentBriefing,
+  getIncidentLifecycleStatus,
 } from "../lib/topo-api.ts"
 
 const componentSource = (
@@ -54,6 +55,13 @@ const topologyPageSource = await readFile(
 const briefingPageSource = await readFile(
   new URL(
     "../app/app/incidents/[incidentId]/page.tsx",
+    import.meta.url,
+  ),
+  "utf8",
+)
+const topoTypesSource = await readFile(
+  new URL(
+    "../lib/topo-types.ts",
     import.meta.url,
   ),
   "utf8",
@@ -421,6 +429,51 @@ test("briefing request encodes the incident ID and AI query", async () => {
     calls[0].url,
     /\/api\/v1\/incidents\/incident%2Fa%20b\/briefing\?include_ai=true$/,
   )
+})
+
+test("lifecycle status request encodes the incident ID", async () => {
+  const originalFetch = globalThis.fetch
+  const calls = []
+  globalThis.fetch = async (url) => {
+    calls.push(String(url))
+    return new Response(
+      JSON.stringify({
+        incident_id: "incident/a b",
+        automatic_analysis_state: "pending_entity",
+        topology_snapshot_id: "snapshot:one",
+        affected_entity_id: null,
+        causal_analysis_id: null,
+        briefing_ready: false,
+        retryable: true,
+        message: "Topo is resolving the entity.",
+      }),
+      {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      },
+    )
+  }
+
+  try {
+    await getIncidentLifecycleStatus("incident/a b")
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+
+  assert.equal(calls.length, 1)
+  assert.match(
+    calls[0],
+    /\/api\/v1\/incidents\/incident%2Fa%20b\/lifecycle-status$/,
+  )
+})
+
+test("pending automated lifecycle is handled without manual RCA instructions", () => {
+  assert.match(componentSource, /getIncidentLifecycleStatus/)
+  assert.match(componentSource, /Topo is investigating this incident/)
+  assert.match(topoTypesSource, /pending_entity/)
+  assert.match(componentSource, /completed_no_hypothesis/)
+  assert.doesNotMatch(componentSource, /Generate the core RCA/)
+  assert.doesNotMatch(componentSource, /Take Snapshot/)
 })
 
 test("main answer hierarchy precedes raw evidence", () => {

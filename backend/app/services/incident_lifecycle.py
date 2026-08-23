@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import timedelta
 from hashlib import sha256
 
 from sqlalchemy.orm import Session
@@ -22,7 +23,8 @@ from app.models.signals import (
     NormalizedSignal,
 )
 from app.repositories.incident_record_repository import (
-    get_incident_by_fingerprint,
+    find_correlatable_incident,
+    list_incidents_by_fingerprint,
 )
 from app.services.incident_grouping import (
     incident_fingerprint,
@@ -53,6 +55,8 @@ from app.services.incident_grouping import (
 def _incident_id(
     signal: NormalizedSignal,
     fingerprint: str,
+    *,
+    recurrence: bool = False,
 ) -> str:
     digest = fingerprint[:24]
 
@@ -80,12 +84,27 @@ def _incident_id(
     #     .replace("_", "-")
     # )
 
-    return (
+    base = (
         "incident:"
         f"{signal.cluster_name}:"
         f"{namespace}:"
         f"{subject}:"
         f"{digest}"
+    )
+
+    if not recurrence:
+        return base
+
+    recurrence_digest = sha256(
+        (
+            f"{signal.signal_id}|"
+            f"{signal.first_observed_at.isoformat()}"
+        ).encode("utf-8")
+    ).hexdigest()[:12]
+
+    return (
+        f"{base}:recurrence:"
+        f"{recurrence_digest}"
     )
 
 
@@ -95,6 +114,14 @@ def _severity(
     return IncidentSeverity(
         signal.severity.value
     )
+
+
+_SEVERITY_PRIORITY = {
+    IncidentSeverity.INFO.value: 1,
+    IncidentSeverity.WARNING.value: 2,
+    IncidentSeverity.ERROR.value: 3,
+    IncidentSeverity.CRITICAL.value: 4,
+}
 
 
 def _title(
@@ -131,6 +158,7 @@ def upsert_incident_from_orchestration(
     recommendations: list[
         RemediationRecommendation
     ],
+    correlation_window_minutes: int = 120,
 ) -> IncidentRecord:
     fingerprint = incident_fingerprint(
         signal
@@ -138,9 +166,18 @@ def upsert_incident_from_orchestration(
 
     now = utc_now_iso()
 
-    existing = get_incident_by_fingerprint(
+    existing = find_correlatable_incident(
         session=session,
         fingerprint=fingerprint,
+        observed_after=(
+            signal.first_observed_at
+            - timedelta(
+                minutes=(
+                    correlation_window_minutes
+                )
+            )
+        ),
+        replay_at=signal.last_observed_at,
     )
 
     top_hypothesis = (
@@ -169,10 +206,17 @@ def upsert_incident_from_orchestration(
         next_status = IncidentStatus.OPEN
 
     if existing is None:
+        recurrence = bool(
+            list_incidents_by_fingerprint(
+                session,
+                fingerprint=fingerprint,
+            )
+        )
         record = IncidentRecord(
             incident_id=_incident_id(
                 signal=signal,
                 fingerprint=fingerprint,
+                recurrence=recurrence,
             ),
             fingerprint=fingerprint,
             status=next_status.value,
@@ -252,24 +296,44 @@ def upsert_incident_from_orchestration(
     ):
         existing.status = next_status.value
 
-    existing.severity = _severity(
+    incoming_severity = _severity(
         signal
     ).value
+
+    if _SEVERITY_PRIORITY.get(
+        incoming_severity,
+        0,
+    ) >= _SEVERITY_PRIORITY.get(
+        existing.severity,
+        0,
+    ):
+        existing.severity = (
+            incoming_severity
+        )
 
     existing.title = _title(signal)
     existing.summary = _summary(signal)
 
+    previous_latest_signal_id = (
+        existing.latest_signal_id
+    )
     existing.latest_signal_id = (
         signal.signal_id
     )
 
-    existing.topology_snapshot_id = (
-        signal.topology_snapshot_id
-    )
+    # The first pinned incident-time graph is
+    # authoritative for historical RCA. Later
+    # correlated signals must not move the incident
+    # onto a newer, unrelated topology snapshot.
+    if not existing.topology_snapshot_id:
+        existing.topology_snapshot_id = (
+            signal.topology_snapshot_id
+        )
 
-    existing.affected_entity_id = (
-        signal.involved_entity_id
-    )
+    if not existing.affected_entity_id:
+        existing.affected_entity_id = (
+            signal.involved_entity_id
+        )
 
     existing.affected_object_kind = (
         signal.involved_object_kind
@@ -279,8 +343,9 @@ def upsert_incident_from_orchestration(
         signal.involved_object_name
     )
 
-    existing.last_observed_at = (
-        signal.last_observed_at.isoformat()
+    existing.last_observed_at = max(
+        existing.last_observed_at,
+        signal.last_observed_at.isoformat(),
     )
 
     existing.latest_analysis_id = (
@@ -312,10 +377,20 @@ def upsert_incident_from_orchestration(
         else existing.latest_recommendation_id
     )
 
-    existing.occurrence_count = max(
-        existing.occurrence_count,
-        signal.occurrence_count,
-    )
+    if (
+        previous_latest_signal_id
+        and previous_latest_signal_id
+        != signal.signal_id
+    ):
+        existing.occurrence_count += max(
+            signal.occurrence_count,
+            1,
+        )
+    else:
+        existing.occurrence_count = max(
+            existing.occurrence_count,
+            signal.occurrence_count,
+        )
 
     existing.updated_at = now
 

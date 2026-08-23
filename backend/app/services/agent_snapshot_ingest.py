@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import hashlib
-import json
 from typing import Any
 
 from sqlalchemy.orm import Session
 
 from app.db.models import (
-    SnapshotRecord,
     TopoAgentRecord,
     utc_now_iso,
 )
@@ -42,6 +40,17 @@ from app.services.agent_azure_enrichment import (
 )
 from app.services.agent_gcp_enrichment import (
     enrich_snapshot_with_gcp,
+)
+from app.models.lifecycle_automation import (
+    TopologyCheckpointReason,
+)
+from app.services.continuous_lifecycle import (
+    failure_signals_from_snapshot,
+    ingest_failure_signal_batch,
+    reconcile_pending_incidents_for_checkpoint,
+)
+from app.services.topology_checkpoint import (
+    persist_topology_checkpoint,
 )
 
 def _enum_member(
@@ -748,6 +757,13 @@ def build_agent_snapshot(
         scope={
             "cluster":
                 submission.cluster_name,
+            "namespace": (
+                submission.namespace_scope[0]
+                if len(
+                    submission.namespace_scope
+                ) == 1
+                else "*"
+            ),
             "namespaces": (
                 ",".join(submission.namespace_scope)
                 if isinstance(submission.namespace_scope,list)
@@ -812,76 +828,122 @@ def persist_agent_snapshot(
     )
 
 
-    existing = session.get(
-        SnapshotRecord,
-        snapshot.snapshot_id,
-    )
     persist_cloud_inventory(
      session=session,
      agent=agent,
      submission=submission,
     )
 
-    if existing is None:
-        payload = snapshot.model_dump(
-            mode="json"
+    requested_reason = str(
+        submission.metadata.get(
+            "checkpoint_reason",
+            TopologyCheckpointReason
+            .PERIODIC_RECONCILE.value,
+        )
+    )
+
+    try:
+        reason = TopologyCheckpointReason(
+            requested_reason
         )
 
-        namespace_value = (
-            submission
-            .namespace_scope[0]
-            if len(
-                submission
-                .namespace_scope
-            )
-            == 1
-            else None
+    except ValueError:
+        reason = (
+            TopologyCheckpointReason
+            .PERIODIC_RECONCILE
         )
-    
-        record = SnapshotRecord(
-            snapshot_id=(
-                snapshot.snapshot_id
-            ),
-            schema_version=(
-                snapshot.schema_version
-            ),
-            collected_at=(
-                snapshot.collected_at
-            ),
-            collector_name=(
-                snapshot.collector_name
-            ),
-            collector_version=(
-                snapshot
-                .collector_version
-            ),
-            cluster_name=(
-                submission.cluster_name
-            ),
-            namespace=namespace_value,
-            entity_count=len(
-                snapshot.entities
-            ),
-            relationship_count=len(
-                snapshot.relationships
-            ),
-            evidence_count=len(
-                snapshot.evidence
-            ),
-            scope_json=json.dumps(
-                payload.get(
-                    "scope",
-                    {},
+
+    raw_trigger_ids = submission.metadata.get(
+        "trigger_event_ids",
+        [],
+    )
+    trigger_event_ids = (
+        [str(item) for item in raw_trigger_ids]
+        if isinstance(raw_trigger_ids, list)
+        else []
+    )
+    raw_trigger_signal_ids = submission.metadata.get(
+        "trigger_signal_ids",
+        [],
+    )
+    trigger_signal_ids = (
+        [
+            str(item)
+            for item in raw_trigger_signal_ids
+        ]
+        if isinstance(raw_trigger_signal_ids, list)
+        else []
+    )
+    raw_trigger_signal_observations = (
+        submission.metadata.get(
+            "trigger_signal_observations",
+            {},
+        )
+    )
+    trigger_signal_observations = (
+        {
+            str(key): str(value)
+            for key, value in (
+                raw_trigger_signal_observations
+            ).items()
+        }
+        if isinstance(
+            raw_trigger_signal_observations,
+            dict,
+        )
+        else {}
+    )
+    checkpoint = persist_topology_checkpoint(
+        session=session,
+        snapshot=snapshot,
+        reason=reason,
+        trigger_event_ids=trigger_event_ids,
+        trigger_signal_ids=trigger_signal_ids,
+        trigger_signal_observations=(
+            trigger_signal_observations
+        ),
+        agent_id=agent.agent_id,
+        derive_changes=True,
+        force=(
+            reason
+            == TopologyCheckpointReason.MANUAL
+        ),
+    )
+
+    checkpoint_snapshot = snapshot.model_copy(
+        update={
+            "snapshot_id": checkpoint.snapshot_id
+        }
+    )
+    failure_signals = (
+        failure_signals_from_snapshot(
+            checkpoint_snapshot
+        )
+    )
+    lifecycle_result = None
+    warnings: list[str] = []
+    reconciled_results = (
+        reconcile_pending_incidents_for_checkpoint(
+            session,
+            snapshot_id=checkpoint.snapshot_id,
+        )
+    )
+
+    if failure_signals:
+        try:
+            lifecycle_result = (
+                ingest_failure_signal_batch(
+                    session=session,
+                    signals=failure_signals,
                 )
-            ),
-            payload_json=json.dumps(
-                payload
-            ),
-            created_at=utc_now_iso(),
-        )
+            )
 
-        session.add(record)
-        session.commit()
+        except Exception as exc:
+            warnings.append(
+                "Automatic failure processing failed; "
+                "the topology checkpoint was preserved: "
+                f"{type(exc).__name__}: {exc}"
+            )
 
     record_snapshot_success(
         session=session,
@@ -894,7 +956,7 @@ def persist_agent_snapshot(
             submission.submission_id
         ),
         snapshot_id=(
-            snapshot.snapshot_id
+            checkpoint.snapshot_id
         ),
         accepted_at=utc_now_iso(),
         entity_count=len(
@@ -903,4 +965,52 @@ def persist_agent_snapshot(
         relationship_count=len(
             snapshot.relationships
         ),
+        checkpoint_created=(
+            checkpoint.created
+        ),
+        checkpoint_reused=(
+            checkpoint.reused
+        ),
+        checkpoint_reason=reason.value,
+        state_digest=(
+            checkpoint.state_digest
+        ),
+        detected_change_count=(
+            checkpoint.detected_change_count
+        ),
+        failure_signal_count=len(
+            failure_signals
+        ),
+        incident_created_count=(
+            lifecycle_result
+            .incident_created_count
+            if lifecycle_result is not None
+            else 0
+        ),
+        incident_correlated_count=(
+            (
+                lifecycle_result
+                .incident_correlated_count
+                if lifecycle_result is not None
+                else 0
+            )
+            + len(reconciled_results)
+        ),
+        automatic_analysis_states=(
+            [
+                result
+                .automatic_analysis_state
+                .value
+                for result in (
+                    (
+                        lifecycle_result.results
+                        if lifecycle_result
+                        is not None
+                        else []
+                    )
+                    + reconciled_results
+                )
+            ]
+        ),
+        warnings=warnings,
     )

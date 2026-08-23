@@ -569,6 +569,42 @@ class AgentConfig:
                     5,
                 )
             ),
+            change_watch_interval_seconds=int(
+                value.get(
+                    "change_watch_interval_seconds",
+                    30,
+                )
+            ),
+            change_watch_overlap_seconds=int(
+                value.get(
+                    "change_watch_overlap_seconds",
+                    60,
+                )
+            ),
+            change_watch_kubernetes=bool(
+                value.get(
+                    "change_watch_kubernetes",
+                    True,
+                )
+            ),
+            change_watch_aws=bool(
+                value.get(
+                    "change_watch_aws",
+                    False,
+                )
+            ),
+            change_watch_azure=bool(
+                value.get(
+                    "change_watch_azure",
+                    False,
+                )
+            ),
+            change_watch_gcp=bool(
+                value.get(
+                    "change_watch_gcp",
+                    False,
+                )
+            ),
         )
 
     def apply_environment(
@@ -929,6 +965,41 @@ class AgentConfig:
                 ),
              self.gcp_api_max_attempts,
             )
+        )
+
+        self.change_watch_interval_seconds = (
+            _integer(
+                os.getenv(
+                    "TOPO_CHANGE_WATCH_INTERVAL"
+                ),
+                self.change_watch_interval_seconds,
+            )
+        )
+        self.change_watch_overlap_seconds = (
+            _integer(
+                os.getenv(
+                    "TOPO_CHANGE_WATCH_OVERLAP"
+                ),
+                self.change_watch_overlap_seconds,
+            )
+        )
+        self.change_watch_kubernetes = _boolean(
+            os.getenv(
+                "TOPO_CHANGE_WATCH_KUBERNETES"
+            ),
+            self.change_watch_kubernetes,
+        )
+        self.change_watch_aws = _boolean(
+            os.getenv("TOPO_CHANGE_WATCH_AWS"),
+            self.change_watch_aws,
+        )
+        self.change_watch_azure = _boolean(
+            os.getenv("TOPO_CHANGE_WATCH_AZURE"),
+            self.change_watch_azure,
+        )
+        self.change_watch_gcp = _boolean(
+            os.getenv("TOPO_CHANGE_WATCH_GCP"),
+            self.change_watch_gcp,
         )
 
         return self

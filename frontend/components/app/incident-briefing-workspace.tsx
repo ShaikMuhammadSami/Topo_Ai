@@ -6,6 +6,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Clock3,
+  LoaderCircle,
   RefreshCw,
 } from "lucide-react"
 import {
@@ -26,8 +27,14 @@ import {
   isActiveIncident,
   type IncidentWorkspaceMode,
 } from "@/lib/incident-briefing"
-import { getIncidentBriefing } from "@/lib/topo-api"
-import type { IncidentBriefing } from "@/lib/topo-types"
+import {
+  getIncidentBriefing,
+  getIncidentLifecycleStatus,
+} from "@/lib/topo-api"
+import type {
+  IncidentBriefing,
+  IncidentLifecycleStatus,
+} from "@/lib/topo-types"
 import { cn } from "@/lib/utils"
 
 const INCLUDE_AI =
@@ -49,10 +56,17 @@ export function IncidentBriefingWorkspace({
   const [loading, setLoading] = useState(true)
   const [error, setError] =
     useState<string | null>(null)
+  const [lifecycleStatus, setLifecycleStatus] =
+    useState<IncidentLifecycleStatus | null>(null)
   const [retryKey, setRetryKey] = useState(0)
+  const [autoRetryCount, setAutoRetryCount] =
+    useState(0)
 
   useEffect(() => {
     const controller = new AbortController()
+    let retryTimer: ReturnType<
+      typeof setTimeout
+    > | null = null
 
     async function loadBriefing() {
       setLoading(true)
@@ -67,15 +81,40 @@ export function IncidentBriefingWorkspace({
           },
         )
         setBriefing(result)
+        setLifecycleStatus(null)
       } catch (requestError) {
         if (controller.signal.aborted) {
           return
         }
-        setError(
-          requestError instanceof Error
-            ? requestError.message
-            : "Unable to load the incident briefing.",
-        )
+        try {
+          const status =
+            await getIncidentLifecycleStatus(
+              incidentId,
+              { signal: controller.signal },
+            )
+          setLifecycleStatus(status)
+
+          if (
+            status.retryable &&
+            autoRetryCount < 3
+          ) {
+            retryTimer = setTimeout(
+              () =>
+                setAutoRetryCount(
+                  (value) => value + 1,
+                ),
+              5000,
+            )
+          }
+        } catch {
+          if (!controller.signal.aborted) {
+            setError(
+              requestError instanceof Error
+                ? requestError.message
+                : "Unable to load the incident briefing.",
+            )
+          }
+        }
       } finally {
         if (!controller.signal.aborted) {
           setLoading(false)
@@ -84,8 +123,14 @@ export function IncidentBriefingWorkspace({
     }
 
     void loadBriefing()
-    return () => controller.abort()
-  }, [incidentId, retryKey])
+    return () => {
+      controller.abort()
+
+      if (retryTimer) {
+        clearTimeout(retryTimer)
+      }
+    }
+  }, [incidentId, retryKey, autoRetryCount])
 
   function selectMode(
     nextMode: IncidentWorkspaceMode,
@@ -105,8 +150,24 @@ export function IncidentBriefingWorkspace({
       <BriefingError
         message={error}
         onRetry={() =>
-          setRetryKey((value) => value + 1)
+          {
+            setAutoRetryCount(0)
+            setRetryKey((value) => value + 1)
+          }
         }
+      />
+    )
+  }
+
+  if (lifecycleStatus && !briefing) {
+    return (
+      <BriefingPending
+        status={lifecycleStatus}
+        autoRetryCount={autoRetryCount}
+        onRetry={() => {
+          setAutoRetryCount(0)
+          setRetryKey((value) => value + 1)
+        }}
       />
     )
   }
@@ -313,12 +374,59 @@ function BriefingError({
         <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
           {message}
         </p>
-        <p className="mt-2 text-xs text-muted-foreground">
-          The incident may not have a causal analysis yet. Generate the core RCA and try again.
-        </p>
         <div className="mt-5 flex flex-wrap gap-3">
           <Button onClick={onRetry}>
             <RefreshCw /> Retry briefing
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/app">Return to incident inbox</Link>
+          </Button>
+        </div>
+      </section>
+    </main>
+  )
+}
+
+function BriefingPending({
+  status,
+  autoRetryCount,
+  onRetry,
+}: {
+  status: IncidentLifecycleStatus
+  autoRetryCount: number
+  onRetry: () => void
+}) {
+  const noHypothesis =
+    status.automatic_analysis_state ===
+    "completed_no_hypothesis"
+
+  return (
+    <main className="mx-auto flex min-h-[65vh] w-full max-w-3xl items-center px-5 py-10">
+      <section className="w-full rounded-md border border-border bg-card p-6">
+        {status.retryable ? (
+          <LoaderCircle className="h-6 w-6 animate-spin text-primary" />
+        ) : (
+          <AlertCircle className="h-6 w-6 text-warn" />
+        )}
+        <h1 className="mt-4 font-heading text-2xl font-bold">
+          {noHypothesis
+            ? "No supported root cause yet"
+            : "Topo is investigating this incident"}
+        </h1>
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+          {status.message}
+        </p>
+        <p className="mt-3 font-mono text-[10px] uppercase text-muted-foreground">
+          State: {humanizeToken(
+            status.automatic_analysis_state,
+          )}
+          {status.retryable && autoRetryCount < 3
+            ? " · checking again shortly"
+            : ""}
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <Button onClick={onRetry}>
+            <RefreshCw /> Check status
           </Button>
           <Button asChild variant="outline">
             <Link href="/app">Return to incident inbox</Link>

@@ -16,6 +16,8 @@ class SnapshotSummary(BaseModel):
     entity_count: int
     relationship_count: int
     evidence_count: int
+    checkpoint_reason: str | None = None
+    state_digest: str | None = None
 
 
 class EntityChange(BaseModel):

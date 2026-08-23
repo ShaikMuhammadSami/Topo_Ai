@@ -5,6 +5,7 @@ from datetime import (
     timedelta,
     timezone,
 )
+from hashlib import sha256
 from typing import Any
 
 from kubernetes import (
@@ -18,12 +19,42 @@ CHANGE_REASONS = {
     "SuccessfulCreate",
     "SuccessfulDelete",
     "Killing",
-    "Pulled",
-    "Failed",
-    "FailedCreate",
-    "FailedScheduling",
-    "BackOff",
 }
+
+
+FAILURE_REASONS = {
+    "BackOff",
+    "CrashLoopBackOff",
+    "ErrImagePull",
+    "ImagePullBackOff",
+    "Failed",
+    "FailedScheduling",
+    "FailedMount",
+    "FailedAttachVolume",
+    "FailedCreate",
+    "FailedKillPod",
+    "FailedPostStartHook",
+    "FailedPreStopHook",
+    "Unhealthy",
+}
+
+
+def _failure_category(reason: str) -> str:
+    normalized = reason.casefold()
+
+    if "image" in normalized or "pull" in normalized:
+        return "image"
+
+    if "schedul" in normalized:
+        return "scheduling"
+
+    if any(
+        value in normalized
+        for value in ("mount", "volume", "attach")
+    ):
+        return "storage"
+
+    return "health"
 
 
 class KubernetesChangePoller:
@@ -31,6 +62,8 @@ class KubernetesChangePoller:
         self,
         *,
         cluster_name: str,
+        namespaces: list[str] | None = None,
+        kube_context: str | None = None,
         overlap_seconds: int = 60,
     ) -> None:
         self.cluster_name = (
@@ -40,12 +73,17 @@ class KubernetesChangePoller:
         self.overlap_seconds = (
             overlap_seconds
         )
+        self.namespaces = sorted(
+            set(namespaces or [])
+        )
 
         try:
             config.load_incluster_config()
 
         except Exception:
-            config.load_kube_config()
+            config.load_kube_config(
+                context=kube_context
+            )
 
         self.api = (
             client.CoreV1Api()
@@ -57,6 +95,51 @@ class KubernetesChangePoller:
             )
             - timedelta(minutes=5)
         )
+        self._failure_signals: list[
+            dict[str, Any]
+        ] = []
+        self._failure_versions: dict[
+            str,
+            tuple[str, int],
+        ] = {}
+        self._pending_failure_versions: dict[
+            str,
+            tuple[str, tuple[str, int]],
+        ] = {}
+
+    def drain_failure_signals(
+        self,
+    ) -> list[dict[str, Any]]:
+        signals = self._failure_signals
+        self._failure_signals = []
+        return signals
+
+    def ack_failure_signals(
+        self,
+        signals: list[dict[str, Any]],
+    ) -> None:
+        for signal in signals:
+            signal_id = str(
+                signal.get("signal_id") or ""
+            )
+            pending = (
+                self._pending_failure_versions.pop(
+                    signal_id,
+                    None,
+                )
+            )
+
+            if pending is None:
+                continue
+
+            key, version = pending
+            self._failure_versions[key] = version
+
+        while len(self._failure_versions) > 5000:
+            oldest = next(
+                iter(self._failure_versions)
+            )
+            self._failure_versions.pop(oldest)
 
     def poll(
         self,
@@ -74,17 +157,36 @@ class KubernetesChangePoller:
             )
         )
 
-        response = (
-            self.api
-            .list_event_for_all_namespaces()
-        )
+        if self.namespaces:
+            items = []
+
+            for namespace in self.namespaces:
+                response = (
+                    self.api.list_namespaced_event(
+                        namespace=namespace
+                    )
+                )
+                items.extend(response.items)
+
+        else:
+            response = (
+                self.api
+                .list_event_for_all_namespaces()
+            )
+            items = response.items
 
         events = []
+        failure_signals: list[
+            dict[str, Any]
+        ] = []
 
-        for item in response.items:
+        for item in items:
             reason = item.reason or ""
 
-            if reason not in CHANGE_REASONS:
+            if (
+                reason not in CHANGE_REASONS
+                and reason not in FAILURE_REASONS
+            ):
                 continue
 
             timestamp = (
@@ -131,6 +233,150 @@ class KubernetesChangePoller:
             external_id = (
                 involved.uid
             )
+
+            if reason in FAILURE_REASONS:
+                event_uid = str(
+                    item.metadata.uid or ""
+                )
+                fingerprint_value = "|".join(
+                    [
+                        self.cluster_name,
+                        namespace or "",
+                        str(external_id or ""),
+                        kind,
+                        name,
+                        reason,
+                        str(
+                            item.reporting_component
+                            or ""
+                        ),
+                    ]
+                )
+                fingerprint = sha256(
+                    fingerprint_value.encode(
+                        "utf-8"
+                    )
+                ).hexdigest()
+                signal_identity = (
+                    event_uid
+                    or fingerprint[:32]
+                )
+                occurrence_count = max(
+                    int(item.count or 1),
+                    1,
+                )
+                first_observed_at = (
+                    item.first_timestamp
+                    or item.event_time
+                    or timestamp
+                )
+                last_observed_at = (
+                    item.last_timestamp
+                    or item.event_time
+                    or timestamp
+                )
+
+                if first_observed_at.tzinfo is None:
+                    first_observed_at = (
+                        first_observed_at.replace(
+                            tzinfo=timezone.utc
+                        )
+                    )
+
+                if last_observed_at.tzinfo is None:
+                    last_observed_at = (
+                        last_observed_at.replace(
+                            tzinfo=timezone.utc
+                        )
+                    )
+
+                failure_version_key = (
+                    event_uid
+                    or fingerprint
+                )
+                failure_version = (
+                    last_observed_at.isoformat(),
+                    occurrence_count,
+                )
+
+                if (
+                    self._failure_versions.get(
+                        failure_version_key
+                    )
+                    == failure_version
+                ):
+                    continue
+
+                signal_id = (
+                    "signal:kubernetes-event:"
+                    f"{self.cluster_name}:"
+                    f"{signal_identity}"
+                )
+                self._pending_failure_versions[
+                    signal_id
+                ] = (
+                    failure_version_key,
+                    failure_version,
+                )
+                failure_signals.append(
+                    {
+                        "signal_id": signal_id,
+                        "fingerprint": fingerprint,
+                        "signal_type": (
+                            "kubernetes_event"
+                        ),
+                        "severity": "error",
+                        "category": (
+                            _failure_category(reason)
+                        ),
+                        "source_system": "kubernetes",
+                        "title": (
+                            f"{reason} on {kind}/{name}"
+                        ),
+                        "summary": (
+                            item.message
+                            or "Kubernetes failure event"
+                        ),
+                        "reason": reason,
+                        "action": item.action,
+                        "first_observed_at": (
+                            first_observed_at.isoformat()
+                        ),
+                        "last_observed_at": (
+                            last_observed_at.isoformat()
+                        ),
+                        "occurrence_count": (
+                            occurrence_count
+                        ),
+                        "cluster_name": (
+                            self.cluster_name
+                        ),
+                        "namespace": namespace,
+                        "topology_snapshot_id": None,
+                        "involved_entity_id": None,
+                        "involved_object_uid": (
+                            str(external_id)
+                            if external_id
+                            else None
+                        ),
+                        "involved_object_kind": kind,
+                        "involved_object_name": name,
+                        "reporting_controller": (
+                            item.reporting_component
+                        ),
+                        "reporting_instance": None,
+                        "attributes": {
+                            "event_type": item.type,
+                            "observation_source": (
+                                "kubernetes_event_watch"
+                            ),
+                        },
+                        "raw_payload": {},
+                    }
+                )
+
+            if reason not in CHANGE_REASONS:
+                continue
 
             events.append(
                 {
@@ -220,5 +466,6 @@ class KubernetesChangePoller:
             )
 
         self.last_poll = now
+        self._failure_signals = failure_signals
 
         return events

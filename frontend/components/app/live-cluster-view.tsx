@@ -178,9 +178,10 @@ export function LiveClusterView() {
           </h2>
 
           <p className="mt-2 max-w-2xl leading-relaxed text-muted-foreground">
-            Capture and inspect timestamped topology
-            snapshots collected from the Kubernetes API.
-            The incident workspace remains demo data for now.
+            Topo continuously checkpoints discovered
+            infrastructure. Inspect immutable history here,
+            or use the advanced capture control when you
+            need an immediate manual refresh.
           </p>
         </div>
 
@@ -191,6 +192,9 @@ export function LiveClusterView() {
       </div>
 
       <section className="rounded-md border border-border bg-card p-5">
+        <p className="mb-4 font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
+          Advanced manual capture
+        </p>
         <div className="grid gap-4 lg:grid-cols-[1fr_auto_auto]">
           <label className="space-y-2">
             <span className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
@@ -209,6 +213,7 @@ export function LiveClusterView() {
 
           <Button
             className="self-end"
+            variant="outline"
             onClick={() =>
               void handleCapture()
             }
@@ -222,7 +227,7 @@ export function LiveClusterView() {
 
             {capturing
               ? "Capturing"
-              : "Capture snapshot"}
+              : "Capture now"}
           </Button>
 
           <Button

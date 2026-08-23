@@ -130,3 +130,8 @@ class SignalIngestionResult(BaseModel):
     orchestration_results: list[
         IncidentOrchestrationResult
     ] = Field(default_factory=list)
+    incident_created_count: int = 0
+    incident_correlated_count: int = 0
+    automatic_analysis_states: list[str] = Field(
+        default_factory=list
+    )
