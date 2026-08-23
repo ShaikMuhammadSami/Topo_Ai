@@ -1,0 +1,128 @@
+{
+  "$id": "https://topoai.local/schemas/eval-1/scenario-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "scenario_version": {"const": "eval-1.scenario.v1"},
+    "scenario_id": {"pattern": "^sentinel-[a-z0-9-]+$", "type": "string"},
+    "family": {"minLength": 1, "type": "string"},
+    "description": {"minLength": 1, "type": "string"},
+    "environment_requirements": {"type": "object"},
+    "objects": {
+      "additionalProperties": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {"minLength": 1, "type": "string"},
+          "role": {"minLength": 1, "type": "string"}
+        },
+        "required": ["kind", "role"],
+        "type": "object"
+      },
+      "minProperties": 1,
+      "type": "object"
+    },
+    "causal_intent": {
+      "additionalProperties": false,
+      "properties": {
+        "root_change": {"minLength": 1, "type": "string"},
+        "root_entity": {"minLength": 1, "type": "string"},
+        "affected_entity": {"minLength": 1, "type": "string"},
+        "failure_mode": {"minLength": 1, "type": "string"}
+      },
+      "required": ["root_change", "root_entity", "affected_entity", "failure_mode"],
+      "type": "object"
+    },
+    "distractors": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+    "non_causes": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+    "expected_path": {
+      "additionalProperties": false,
+      "properties": {
+        "required_hops": {"items": {"$ref": "#/$defs/hop"}, "type": "array"},
+        "optional_hops": {"items": {"$ref": "#/$defs/hop"}, "type": "array"},
+        "forbidden_hops": {"items": {"$ref": "#/$defs/hop"}, "type": "array"}
+      },
+      "required": ["required_hops", "optional_hops", "forbidden_hops"],
+      "type": "object"
+    },
+    "expected_incident": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_count": {"minimum": 0, "type": "integer"},
+        "expected_scope_alias": {"type": "string"}
+      },
+      "required": ["expected_count", "expected_scope_alias"],
+      "type": "object"
+    },
+    "expected_blast_radius": {
+      "additionalProperties": false,
+      "properties": {
+        "required_affected": {"items": {"type": "string"}, "type": "array", "uniqueItems": true},
+        "explicitly_unaffected": {"items": {"type": "string"}, "type": "array", "uniqueItems": true}
+      },
+      "required": ["required_affected", "explicitly_unaffected"],
+      "type": "object"
+    },
+    "expected_evidence": {
+      "additionalProperties": false,
+      "properties": {
+        "required_claim_types": {"items": {"type": "string"}, "type": "array"},
+        "forbidden_support": {"items": {"type": "string"}, "type": "array"},
+        "expected_missing": {"items": {"type": "string"}, "type": "array"}
+      },
+      "required": ["required_claim_types", "forbidden_support", "expected_missing"],
+      "type": "object"
+    },
+    "expected_confidence_semantics": {
+      "additionalProperties": false,
+      "properties": {
+        "score_type": {"const": "heuristic_ranking"},
+        "calibration_status": {"const": "not_calibrated"},
+        "calibrated_probability": {"type": "null"}
+      },
+      "required": ["score_type", "calibration_status", "calibrated_probability"],
+      "type": "object"
+    },
+    "expected_behavior": {
+      "additionalProperties": false,
+      "properties": {
+        "accepted_top_causes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "entity_alias": {"type": "string"},
+              "title_contains_all": {"items": {"type": "string"}, "type": "array"}
+            },
+            "required": ["entity_alias", "title_contains_all"],
+            "type": "object"
+          },
+          "type": "array"
+        },
+        "known_failure_label": {"type": "string"},
+        "should_abstain": {"type": "boolean"}
+      },
+      "required": ["accepted_top_causes", "should_abstain"],
+      "type": "object"
+    }
+  },
+  "required": [
+    "scenario_version", "scenario_id", "family", "description",
+    "environment_requirements", "objects", "causal_intent", "distractors",
+    "non_causes", "expected_path", "expected_incident", "expected_blast_radius",
+    "expected_evidence", "expected_confidence_semantics", "expected_behavior"
+  ],
+  "title": "TopoAI EVAL-1 Scenario Manifest",
+  "type": "object",
+  "$defs": {
+    "hop": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {"minLength": 1, "type": "string"},
+        "to": {"minLength": 1, "type": "string"},
+        "predicate": {"minLength": 1, "type": "string"}
+      },
+      "required": ["from", "to"],
+      "type": "object"
+    }
+  }
+}
+
