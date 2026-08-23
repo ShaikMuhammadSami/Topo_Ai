@@ -29,6 +29,8 @@ from app.models.runtime_observability import (
     RuntimeSensorStatus,
     RuntimeSensorView,
 )
+from app.models.temporal import TimeOrigin
+from app.services.temporal_semantics import build_temporal_metadata
 
 
 def _digest(
@@ -430,6 +432,15 @@ def _upsert_dependency(
     now = utc_now_iso()
 
     if record is None:
+        metadata = dict(observation.metadata)
+        metadata["temporal"] = build_temporal_metadata(
+            source_event_at=observation.first_seen_at,
+            observed_at=observation.first_seen_at,
+            recorded_at=now,
+            source_time_trusted=True,
+            source_field="RuntimeDependencyObservation.first_seen_at",
+            source_origin=TimeOrigin.RUNTIME_OBSERVED,
+        ).model_dump(mode="json")
         record = RuntimeDependencyRecord(
             runtime_dependency_id=(
                 dependency_id
@@ -501,9 +512,7 @@ def _upsert_dependency(
             last_seen_at=(
                 observation.last_seen_at
             ),
-            metadata_json=json.dumps(
-                observation.metadata
-            ),
+            metadata_json=json.dumps(metadata),
             created_at=now,
             updated_at=now,
         )
@@ -576,6 +585,15 @@ def _upsert_process(
     now = utc_now_iso()
 
     if record is None:
+        metadata = dict(observation.metadata)
+        metadata["temporal"] = build_temporal_metadata(
+            source_event_at=observation.first_seen_at,
+            observed_at=observation.first_seen_at,
+            recorded_at=now,
+            source_time_trusted=True,
+            source_field="RuntimeProcessObservation.first_seen_at",
+            source_origin=TimeOrigin.RUNTIME_OBSERVED,
+        ).model_dump(mode="json")
         record = RuntimeProcessRecord(
             runtime_process_id=process_id,
             agent_id=agent.agent_id,
@@ -618,9 +636,7 @@ def _upsert_process(
             last_seen_at=(
                 observation.last_seen_at
             ),
-            metadata_json=json.dumps(
-                observation.metadata
-            ),
+            metadata_json=json.dumps(metadata),
             created_at=now,
             updated_at=now,
         )

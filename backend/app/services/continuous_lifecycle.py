@@ -28,6 +28,12 @@ from app.models.signals import (
     SignalType,
 )
 from app.models.topology import GraphSnapshot
+from app.models.temporal import (
+    TemporalMetadata,
+    TemporalStatus,
+    TimeOrigin,
+    TimeQuality,
+)
 from app.models.webhooks import WebhookEventType
 from app.repositories.causal_analysis_repository import (
     latest_causal_analysis,
@@ -412,6 +418,15 @@ def failure_signals_from_snapshot(
                     ),
                     last_observed_at=(
                         snapshot.collected_at
+                    ),
+                    temporal=TemporalMetadata(
+                        effective_at=snapshot.collected_at,
+                        observed_at=snapshot.collected_at,
+                        time_origin=TimeOrigin.TOPO_OBSERVED,
+                        time_quality=TimeQuality.BOUNDED,
+                        source_field="GraphSnapshot.collected_at",
+                        source_time_authoritative=False,
+                        status=TemporalStatus.PARTIAL,
                     ),
                     occurrence_count=1,
                     cluster_name=cluster_name,

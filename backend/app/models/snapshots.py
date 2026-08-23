@@ -3,12 +3,15 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.models.topology import Entity, Relationship
+from app.models.temporal import TemporalMetadata
 
 
 class SnapshotSummary(BaseModel):
     snapshot_id: str
     schema_version: str
     collected_at: str
+    recorded_at: str | None = None
+    temporal: TemporalMetadata | None = None
     collector_name: str
     collector_version: str
     cluster_name: str | None

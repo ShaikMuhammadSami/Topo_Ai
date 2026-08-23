@@ -10,7 +10,6 @@ from datetime import (
 )
 from typing import Any
 
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -42,6 +41,9 @@ from app.repositories.causal_analysis_repository import (
 )
 from app.services.incident_change_analysis import (
     analyze_incident_change_events,
+)
+from app.services.temporal_semantics import (
+    safe_snapshot_record_at_or_before,
 )
 
 
@@ -142,59 +144,26 @@ def _snapshot_for_incident(
                 ),
             )
 
-    statement = select(
-        SnapshotRecord
-    )
-
     cluster_name = getattr(
         incident,
         "cluster_name",
         None,
     )
 
-    if cluster_name:
-        statement = statement.where(
-            SnapshotRecord.cluster_name
-            == cluster_name
-        )
-
-    statement = (
-        statement
-        .order_by(
-            SnapshotRecord
-            .collected_at
-            .desc()
-        )
-        .limit(500)
+    if not cluster_name:
+        return None, None
+    record = safe_snapshot_record_at_or_before(
+        session,
+        cluster_name=str(cluster_name),
+        namespace=getattr(incident, "namespace", None),
+        boundary_at=incident_time,
     )
-
-    records = list(
-        session.scalars(
-            statement
-        ).all()
+    if record is None:
+        return None, None
+    return (
+        record,
+        GraphSnapshot.model_validate_json(record.payload_json),
     )
-
-    # Never use a future topology
-    # snapshot for historical RCA.
-    for record in records:
-        try:
-            collected_at = _parse_time(
-                record.collected_at
-            )
-
-        except Exception:
-            continue
-
-        if collected_at <= incident_time:
-            return (
-                record,
-                GraphSnapshot
-                .model_validate_json(
-                    record.payload_json
-                ),
-            )
-
-    return None, None
 
 
 def _entity_index(
@@ -431,12 +400,17 @@ def _event_chain_confidence(
     float,
     list[str],
 ]:
-    earlier_time = _parse_time(
-        earlier.event.occurred_at
+    earlier_temporal = getattr(earlier.event, "temporal", None)
+    later_temporal = getattr(later.event, "temporal", None)
+    earlier_time = (
+        earlier_temporal.effective_at
+        if earlier_temporal is not None
+        else _parse_time(earlier.event.occurred_at)
     )
-
-    later_time = _parse_time(
-        later.event.occurred_at
+    later_time = (
+        later_temporal.effective_at
+        if later_temporal is not None
+        else _parse_time(later.event.occurred_at)
     )
 
     if earlier_time >= later_time:
@@ -1050,6 +1024,11 @@ def analyze_causal_rca(
                     event.cluster_name,
                 "namespace":
                     event.namespace,
+                "temporal": (
+                    event.temporal.model_dump(mode="json")
+                    if event.temporal is not None
+                    else None
+                ),
             },
         )
 
@@ -1115,7 +1094,18 @@ def analyze_causal_rca(
                     temporal_weight
                 ),
                 observed_at=(
-                    event.occurred_at
+                    (
+                        event.temporal.observed_at
+                        or event.temporal.recorded_at
+                    ).isoformat()
+                    if (
+                        event.temporal is not None
+                        and (
+                            event.temporal.observed_at
+                            or event.temporal.recorded_at
+                        )
+                    )
+                    else None
                 ),
                 event_id=event_id,
             )

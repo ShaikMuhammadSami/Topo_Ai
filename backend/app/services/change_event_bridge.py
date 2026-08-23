@@ -16,6 +16,7 @@ from app.models.change_events import (
 from app.repositories.change_event_repository import (
     ingest_change_event,
 )
+from app.models.temporal import TimeOrigin, TimeQuality
 
 
 CATEGORY_TO_KIND = {
@@ -274,6 +275,11 @@ def promote_normalized_changes(
             ),
 
             auto_correlate=True,
+
+            source_time_trusted=True,
+            observed_at=change.detected_at.isoformat(),
+            source_time_origin=TimeOrigin.DERIVED,
+            source_time_quality=TimeQuality.BOUNDED,
 
             commit=False,
         )

@@ -9,6 +9,8 @@ from pydantic import (
     Field,
 )
 
+from app.models.temporal import TemporalMetadata
+
 
 class ChangeEventSource(str, Enum):
     TOPOLOGY_DIFF = "topology_diff"
@@ -219,6 +221,8 @@ class ChangeEventView(BaseModel):
 
     occurred_at: str
     received_at: str
+
+    temporal: TemporalMetadata | None = None
 
     environment: str | None
 

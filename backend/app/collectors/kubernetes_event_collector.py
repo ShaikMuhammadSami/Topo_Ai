@@ -14,6 +14,12 @@ from app.models.signals import (
     SignalType,
 )
 from app.models.topology import GraphSnapshot
+from app.models.temporal import (
+    TemporalMetadata,
+    TemporalStatus,
+    TimeOrigin,
+    TimeQuality,
+)
 
 
 ERROR_REASONS = {
@@ -106,9 +112,10 @@ def _to_utc(
         return fallback
 
     if value.tzinfo is None:
-        return value.replace(
-            tzinfo=timezone.utc
-        )
+        # Kubernetes API timestamps are normally RFC3339/aware. A naive
+        # value has ambiguous source semantics, so use the explicitly
+        # labeled collection observation instead of silently declaring UTC.
+        return fallback
 
     return value.astimezone(
         timezone.utc
@@ -151,6 +158,22 @@ def _event_times(
             collected_at,
         ),
     )
+
+
+def _source_event_time(event: Any) -> tuple[datetime | None, str | None]:
+    candidates = (
+        (event.first_timestamp, "KubernetesEvent.first_timestamp"),
+        (event.event_time, "KubernetesEvent.event_time"),
+        (
+            event.metadata.creation_timestamp,
+            "KubernetesEvent.metadata.creation_timestamp",
+        ),
+    )
+    for value, field_name in candidates:
+        if value is None or value.tzinfo is None:
+            continue
+        return value.astimezone(timezone.utc), field_name
+    return None, None
 
 
 def _event_count(
@@ -451,6 +474,28 @@ class KubernetesEventCollector:
                 event=event,
                 collected_at=collected_at,
             )
+            source_event_at, source_field = _source_event_time(event)
+            effective_at = source_event_at or collected_at
+            temporal = TemporalMetadata(
+                effective_at=effective_at,
+                source_event_at=source_event_at,
+                observed_at=collected_at,
+                time_origin=(
+                    TimeOrigin.SOURCE_REPORTED
+                    if source_event_at is not None
+                    else TimeOrigin.TOPO_OBSERVED
+                ),
+                time_quality=(
+                    TimeQuality.EXACT
+                    if source_event_at is not None
+                    else TimeQuality.FALLBACK
+                ),
+                source_field=source_field,
+                source_time_authoritative=(
+                    source_event_at is not None
+                ),
+                status=TemporalStatus.PARTIAL,
+            )
 
             involved_entity = (
                 entities_by_uid.get(
@@ -517,6 +562,7 @@ class KubernetesEventCollector:
                     last_observed_at=(
                         last_observed_at
                     ),
+                    temporal=temporal,
                     occurrence_count=(
                         _event_count(event)
                     ),

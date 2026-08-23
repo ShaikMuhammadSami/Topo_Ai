@@ -11,6 +11,15 @@ from app.models.changes import (
     ChangeSummary,
     NormalizedChange,
 )
+from app.models.temporal import (
+    TemporalStatus,
+    TimeOrigin,
+    TimeQuality,
+)
+from app.services.temporal_semantics import (
+    build_temporal_metadata,
+    parse_utc,
+)
 
 
 def save_changes(
@@ -31,6 +40,24 @@ def save_changes(
         )
 
         if record is None:
+            temporal = change.temporal or build_temporal_metadata(
+                source_event_at=None,
+                observed_at=change.detected_at,
+                recorded_at=now,
+                source_time_trusted=False,
+                source_field="NormalizedChange.detected_at",
+                fallback_origin=TimeOrigin.DERIVED,
+                fallback_quality=TimeQuality.BOUNDED,
+            )
+            temporal = temporal.model_copy(
+                update={
+                    "recorded_at": parse_utc(now),
+                    "status": TemporalStatus.COMPLETE,
+                }
+            )
+            change = change.model_copy(
+                update={"temporal": temporal}
+            )
             record = ChangeRecord(
                 change_id=(
                     change.change_id

@@ -250,6 +250,12 @@ class AwsCloudTrailChangePoller:
                                     .get(
                                         "requestID"
                                     ),
+                                "_temporal": {
+                                    "source_time_available": bool(
+                                        event_time
+                                    ),
+                                    "source_field": "CloudTrail.EventTime",
+                                },
                             },
                             "raw_payload": {},
                         }

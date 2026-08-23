@@ -6,6 +6,8 @@ from app.models.orchestration import (
 )
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.models.temporal import TemporalMetadata
+
 
 class SignalType(str, Enum):
     KUBERNETES_EVENT = "kubernetes_event"
@@ -51,6 +53,8 @@ class NormalizedSignal(BaseModel):
     first_observed_at: datetime
     last_observed_at: datetime
 
+    temporal: TemporalMetadata | None = None
+
     occurrence_count: int = Field(
         default=1,
         ge=1,
@@ -92,6 +96,9 @@ class SignalSummary(BaseModel):
 
     first_observed_at: datetime
     last_observed_at: datetime
+
+    temporal: TemporalMetadata | None = None
+    recorded_at: datetime | None = None
 
     occurrence_count: int
 

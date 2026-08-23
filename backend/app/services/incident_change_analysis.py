@@ -31,6 +31,11 @@ from app.services.canonical_identity import (
     resolve_snapshot_entity_identity,
     resolved_snapshot_entity,
 )
+from app.services.temporal_semantics import (
+    change_event_temporal,
+    incident_operational_time,
+    safe_snapshot_record_at_or_before,
+)
 
 
 def _parse_time(
@@ -79,6 +84,16 @@ def _metadata(
 
 
 def _incident_time(
+    session: Session,
+    incident: IncidentRecord,
+) -> str:
+    return incident_operational_time(
+        session,
+        incident,
+    ).isoformat()
+
+
+def _legacy_incident_time(
     incident: IncidentRecord,
 ) -> str:
     for field_name in (
@@ -249,32 +264,16 @@ def _snapshot_for_incident(
                     )
                 )
 
-    statement = select(
-        SnapshotRecord
-    )
-
     cluster = _incident_cluster(
         incident
     )
-
-    if cluster:
-        statement = statement.where(
-            SnapshotRecord.cluster_name
-            == cluster
-        )
-
-    statement = (
-        statement
-        .order_by(
-            SnapshotRecord
-            .collected_at
-            .desc()
-        )
-        .limit(1)
-    )
-
-    record = session.scalar(
-        statement
+    if not cluster:
+        return None
+    record = safe_snapshot_record_at_or_before(
+        session,
+        cluster_name=cluster,
+        namespace=_incident_namespace(incident),
+        boundary_at=incident_operational_time(session, incident),
     )
 
     if record is None:
@@ -344,6 +343,7 @@ def analyze_incident_change_events(
 
     incident_time_value = (
         _incident_time(
+            session,
             incident
         )
     )
@@ -366,27 +366,21 @@ def analyze_incident_change_events(
         )
     )
 
-    statement = (
-        select(ChangeEventRecord)
-        .where(
-            ChangeEventRecord.occurred_at
-            >= start.isoformat(),
-            ChangeEventRecord.occurred_at
-            <= end.isoformat(),
-        )
-        .order_by(
-            ChangeEventRecord
-            .occurred_at
-            .desc()
-        )
-        .limit(2000)
-    )
+    statement = select(ChangeEventRecord).order_by(
+        ChangeEventRecord.received_at.desc()
+    ).limit(2000)
 
-    records = list(
+    records = [
+        record
+        for record in list(
         session.scalars(
             statement
         ).all()
-    )
+        )
+        if start
+        <= change_event_temporal(record).effective_at
+        <= end
+    ]
 
     affected = _affected_entities(
         incident
@@ -453,9 +447,7 @@ def analyze_incident_change_events(
     candidates = []
 
     for record in records:
-        change_time = _parse_time(
-            record.occurred_at
-        )
+        change_time = change_event_temporal(record).effective_at
 
         minutes_before = (
             incident_time
