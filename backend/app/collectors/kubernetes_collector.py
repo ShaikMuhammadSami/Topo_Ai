@@ -13,6 +13,9 @@ from kubernetes.config.config_exception import ConfigException
 from app.services.container_image_graph import (
     augment_snapshot_with_container_images,
 )
+from app.services.canonical_identity import (
+    canonical_kubernetes_identity,
+)
 from app.models.topology import (
     Entity,
     EntityType,
@@ -135,11 +138,34 @@ class KubernetesCollector:
         )
 
     def _cluster_id(self) -> str:
-        cluster_name = self._safe_identifier(
-            self.connection.cluster_name
-        )
+        return canonical_kubernetes_identity(
+            cluster_name=self.connection.cluster_name,
+            kind="cluster",
+            name=self.connection.cluster_name,
+            namespace=None,
+            uid=None,
+        ).canonical_id
 
-        return f"k8s:{cluster_name}:cluster"
+    def _entity_identity(
+        self,
+        kind: str,
+        metadata: Any,
+    ):
+        return canonical_kubernetes_identity(
+            cluster_name=self.connection.cluster_name,
+            kind=kind,
+            name=str(metadata.name),
+            namespace=(
+                str(metadata.namespace)
+                if metadata.namespace
+                else None
+            ),
+            uid=(
+                str(metadata.uid)
+                if metadata.uid
+                else None
+            ),
+        )
 
     def _entity_id(
         self,
@@ -150,24 +176,10 @@ class KubernetesCollector:
         Prefer Kubernetes UID because it remains stable for the lifetime
         of the Kubernetes object.
         """
-        cluster_name = self._safe_identifier(
-            self.connection.cluster_name
-        )
-
-        fallback_identity = (
-            f"{metadata.namespace or '_cluster'}:"
-            f"{metadata.name}"
-        )
-
-        object_identity = str(
-            metadata.uid
-            or fallback_identity
-        )
-
-        return (
-            f"k8s:{cluster_name}:"
-            f"{kind.lower()}:{object_identity}"
-        )
+        return self._entity_identity(
+            kind=kind,
+            metadata=metadata,
+        ).canonical_id
 
     @staticmethod
     def _relationship_id(
@@ -329,7 +341,14 @@ class KubernetesCollector:
             list[tuple[Any, Entity]],
         ] = {}
 
-        cluster_id = self._cluster_id()
+        cluster_identity = canonical_kubernetes_identity(
+            cluster_name=self.connection.cluster_name,
+            kind="cluster",
+            name=self.connection.cluster_name,
+            namespace=None,
+            uid=None,
+        )
+        cluster_id = cluster_identity.canonical_id
 
         cluster_entity = Entity(
             id=cluster_id,
@@ -338,6 +357,10 @@ class KubernetesCollector:
             name=self.connection.cluster_name,
             source_system="kubernetes",
             external_id=self.connection.context_name,
+            aliases=cluster_identity.aliases,
+            identity_version=(
+                cluster_identity.identity_version
+            ),
             environment=self.environment,
             observed_at=collected_at,
             confidence=1.0,
@@ -385,10 +408,11 @@ class KubernetesCollector:
             relationships.append(relationship)
 
         for namespace in namespaces:
-            namespace_id = self._entity_id(
+            namespace_identity = self._entity_identity(
                 kind="namespace",
                 metadata=namespace.metadata,
             )
+            namespace_id = namespace_identity.canonical_id
 
             namespace_ids[
                 namespace.metadata.name
@@ -400,7 +424,13 @@ class KubernetesCollector:
                 kind="KubernetesNamespace",
                 name=namespace.metadata.name,
                 source_system="kubernetes",
-                external_id=str(namespace.metadata.uid),
+                external_id=(
+                    namespace_identity.source_native_id
+                ),
+                aliases=namespace_identity.aliases,
+                identity_version=(
+                    namespace_identity.identity_version
+                ),
                 environment=self.environment,
                 observed_at=collected_at,
                 confidence=1.0,
@@ -431,14 +461,16 @@ class KubernetesCollector:
             )
 
         for deployment in deployments:
-            deployment_id = self._entity_id(
+            deployment_identity = self._entity_identity(
                 kind="deployment",
                 metadata=deployment.metadata,
             )
+            deployment_id = deployment_identity.canonical_id
 
-            deployment_ids_by_uid[
-                str(deployment.metadata.uid)
-            ] = deployment_id
+            if deployment.metadata.uid:
+                deployment_ids_by_uid[
+                    str(deployment.metadata.uid)
+                ] = deployment_id
 
             containers = [
                 {
@@ -467,7 +499,13 @@ class KubernetesCollector:
                 kind="KubernetesDeployment",
                 name=deployment.metadata.name,
                 source_system="kubernetes",
-                external_id=str(deployment.metadata.uid),
+                external_id=(
+                    deployment_identity.source_native_id
+                ),
+                aliases=deployment_identity.aliases,
+                identity_version=(
+                    deployment_identity.identity_version
+                ),
                 environment=self.environment,
                 observed_at=collected_at,
                 confidence=1.0,
@@ -514,14 +552,18 @@ class KubernetesCollector:
                 )
 
         for replica_set in replica_sets:
-            replica_set_id = self._entity_id(
+            replica_set_identity = self._entity_identity(
                 kind="replicaset",
                 metadata=replica_set.metadata,
             )
+            replica_set_id = (
+                replica_set_identity.canonical_id
+            )
 
-            replica_set_ids_by_uid[
-                str(replica_set.metadata.uid)
-            ] = replica_set_id
+            if replica_set.metadata.uid:
+                replica_set_ids_by_uid[
+                    str(replica_set.metadata.uid)
+                ] = replica_set_id
 
             replica_set_entity = Entity(
                 id=replica_set_id,
@@ -529,8 +571,12 @@ class KubernetesCollector:
                 kind="KubernetesReplicaSet",
                 name=replica_set.metadata.name,
                 source_system="kubernetes",
-                external_id=str(
-                    replica_set.metadata.uid
+                external_id=(
+                    replica_set_identity.source_native_id
+                ),
+                aliases=replica_set_identity.aliases,
+                identity_version=(
+                    replica_set_identity.identity_version
                 ),
                 environment=self.environment,
                 observed_at=collected_at,
@@ -592,10 +638,11 @@ class KubernetesCollector:
                     )
 
         for pod in pods:
-            pod_id = self._entity_id(
+            pod_identity = self._entity_identity(
                 kind="pod",
                 metadata=pod.metadata,
             )
+            pod_id = pod_identity.canonical_id
 
             container_statuses = []
 
@@ -624,7 +671,11 @@ class KubernetesCollector:
                 kind="KubernetesPod",
                 name=pod.metadata.name,
                 source_system="kubernetes",
-                external_id=str(pod.metadata.uid),
+                external_id=pod_identity.source_native_id,
+                aliases=pod_identity.aliases,
+                identity_version=(
+                    pod_identity.identity_version
+                ),
                 environment=self.environment,
                 observed_at=collected_at,
                 confidence=1.0,
@@ -694,10 +745,11 @@ class KubernetesCollector:
                     )
 
         for service in services:
-            service_id = self._entity_id(
+            service_identity = self._entity_identity(
                 kind="service",
                 metadata=service.metadata,
             )
+            service_id = service_identity.canonical_id
 
             ports = [
                 {
@@ -730,7 +782,13 @@ class KubernetesCollector:
                 kind="KubernetesService",
                 name=service.metadata.name,
                 source_system="kubernetes",
-                external_id=str(service.metadata.uid),
+                external_id=(
+                    service_identity.source_native_id
+                ),
+                aliases=service_identity.aliases,
+                identity_version=(
+                    service_identity.identity_version
+                ),
                 environment=self.environment,
                 observed_at=collected_at,
                 confidence=1.0,

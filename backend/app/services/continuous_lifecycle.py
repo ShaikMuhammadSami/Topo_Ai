@@ -54,6 +54,10 @@ from app.services.topology_checkpoint import (
     checkpoint_metadata,
     latest_checkpoint_at_or_before,
 )
+from app.services.canonical_identity import (
+    resolve_snapshot_entity_identity,
+    resolved_snapshot_entity,
+)
 from app.services.webhook_delivery import (
     build_webhook_event,
     publish_event_safely,
@@ -103,66 +107,20 @@ def _entity_for_signal(
     snapshot: GraphSnapshot,
     signal: NormalizedSignal,
 ):
-    if signal.involved_entity_id:
-        matched = next(
-            (
-                entity
-                for entity in snapshot.entities
-                if entity.id
-                == signal.involved_entity_id
-            ),
-            None,
-        )
-
-        if matched is not None:
-            return matched
-
-    if signal.involved_object_uid:
-        matched = next(
-            (
-                entity
-                for entity in snapshot.entities
-                if entity.external_id
-                == signal.involved_object_uid
-            ),
-            None,
-        )
-
-        if matched is not None:
-            return matched
-
-    object_name = (
-        signal.involved_object_name or ""
-    ).casefold()
-    object_kind = (
-        signal.involved_object_kind or ""
-    ).casefold()
-
-    for entity in snapshot.entities:
-        if entity.name.casefold() != object_name:
-            continue
-
-        entity_kind = entity.kind.casefold()
-
-        if (
-            object_kind
-            and entity_kind not in {
-                object_kind,
-                f"kubernetes{object_kind}",
-            }
-        ):
-            continue
-
-        if (
-            signal.namespace
-            and _namespace_for_entity(entity)
-            != signal.namespace
-        ):
-            continue
-
-        return entity
-
-    return None
+    resolution = resolve_snapshot_entity_identity(
+        snapshot,
+        identifier=signal.involved_entity_id,
+        source_native_id=signal.involved_object_uid,
+        source_system=signal.source_system,
+        kind=signal.involved_object_kind,
+        name=signal.involved_object_name,
+        cluster_name=signal.cluster_name,
+        namespace=signal.namespace,
+    )
+    return resolved_snapshot_entity(
+        snapshot,
+        resolution,
+    )
 
 
 def _snapshot_matches_signal_scope(

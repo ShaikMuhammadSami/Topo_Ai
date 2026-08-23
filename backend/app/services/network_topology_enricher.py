@@ -16,6 +16,9 @@ from app.models.topology import (
     GraphSnapshot,
     Relationship,
 )
+from app.services.canonical_identity import (
+    canonical_kubernetes_identity,
+)
 
 
 NETWORK_ANNOTATION_OUTBOUND = (
@@ -81,26 +84,13 @@ def _entity_id(
     namespace: str | None,
     name: str,
 ) -> str:
-    if uid:
-        return (
-            f"k8s:{cluster_name}:"
-            f"{kind.lower()}:{uid}"
-        )
-
-    identity = "|".join(
-        [
-            cluster_name,
-            namespace or "",
-            kind,
-            name,
-        ]
-    )
-
-    return (
-        f"k8s:{cluster_name}:"
-        f"{kind.lower()}:"
-        f"{_hash(identity)}"
-    )
+    return canonical_kubernetes_identity(
+        cluster_name=cluster_name,
+        kind=kind,
+        name=name,
+        namespace=namespace,
+        uid=uid,
+    ).canonical_id
 
 
 def _relationship_id(
@@ -163,6 +153,23 @@ def _make_entity(
     labels: dict[str, str],
     properties: dict[str, Any],
 ) -> Entity:
+    identity = None
+    if kind.startswith("Kubernetes"):
+        cluster = properties.get("cluster")
+        if cluster:
+            identity = canonical_kubernetes_identity(
+                cluster_name=str(cluster),
+                kind=kind,
+                name=name,
+                namespace=(
+                    str(properties["namespace"])
+                    if properties.get("namespace")
+                    else None
+                ),
+                uid=external_id,
+            )
+            entity_id = identity.canonical_id
+
     return Entity(
         id=entity_id,
         entity_type=entity_type,
@@ -170,6 +177,16 @@ def _make_entity(
         name=name,
         source_system=source_system,
         external_id=external_id,
+        aliases=(
+            identity.aliases
+            if identity is not None
+            else []
+        ),
+        identity_version=(
+            identity.identity_version
+            if identity is not None
+            else "legacy"
+        ),
         environment=None,
         observed_at=observed_at,
         confidence=1.0,

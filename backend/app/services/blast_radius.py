@@ -14,6 +14,10 @@ from app.repositories.topology_snapshot_repository import (
 from app.repositories.incident_record_repository import (
     load_incident_record,
 )
+from app.services.canonical_identity import (
+    resolve_snapshot_entity_identity,
+    resolved_snapshot_entity,
+)
 
 
 MAX_DEPTH = 5
@@ -129,13 +133,29 @@ def calculate_blast_radius(
         session=session,
         snapshot_id=incident.topology_snapshot_id,
     )
-    entities = graph.entities
-    relationships = graph.relationships
 
     if graph is None:
         raise ValueError(
             "Topology snapshot not found"
         )
+
+    resolution = resolve_snapshot_entity_identity(
+        graph,
+        identifier=incident.affected_entity_id,
+    )
+    root_entity = resolved_snapshot_entity(
+        graph,
+        resolution,
+    )
+    if root_entity is None:
+        raise ValueError(
+            "Incident affected entity could not be resolved "
+            "in its pinned topology snapshot"
+        )
+
+    root_entity_id = root_entity.id
+    entities = graph.entities
+    relationships = graph.relationships
     
 
 
@@ -146,10 +166,10 @@ def calculate_blast_radius(
 
     queue.append(
         (
-            incident.affected_entity_id,
+            root_entity_id,
             0,
             [
-                incident.affected_entity_id
+                root_entity_id
             ],
             None
         )
@@ -309,8 +329,7 @@ def calculate_blast_radius(
         incident_id=incident_id,
 
         root_entity_id=(
-            incident
-            .affected_entity_id
+            root_entity_id
         ),
 
         root_entity_name=(

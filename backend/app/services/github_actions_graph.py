@@ -5,7 +5,6 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any
-from urllib.parse import urlparse
 from uuid import uuid4
 
 from app.models.topology import (
@@ -16,6 +15,9 @@ from app.models.topology import (
     GraphSnapshot,
     Relationship,
     RelationshipType,
+)
+from app.services.canonical_identity import (
+    canonical_github_workflow_run_identity,
 )
 
 
@@ -52,29 +54,14 @@ DIGEST_PATTERN = re.compile(
 )
 
 
-def _host_identifier(
-    api_url: str,
-) -> str:
-    hostname = (
-        urlparse(api_url).hostname
-        or "github"
-    )
-
-    return re.sub(
-        r"[^a-zA-Z0-9._-]+",
-        "_",
-        hostname,
-    )
-
-
 def _workflow_run_entity_id(
     api_url: str,
     run_id: int | str,
 ) -> str:
-    return (
-        f"github:{_host_identifier(api_url)}:"
-        f"workflow-run:{run_id}"
-    )
+    return canonical_github_workflow_run_identity(
+        api_url=api_url,
+        run_id=run_id,
+    ).canonical_id
 
 
 def _relationship_id(
@@ -339,12 +326,11 @@ def augment_snapshot_with_github_actions(
 
         external_run_id = str(run_id)
 
-        run_entity_id = (
-            _workflow_run_entity_id(
-                api_url=api_url,
-                run_id=run_id,
-            )
+        run_identity = canonical_github_workflow_run_identity(
+            api_url=api_url,
+            run_id=run_id,
         )
+        run_entity_id = run_identity.canonical_id
 
         head_sha = str(
             run.get("head_sha")
@@ -375,6 +361,10 @@ def augment_snapshot_with_github_actions(
             ),
             source_system="github-actions",
             external_id=external_run_id,
+            aliases=run_identity.aliases,
+            identity_version=(
+                run_identity.identity_version
+            ),
             environment=None,
             observed_at=_safe_datetime(
                 run.get("updated_at"),

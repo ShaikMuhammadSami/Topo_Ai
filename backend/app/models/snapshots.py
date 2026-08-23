@@ -22,6 +22,8 @@ class SnapshotSummary(BaseModel):
 
 class EntityChange(BaseModel):
     entity_id: str
+    before_entity_id: str | None = None
+    after_entity_id: str | None = None
     kind: str
     name: str
 
@@ -32,6 +34,8 @@ class EntityChange(BaseModel):
 
 class RelationshipChange(BaseModel):
     relationship_id: str
+    before_relationship_id: str | None = None
+    after_relationship_id: str | None = None
     source_entity_id: str
     target_entity_id: str
     relationship_type: str

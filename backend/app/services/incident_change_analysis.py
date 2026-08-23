@@ -27,6 +27,10 @@ from app.models.topology import (
 from app.repositories.change_event_repository import (
     change_event_view,
 )
+from app.services.canonical_identity import (
+    resolve_snapshot_entity_identity,
+    resolved_snapshot_entity,
+)
 
 
 def _parse_time(
@@ -394,6 +398,24 @@ def analyze_incident_change_events(
             incident,
         )
     )
+
+    if snapshot is not None:
+        resolved_affected: set[str] = set()
+        for entity_reference in sorted(affected):
+            resolution = resolve_snapshot_entity_identity(
+                snapshot,
+                identifier=entity_reference,
+            )
+            entity = resolved_snapshot_entity(
+                snapshot,
+                resolution,
+            )
+            resolved_affected.add(
+                entity.id
+                if entity is not None
+                else entity_reference
+            )
+        affected = resolved_affected
 
     neighbors = _neighbors(
         snapshot,

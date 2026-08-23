@@ -25,6 +25,12 @@ from app.repositories.ownership_repository import (
 from app.repositories.topology_snapshot_repository import (
     load_topology_snapshot,
 )
+from app.services.canonical_identity import (
+    canonical_identity_for_entity,
+    entity_aliases,
+    resolve_snapshot_entity_identity,
+    resolved_snapshot_entity,
+)
 
 
 OWNER_KEYS = (
@@ -175,10 +181,11 @@ def _mapping_priority(
     record: OwnershipMappingRecord,
     entity: Entity,
     service_name: str,
+    entity_ids: set[str] | None = None,
 ) -> tuple[int, int]:
     if (
         record.entity_id
-        == entity.id
+        in (entity_ids or {entity.id})
     ):
         return (3, 100)
 
@@ -204,12 +211,14 @@ def _mapping_confidence(
     record: OwnershipMappingRecord,
     entity: Entity,
     service_name: str,
+    entity_ids: set[str] | None = None,
 ) -> float:
     priority, specificity = (
         _mapping_priority(
             record=record,
             entity=entity,
             service_name=service_name,
+            entity_ids=entity_ids,
         )
     )
 
@@ -308,6 +317,15 @@ def resolve_entity_ownership(
     service_name = stable_service_name(
         entity
     )
+    canonical_identity = canonical_identity_for_entity(
+        entity,
+        snapshot,
+    )
+    accepted_entity_ids = {
+        entity.id,
+        canonical_identity.canonical_id,
+        *entity_aliases(entity, snapshot),
+    }
 
     cluster_name = (
         entity.properties.get(
@@ -347,6 +365,9 @@ def resolve_entity_ownership(
             entity_name=entity.name,
             service_name=service_name,
             environment=environment,
+            entity_ids=sorted(
+                accepted_entity_ids
+            ),
         )
     )
 
@@ -360,6 +381,9 @@ def resolve_entity_ownership(
                     service_name=(
                         service_name
                     ),
+                    entity_ids=(
+                        accepted_entity_ids
+                    ),
                 ),
             reverse=True,
         )[0]
@@ -370,6 +394,9 @@ def resolve_entity_ownership(
                 entity=entity,
                 service_name=(
                     service_name
+                ),
+                entity_ids=(
+                    accepted_entity_ids
                 ),
             )
         )
@@ -538,13 +565,13 @@ def resolve_ownership_by_ids(
             f"{snapshot_id}"
         )
 
-    entity = next(
-        (
-            item
-            for item in snapshot.entities
-            if item.id == entity_id
-        ),
-        None,
+    resolution = resolve_snapshot_entity_identity(
+        snapshot,
+        identifier=entity_id,
+    )
+    entity = resolved_snapshot_entity(
+        snapshot,
+        resolution,
     )
 
     if entity is None:
