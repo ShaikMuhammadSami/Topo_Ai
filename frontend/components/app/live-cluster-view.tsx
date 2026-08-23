@@ -422,7 +422,7 @@ export function LiveClusterView() {
                     Namespace
                   </TableHeader>
                   <TableHeader>
-                    Confidence
+                    Entity heuristic score
                   </TableHeader>
                 </tr>
               </thead>
@@ -460,11 +460,7 @@ export function LiveClusterView() {
 
                       <TableCell>
                         <span className="text-ok">
-                          {Math.round(
-                            entity.confidence *
-                              100,
-                          )}
-                          %
+                          {entity.confidence.toFixed(2)}
                         </span>
                       </TableCell>
                     </tr>

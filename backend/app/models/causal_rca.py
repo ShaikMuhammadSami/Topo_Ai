@@ -13,6 +13,7 @@ from pydantic import (
 from app.models.canonical_identity import (
     CanonicalIdentityResolution,
 )
+from app.models.confidence_semantics import CausalConfidenceSemantics
 from app.models.temporal import TemporalMetadata
 from app.models.topology import (
     RelationshipOrigin,
@@ -428,6 +429,14 @@ class CausalHypothesis(BaseModel):
         CausalConfidenceLevel
     )
 
+    confidence_semantics: CausalConfidenceSemantics | None = Field(
+        default=None,
+        description=(
+            "TC-5 interpretation of the heuristic ranking. Historical "
+            "payloads load without this field and are enriched in memory."
+        ),
+    )
+
     minutes_before_incident: (
         float | None
     ) = None
@@ -492,6 +501,14 @@ class CausalAnalysisResponse(BaseModel):
 
     top_hypothesis: (
         CausalHypothesis | None
+    )
+
+    confidence_semantics: CausalConfidenceSemantics | None = Field(
+        default=None,
+        description=(
+            "TC-5 semantics for the top-ranked hypothesis, or an explicit "
+            "insufficient-evidence state when no hypothesis exists."
+        ),
     )
 
     hypotheses: list[

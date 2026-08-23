@@ -200,12 +200,7 @@ export function IncidentAiExplanation({
             </Badge>
 
             <Badge>
-              confidence{" "}
-              {Math.round(
-                explanation.confidence *
-                  100,
-              )}
-              %
+              generated self-score {explanation.confidence.toFixed(2)} (uncalibrated)
             </Badge>
 
             {explanation.model_name && (
@@ -348,12 +343,7 @@ export function IncidentAiExplanation({
                     </p>
 
                     <p className="mt-2 font-mono text-[10px] text-muted-foreground">
-                      Confidence:{" "}
-                      {Math.round(
-                        claim.confidence
-                        * 100,
-                      )}
-                      %
+                      Generated claim self-score: {claim.confidence.toFixed(2)} (uncalibrated)
                     </p>
 
                     <EvidenceIds

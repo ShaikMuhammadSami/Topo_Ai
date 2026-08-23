@@ -8,6 +8,7 @@ from app.models.ownership import (
     EntityOwnershipResolution,
     IncidentOwnershipImpact,
 )
+from app.models.confidence_semantics import CausalConfidenceSemantics
 
 
 class IncidentOperationalContext(BaseModel):
@@ -29,6 +30,7 @@ class IncidentOperationalContext(BaseModel):
         ge=0.0,
         le=1.0,
     )
+    causal_confidence_semantics: CausalConfidenceSemantics | None = None
 
     root_cause_ownership: (
         EntityOwnershipResolution | None

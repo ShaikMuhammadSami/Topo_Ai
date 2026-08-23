@@ -660,7 +660,7 @@ def test_weak_confidence_is_conservative(
         for action in result.recommended_actions
     )
     assert any(
-        "Causal confidence is low"
+        "heuristic causal ranking is low"
         in warning
         for warning in result.warnings
     )

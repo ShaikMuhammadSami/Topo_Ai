@@ -38,6 +38,48 @@ def _contains(
     )
 
 
+def _causal_semantics(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    for key in (
+        "confidence_semantics",
+        "causal_confidence_semantics",
+    ):
+        semantics = value.get(key)
+        if isinstance(semantics, dict):
+            return semantics
+    return {}
+
+
+def _causal_display(value: object) -> dict:
+    semantics = _causal_semantics(value)
+    payload = value if isinstance(value, dict) else {}
+    return {
+        "Heuristic Ranking Score": semantics.get(
+            "ranking_score",
+            payload.get("score"),
+        ),
+        "Legacy Normalized Ranking": semantics.get(
+            "legacy_confidence",
+            payload.get(
+                "causal_confidence",
+                payload.get("confidence"),
+            ),
+        ),
+        "Ranking Band": semantics.get(
+            "ranking_strength",
+            payload.get("confidence_level"),
+        ),
+        "Evidence State": semantics.get(
+            "evidence_state",
+            "legacy_unknown",
+        ),
+        "Evidence Completeness": semantics.get("evidence_completeness"),
+        "Calibration Status": semantics.get("calibration_status"),
+        "Calibrated Probability": semantics.get("calibrated_probability"),
+    }
+
+
 @app.command("list")
 def list_incidents(
     context: typer.Context,
@@ -291,9 +333,7 @@ def operational_context(
         "Root Source": result.get(
             "root_event_source"
         ),
-        "Causal Confidence": result.get(
-            "causal_confidence"
-        ),
+        **_causal_display(result),
         "Root Entity": result.get(
             "root_entity_id"
         ),
@@ -496,12 +536,7 @@ def incident_briefing(
             "Root Source": root.get(
                 "root_event_source"
             ),
-            "Causal Confidence": root.get(
-                "causal_confidence"
-            ),
-            "Confidence Level": root.get(
-                "confidence_level"
-            ),
+            **_causal_display(root),
             "Root Entity": root.get(
                 "root_entity_id"
             ),
@@ -1052,9 +1087,7 @@ def response_plan(
         "Root Entity": root.get(
             "entity_id"
         ),
-        "Causal Confidence": root.get(
-            "causal_confidence"
-        ),
+        **_causal_display(root),
         "Target Change": root.get(
             "target_event_title"
         ),
@@ -1558,9 +1591,7 @@ def response_intelligence(
             "Root Cause": root.get(
                 "event_title"
             ),
-            "Causal Confidence": root.get(
-                "causal_confidence"
-            ),
+            **_causal_display(root),
             "Deterministic Summary": result.get(
                 "deterministic_summary"
             ),

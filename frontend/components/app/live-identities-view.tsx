@@ -375,7 +375,7 @@ export function LiveIdentitiesView() {
             ReplicaSets, Pods, Services and
             image references into logical
             applications using evidence and
-            confidence-scored mappings.
+            deterministic match-scored mappings.
           </p>
         </div>
 
@@ -697,11 +697,7 @@ function IdentityCard({
               </p>
 
               <p className="font-mono text-[11px] text-ok">
-                {Math.round(
-                  member.confidence *
-                    100,
-                )}
-                %
+                match score {member.confidence.toFixed(2)}
               </p>
             </div>
           ),
@@ -1105,7 +1101,7 @@ function ConfidenceBadge({
 }) {
   return (
     <span className="rounded-sm border border-ok/30 bg-ok/10 px-2 py-1 font-mono text-[11px] text-ok">
-      {Math.round(confidence * 100)}%
+      match score {confidence.toFixed(2)}
     </span>
   )
 }

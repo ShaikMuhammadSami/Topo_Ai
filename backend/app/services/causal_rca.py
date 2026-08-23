@@ -31,6 +31,7 @@ from app.models.causal_rca import (
     CausalNode,
     CausalNodeType,
 )
+from app.models.confidence_semantics import CONFIDENCE_SEMANTICS_VERSION
 from app.models.change_events import (
     IncidentChangeCandidate,
 )
@@ -43,6 +44,9 @@ from app.repositories.causal_analysis_repository import (
 from app.repositories.signal_repository import load_signal
 from app.services.causal_evidence_ledger import (
     build_hypothesis_evidence_ledger,
+)
+from app.services.confidence_semantics import (
+    ensure_analysis_confidence_semantics,
 )
 from app.services.incident_change_analysis import (
     analyze_incident_change_events,
@@ -2156,6 +2160,8 @@ def analyze_causal_rca(
             ALGORITHM_VERSION,
         "evidence_ledger":
             CAUSAL_EVIDENCE_LEDGER_VERSION,
+        "confidence_semantics":
+            CONFIDENCE_SEMANTICS_VERSION,
     }
 
     analysis_id = _stable_id(
@@ -2226,6 +2232,8 @@ def analyze_causal_rca(
             ),
         )
     )
+
+    analysis = ensure_analysis_confidence_semantics(analysis)
 
     if persist:
         analysis = save_causal_analysis(

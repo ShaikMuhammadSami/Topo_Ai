@@ -10,7 +10,7 @@ import {
 import {
   affectedEntityLabel,
   formatBriefingDuration,
-  formatConfidence,
+  formatNormalizedScore,
   humanizeToken,
   isActiveIncident,
   partitionRemediationActions,
@@ -416,7 +416,7 @@ export function HistoricalContext({
                       {incident.incident_title}
                     </p>
                     <span className="font-mono text-[10px] text-muted-foreground">
-                      {formatConfidence(incident.similarity)} similar
+                      similarity score {formatNormalizedScore(incident.similarity)}
                     </span>
                   </div>
                   <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -549,7 +549,7 @@ export function EvidenceAndWarnings({
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-xs font-semibold">{evidence.title}</p>
                   <span className="font-mono text-[9px] text-muted-foreground">
-                    weight {formatConfidence(evidence.weight)}
+                    evidence weight {formatNormalizedScore(evidence.weight)}
                   </span>
                 </div>
                 <p className="mt-1 text-xs leading-relaxed text-muted-foreground">

@@ -1097,6 +1097,21 @@ def test_root_cause_comes_from_13c(
     )
 
 
+def test_briefing_exposes_authoritative_tc5_confidence_semantics(
+    monkeypatch,
+) -> None:
+    result = _build(monkeypatch)
+    semantics = result.root_cause.confidence_semantics
+
+    assert semantics is not None
+    assert semantics.score_type.value == "heuristic_ranking"
+    assert semantics.ranking_score == 90.0
+    assert semantics.legacy_confidence == 0.9
+    assert semantics.evidence_state.value == "legacy_unknown"
+    assert semantics.calibration_status.value == "not_calibrated"
+    assert semantics.calibrated_probability is None
+
+
 def test_relevant_change_matches_causal_target(
     monkeypatch,
 ) -> None:

@@ -13,6 +13,7 @@ from app.models.incident_memory import (
     HistoricalSupportLevel,
 )
 from app.models.causal_rca import CausalEvidenceLedger
+from app.models.confidence_semantics import CausalConfidenceSemantics
 from app.models.incident_outcome import (
     ActionEffectiveness,
     RcaVerdict,
@@ -126,6 +127,13 @@ class BriefingRootCause(BriefingModel):
         le=1.0,
     )
     confidence_level: str
+    confidence_semantics: CausalConfidenceSemantics | None = Field(
+        default=None,
+        description=(
+            "Authoritative TC-5 interpretation of the legacy normalized "
+            "ranking value and its explicitly unavailable probability."
+        ),
+    )
     causal_change_event_id: str
     causal_change_title: str
     causal_change_source: str | None = None

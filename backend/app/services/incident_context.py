@@ -334,6 +334,9 @@ def build_incident_operational_context(
             if hypothesis
             else None
         ),
+        causal_confidence_semantics=(
+            analysis.confidence_semantics
+        ),
         root_cause_ownership=ownership,
         overall_business_impact=impact,
         escalation_targets=(

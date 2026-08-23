@@ -657,7 +657,7 @@ function EvidenceItem({
         <span className="font-mono text-[11px] text-ok">
           {confidence === null
             ? "not scored"
-            : `${Math.round(confidence * 100)}% heuristic`}
+            : `heuristic score ${confidence.toFixed(2)}`}
         </span>
       </div>
 
@@ -686,13 +686,9 @@ function ConfidenceBadge({
 }: {
   confidence: number
 }) {
-  const percent = Math.round(
-    confidence * 100,
-  )
-
   return (
     <span className="rounded-sm border border-ok/30 bg-ok/10 px-3 py-1.5 font-mono text-xs font-semibold text-ok">
-      {percent}% chain confidence
+      chain heuristic minimum {confidence.toFixed(2)}
     </span>
   )
 }

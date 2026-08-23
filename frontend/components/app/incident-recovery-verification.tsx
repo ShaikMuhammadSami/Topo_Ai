@@ -563,11 +563,7 @@ export function IncidentRecoveryVerification({
                     {" — "}
                     {item.status}
                     {" — "}
-                    {Math.round(
-                      item.confidence *
-                        100,
-                    )}
-                    %
+                    check score {item.confidence.toFixed(2)}
                   </option>
                 ),
               )}
@@ -645,11 +641,7 @@ function VerificationDetail({
           </div>
 
           <p className="font-heading text-4xl font-black">
-            {Math.round(
-              verification.confidence *
-                100,
-            )}
-            %
+            {verification.confidence.toFixed(2)} check score
           </p>
         </div>
       </section>
@@ -681,10 +673,8 @@ function VerificationDetail({
         />
 
         <Metric
-          label="CONFIDENCE"
-          value={`${Math.round(
-            verification.confidence * 100,
-          )}%`}
+          label="CHECK SCORE"
+          value={verification.confidence.toFixed(2)}
         />
       </section>
 

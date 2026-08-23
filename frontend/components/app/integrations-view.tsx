@@ -1,7 +1,7 @@
 import { MessageSquare, TriangleAlert, GitPullRequest } from "lucide-react"
 
 const slack = [
-  { who: "topo", bot: true, time: "14:32:14", text: "*INC-4419* checkout-api error-rate 3.2%. Investigating - I'll post when evidence confidence > 0.85." },
+  { who: "topo", bot: true, time: "14:32:14", text: "*INC-4419* checkout-api error-rate 3.2%. Investigating - I'll post when the heuristic evidence rank exceeds 0.85." },
   { who: "topo", bot: true, time: "14:32:34", text: "Top hypothesis (0.91): regression from PR #2284 (cache removal). 2 corroborating signals + 1 diff." },
   { who: "m.solis", bot: false, time: "14:33:11", text: "yeah that was me. on it. reverting." },
   { who: "topo", bot: true, time: "14:35:50", text: "Detected revert sha 3c01ab8 deploying - recovery loop armed." },
@@ -27,7 +27,7 @@ export function IntegrationsView() {
           where topo shows up
         </h2>
         <p className="mt-2 max-w-2xl text-pretty leading-relaxed text-muted-foreground">
-          Once a hypothesis crosses the confidence threshold, topo posts to your
+          Once a hypothesis crosses the configured heuristic ranking threshold, topo posts to your
           existing tools. No new dashboard required.
         </p>
       </div>

@@ -658,14 +658,10 @@ useEffect(() => {
             />
 
             <Metric
-              label="TOP SCORE"
+              label="TOP HEURISTIC RANK"
               value={
                 analysis.hypotheses[0]
-                  ? `${Math.round(
-                      analysis
-                        .hypotheses[0]
-                        .score * 100,
-                    )}%`
+                  ? analysis.hypotheses[0].score.toFixed(2)
                   : "—"
               }
               className="text-ok"
@@ -877,10 +873,7 @@ function HypothesisRow({
             ),
           )}
         >
-          {Math.round(
-            hypothesis.score * 100,
-          )}
-          %
+          {hypothesis.score.toFixed(2)}
         </p>
       </div>
 
@@ -1007,10 +1000,7 @@ function HypothesisDetail({
               ),
             )}
           >
-            {Math.round(
-              hypothesis.score * 100,
-            )}
-            %
+            {hypothesis.score.toFixed(2)}
           </span>
 
           <span className="rounded-sm border border-border bg-background px-2 py-1 font-mono text-[10px] uppercase text-muted-foreground">
@@ -1470,7 +1460,7 @@ function formatScore(
 ): string {
   return value === null
     ? "no hypothesis"
-    : `${Math.round(value * 100)}%`
+    : `${value.toFixed(2)} heuristic rank`
 }
 
 

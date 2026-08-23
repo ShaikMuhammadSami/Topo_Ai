@@ -24,6 +24,13 @@ app = typer.Typer(
 )
 
 
+def _semantics(value: object) -> dict:
+    if not isinstance(value, dict):
+        return {}
+    result = value.get("confidence_semantics")
+    return result if isinstance(result, dict) else {}
+
+
 def _render_analysis(
     runtime,
     result: dict,
@@ -38,6 +45,7 @@ def _render_analysis(
     top = result.get(
         "top_hypothesis"
     )
+    semantics = _semantics(top)
 
     summary = {
         "analysis_id":
@@ -80,7 +88,7 @@ def _render_analysis(
                 else None
             ),
 
-        "top_confidence":
+        "top_legacy_normalized_rank":
             (
                 top.get(
                     "confidence"
@@ -91,6 +99,12 @@ def _render_analysis(
                 )
                 else None
             ),
+
+        "score_type": semantics.get("score_type"),
+        "ranking_band": semantics.get("ranking_strength"),
+        "evidence_state": semantics.get("evidence_state"),
+        "calibration": semantics.get("calibration_status"),
+        "calibrated_probability": semantics.get("calibrated_probability"),
 
         "top_root_source":
             (
@@ -146,15 +160,15 @@ def _render_analysis(
                             "score"
                         ),
 
-                    "confidence":
-                        item.get(
-                            "confidence"
-                        ),
+                    "band": _semantics(item).get(
+                        "ranking_strength",
+                        item.get("confidence_level"),
+                    ),
 
-                    "level":
-                        item.get(
-                            "confidence_level"
-                        ),
+                    "evidence": _semantics(item).get(
+                        "evidence_state",
+                        "legacy_unknown",
+                    ),
 
                     "source":
                         item.get(
@@ -188,12 +202,12 @@ def _render_analysis(
                     ("score",),
                 ),
                 ColumnSpec(
-                    "CONF",
-                    ("confidence",),
+                    "RANK BAND",
+                    ("band",),
                 ),
                 ColumnSpec(
-                    "LEVEL",
-                    ("level",),
+                    "EVIDENCE",
+                    ("evidence",),
                 ),
                 ColumnSpec(
                     "SOURCE",
@@ -248,7 +262,7 @@ def _render_analysis(
                         ),
                     ),
                     ColumnSpec(
-                        "CONF",
+                        "EDGE SCORE",
                         (
                             "confidence_from_previous",
                         ),
