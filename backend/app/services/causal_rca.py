@@ -31,6 +31,7 @@ from app.models.causal_rca import (
     CausalNode,
     CausalNodeType,
 )
+from app.models.causal_candidates import CAUSAL_CANDIDATE_POLICY_VERSION
 from app.models.confidence_semantics import CONFIDENCE_SEMANTICS_VERSION
 from app.models.change_events import (
     IncidentChangeCandidate,
@@ -45,6 +46,7 @@ from app.repositories.signal_repository import load_signal
 from app.services.causal_evidence_ledger import (
     build_hypothesis_evidence_ledger,
 )
+from app.services.causal_candidate_policy import select_causal_candidates
 from app.services.confidence_semantics import (
     ensure_analysis_confidence_semantics,
 )
@@ -685,6 +687,17 @@ def analyze_causal_rca(
         snapshot
     )
 
+    all_candidates = list(change_analysis.candidates)
+    candidate_selection = select_causal_candidates(
+        all_candidates,
+        limit=request.max_hypotheses,
+        entity_kind_by_id={
+            entity_id: entity.kind
+            for entity_id, entity in entity_by_id.items()
+        },
+    )
+    candidates = list(candidate_selection.selected_candidates)
+
     adjacency = _adjacency(
         snapshot
     )
@@ -971,7 +984,7 @@ def analyze_causal_rca(
         candidate.event.event_id:
             candidate
         for candidate
-        in change_analysis.candidates
+        in candidates
     }
 
     temporal_evidence_by_event = {}
@@ -984,7 +997,7 @@ def analyze_causal_rca(
     ] = {}
 
     for candidate in (
-        change_analysis.candidates
+        candidates
     ):
         event = candidate.event
 
@@ -1430,10 +1443,6 @@ def analyze_causal_rca(
         str,
         list[CausalEdge],
     ] = {}
-
-    candidates = list(
-        change_analysis.candidates
-    )
 
     for later in candidates:
         possible = []
@@ -2150,7 +2159,8 @@ def analyze_causal_rca(
             ),
         "event_ids":
             sorted(
-                candidate_by_event.keys()
+                candidate.event.event_id
+                for candidate in all_candidates
             ),
         "request":
             request.model_dump(
@@ -2158,6 +2168,8 @@ def analyze_causal_rca(
             ),
         "algorithm":
             ALGORITHM_VERSION,
+        "candidate_policy":
+            CAUSAL_CANDIDATE_POLICY_VERSION,
         "evidence_ledger":
             CAUSAL_EVIDENCE_LEDGER_VERSION,
         "confidence_semantics":
@@ -2196,6 +2208,12 @@ def analyze_causal_rca(
             algorithm_version=(
                 ALGORITHM_VERSION
             ),
+            candidate_policy_version=(
+                CAUSAL_CANDIDATE_POLICY_VERSION
+            ),
+            candidate_selection_audit=list(
+                candidate_selection.audit
+            ),
             generated_at=(
                 utc_now_iso()
             ),
@@ -2205,7 +2223,7 @@ def analyze_causal_rca(
                 )
             ),
             candidate_count=(
-                len(candidates)
+                len(all_candidates)
             ),
             node_count=len(nodes),
             edge_count=len(edges),
