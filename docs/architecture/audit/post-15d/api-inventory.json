@@ -1,0 +1,3175 @@
+{
+  "schema_version": "1.0",
+  "generated_from": "FastAPI registered route graph plus transitive local-handler AST call graph",
+  "route_count": 128,
+  "routes": [
+    {
+      "id": "api-001",
+      "method": "GET",
+      "path": "/api/v1/topology/sample",
+      "handler": "get_sample_topology",
+      "module": "backend/app/api/topology.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "GraphSnapshot",
+      "service_calls": [
+        "app.services.sample_topology.build_sample_snapshot"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-002",
+      "method": "POST",
+      "path": "/api/v1/topology/validate",
+      "handler": "validate_snapshot",
+      "module": "backend/app/api/topology.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "GraphSnapshot"
+      ],
+      "response_model": "SnapshotValidationResult",
+      "service_calls": [],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-003",
+      "method": "GET",
+      "path": "/api/v1/kubernetes/connection",
+      "handler": "check_kubernetes_connection",
+      "module": "backend/app/api/kubernetes.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "dict",
+      "service_calls": [],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-004",
+      "method": "POST",
+      "path": "/api/v1/kubernetes/discover",
+      "handler": "discover_kubernetes_topology",
+      "module": "backend/app/api/kubernetes.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "GraphSnapshot",
+      "service_calls": [],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-005",
+      "method": "POST",
+      "path": "/api/v1/snapshots/capture",
+      "handler": "capture_snapshot",
+      "module": "backend/app/api/snapshots.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "SnapshotSummary",
+      "service_calls": [
+        "app.services.network_topology_enricher.enrich_kubernetes_network_topology",
+        "app.services.topology_checkpoint.checkpoint_metadata",
+        "app.services.topology_checkpoint.persist_topology_checkpoint"
+      ],
+      "repository_calls": [
+        "app.repositories.snapshot_repository.get_snapshot_record"
+      ],
+      "persistence_touched": [
+        "changes",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-006",
+      "method": "GET",
+      "path": "/api/v1/snapshots",
+      "handler": "get_snapshot_list",
+      "module": "backend/app/api/snapshots.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [
+        "app.services.topology_checkpoint.checkpoint_metadata"
+      ],
+      "repository_calls": [
+        "app.repositories.snapshot_repository.list_snapshots"
+      ],
+      "persistence_touched": [
+        "changes",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-007",
+      "method": "GET",
+      "path": "/api/v1/snapshots/diff",
+      "handler": "get_snapshot_diff",
+      "module": "backend/app/api/snapshots.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "SnapshotDiffResult",
+      "service_calls": [
+        "app.services.snapshot_diff.compare_snapshots"
+      ],
+      "repository_calls": [
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-008",
+      "method": "GET",
+      "path": "/api/v1/snapshots/{snapshot_id}",
+      "handler": "get_snapshot",
+      "module": "backend/app/api/snapshots.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "GraphSnapshot",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-009",
+      "method": "GET",
+      "path": "/api/v1/identities/resolve",
+      "handler": "resolve_snapshot_identities",
+      "module": "backend/app/api/identities.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IdentityResolutionResult",
+      "service_calls": [
+        "app.services.identity_resolver.resolve_kubernetes_identities"
+      ],
+      "repository_calls": [
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-010",
+      "method": "POST",
+      "path": "/api/v1/identities/materialize",
+      "handler": "materialize_snapshot_identities",
+      "module": "backend/app/api/identities.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IdentityResolutionSummary",
+      "service_calls": [
+        "app.services.identity_override_service.apply_identity_overrides",
+        "app.services.identity_resolver.resolve_kubernetes_identities"
+      ],
+      "repository_calls": [
+        "app.repositories.identity_repository.identity_resolution_summary",
+        "app.repositories.identity_repository.list_identity_overrides",
+        "app.repositories.identity_repository.save_identity_resolution",
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "identity_overrides",
+        "identity_resolutions",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-011",
+      "method": "GET",
+      "path": "/api/v1/identities/stored",
+      "handler": "get_stored_identity_resolution",
+      "module": "backend/app/api/identities.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IdentityResolutionResult",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.identity_repository.load_identity_resolution"
+      ],
+      "persistence_touched": [
+        "identity_overrides",
+        "identity_resolutions"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-012",
+      "method": "POST",
+      "path": "/api/v1/identities/overrides",
+      "handler": "create_identity_override",
+      "module": "backend/app/api/identities.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "IdentityOverrideCreate"
+      ],
+      "response_model": "IdentityOverrideView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.identity_repository.upsert_identity_override"
+      ],
+      "persistence_touched": [
+        "identity_overrides",
+        "identity_resolutions"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-013",
+      "method": "GET",
+      "path": "/api/v1/identities/overrides",
+      "handler": "get_identity_overrides",
+      "module": "backend/app/api/identities.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.identity_repository.list_identity_overrides"
+      ],
+      "persistence_touched": [
+        "identity_overrides",
+        "identity_resolutions"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-014",
+      "method": "DELETE",
+      "path": "/api/v1/identities/overrides/{override_id}",
+      "handler": "delete_identity_override",
+      "module": "backend/app/api/identities.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "dict",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.identity_repository.deactivate_identity_override"
+      ],
+      "persistence_touched": [
+        "identity_overrides",
+        "identity_resolutions"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-015",
+      "method": "GET",
+      "path": "/api/v1/github/connection",
+      "handler": "check_github_connection",
+      "module": "backend/app/api/github.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "GitHubConnectionInfo",
+      "service_calls": [],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-016",
+      "method": "POST",
+      "path": "/api/v1/github/enrich",
+      "handler": "enrich_snapshot_with_github",
+      "module": "backend/app/api/github.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "GitHubEnrichmentResult",
+      "service_calls": [
+        "app.services.github_graph.augment_snapshot_with_github"
+      ],
+      "repository_calls": [
+        "app.repositories.snapshot_repository.load_snapshot",
+        "app.repositories.snapshot_repository.save_snapshot"
+      ],
+      "persistence_touched": [
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-017",
+      "method": "POST",
+      "path": "/api/v1/github/actions/enrich",
+      "handler": "enrich_snapshot_with_actions",
+      "module": "backend/app/api/github.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "GitHubActionsEnrichmentResult",
+      "service_calls": [
+        "app.services.github_actions_graph.augment_snapshot_with_github_actions"
+      ],
+      "repository_calls": [
+        "app.repositories.snapshot_repository.load_snapshot",
+        "app.repositories.snapshot_repository.save_snapshot"
+      ],
+      "persistence_touched": [
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-018",
+      "method": "POST",
+      "path": "/api/v1/signals/ingest",
+      "handler": "ingest_normalized_failure_signals",
+      "module": "backend/app/api/signals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "FailureSignalBatchRequest"
+      ],
+      "response_model": "FailureSignalBatchResult",
+      "service_calls": [
+        "app.services.continuous_lifecycle.ingest_failure_signal_batch"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses",
+        "incidents",
+        "signals",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-019",
+      "method": "POST",
+      "path": "/api/v1/signals/kubernetes/events/ingest",
+      "handler": "ingest_kubernetes_events",
+      "module": "backend/app/api/signals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "SignalIngestionResult",
+      "service_calls": [
+        "app.services.continuous_lifecycle.ingest_failure_signal_batch",
+        "app.services.incident_grouping.incident_fingerprint",
+        "app.services.incident_grouping.is_failure_signal",
+        "app.services.incident_grouping.signal_priority_key",
+        "app.services.network_topology_enricher.enrich_kubernetes_network_topology",
+        "app.services.topology_checkpoint.persist_topology_checkpoint"
+      ],
+      "repository_calls": [
+        "app.repositories.signal_repository.save_signals",
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "causal_analyses",
+        "changes",
+        "incidents",
+        "signals",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-020",
+      "method": "GET",
+      "path": "/api/v1/signals",
+      "handler": "get_signals",
+      "module": "backend/app/api/signals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.signal_repository.list_signals"
+      ],
+      "persistence_touched": [
+        "signals"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-021",
+      "method": "GET",
+      "path": "/api/v1/signals/{signal_id}",
+      "handler": "get_signal",
+      "module": "backend/app/api/signals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "NormalizedSignal",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.signal_repository.load_signal"
+      ],
+      "persistence_touched": [
+        "signals"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-022",
+      "method": "POST",
+      "path": "/api/v1/changes/from-diff",
+      "handler": "ingest_snapshot_changes",
+      "module": "backend/app/api/changes.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ChangeIngestionResult",
+      "service_calls": [
+        "app.services.change_event_bridge.promote_normalized_changes",
+        "app.services.change_normalizer.normalize_snapshot_changes"
+      ],
+      "repository_calls": [
+        "app.repositories.change_repository.save_changes",
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "changes",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-023",
+      "method": "GET",
+      "path": "/api/v1/changes",
+      "handler": "get_changes",
+      "module": "backend/app/api/changes.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_repository.list_changes"
+      ],
+      "persistence_touched": [
+        "changes"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-024",
+      "method": "GET",
+      "path": "/api/v1/changes/{change_id}",
+      "handler": "get_change",
+      "module": "backend/app/api/changes.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "NormalizedChange",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_repository.load_change"
+      ],
+      "persistence_touched": [
+        "changes"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-025",
+      "method": "POST",
+      "path": "/api/v1/incidents/analyze",
+      "handler": "analyze_signal_incident",
+      "module": "backend/app/api/incidents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentAnalysis",
+      "service_calls": [
+        "app.services.incident_analysis.analyze_incident"
+      ],
+      "repository_calls": [
+        "app.repositories.change_repository.find_changes_in_window",
+        "app.repositories.incident_repository.save_incident_analysis",
+        "app.repositories.signal_repository.load_signal",
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "changes",
+        "incident_analyses",
+        "signals",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-026",
+      "method": "GET",
+      "path": "/api/v1/incidents",
+      "handler": "get_incident_analyses",
+      "module": "backend/app/api/incidents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.incident_repository.list_incident_analyses"
+      ],
+      "persistence_touched": [
+        "incident_analyses"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-027",
+      "method": "GET",
+      "path": "/api/v1/incidents/{analysis_id}",
+      "handler": "get_incident_analysis",
+      "module": "backend/app/api/incidents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentAnalysis",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.incident_repository.load_incident_analysis"
+      ],
+      "persistence_touched": [
+        "incident_analyses"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-028",
+      "method": "POST",
+      "path": "/api/v1/recommendations/generate",
+      "handler": "generate_analysis_recommendations",
+      "module": "backend/app/api/recommendations.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [
+        "app.services.recommendation_engine.generate_recommendations"
+      ],
+      "repository_calls": [
+        "app.repositories.change_repository.load_change",
+        "app.repositories.incident_repository.load_incident_analysis",
+        "app.repositories.recommendation_repository.save_recommendation",
+        "app.repositories.signal_repository.load_signal",
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "changes",
+        "incident_analyses",
+        "remediation_recommendations",
+        "signals",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-029",
+      "method": "GET",
+      "path": "/api/v1/recommendations",
+      "handler": "get_recommendations",
+      "module": "backend/app/api/recommendations.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.recommendation_repository.list_recommendations"
+      ],
+      "persistence_touched": [
+        "remediation_recommendations"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-030",
+      "method": "GET",
+      "path": "/api/v1/recommendations/{recommendation_id}",
+      "handler": "get_recommendation",
+      "module": "backend/app/api/recommendations.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "RemediationRecommendation",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.recommendation_repository.load_recommendation"
+      ],
+      "persistence_touched": [
+        "remediation_recommendations"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-031",
+      "method": "PATCH",
+      "path": "/api/v1/recommendations/{recommendation_id}/status",
+      "handler": "change_recommendation_status",
+      "module": "backend/app/api/recommendations.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "RecommendationStatusUpdate"
+      ],
+      "response_model": "RemediationRecommendation",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.recommendation_repository.update_recommendation_status"
+      ],
+      "persistence_touched": [
+        "remediation_recommendations"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-032",
+      "method": "POST",
+      "path": "/api/v1/recovery/verify",
+      "handler": "verify_applied_recommendation",
+      "module": "backend/app/api/recovery.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "RecoveryVerification",
+      "service_calls": [
+        "app.services.recovery_verification.verify_recovery",
+        "app.services.webhook_delivery.build_webhook_event",
+        "app.services.webhook_delivery.publish_event_safely"
+      ],
+      "repository_calls": [
+        "app.repositories.incident_repository.load_incident_analysis",
+        "app.repositories.recommendation_repository.load_recommendation",
+        "app.repositories.recovery_repository.save_recovery_verification",
+        "app.repositories.signal_repository.find_signals_after",
+        "app.repositories.signal_repository.load_signal",
+        "app.repositories.snapshot_repository.load_snapshot"
+      ],
+      "persistence_touched": [
+        "incident_analyses",
+        "recovery_verifications",
+        "remediation_recommendations",
+        "signals",
+        "topology_snapshots",
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-033",
+      "method": "GET",
+      "path": "/api/v1/recovery",
+      "handler": "get_recovery_verifications",
+      "module": "backend/app/api/recovery.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.recovery_repository.list_recovery_verifications"
+      ],
+      "persistence_touched": [
+        "recovery_verifications"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-034",
+      "method": "GET",
+      "path": "/api/v1/recovery/{verification_id}",
+      "handler": "get_recovery_verification",
+      "module": "backend/app/api/recovery.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "RecoveryVerification",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.recovery_repository.load_recovery_verification"
+      ],
+      "persistence_touched": [
+        "recovery_verifications"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-035",
+      "method": "POST",
+      "path": "/api/v1/orchestration/signals/{signal_id}/run",
+      "handler": "run_signal_orchestration",
+      "module": "backend/app/api/orchestration.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentOrchestrationResult",
+      "service_calls": [
+        "app.services.incident_orchestrator.orchestrate_signal"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "changes",
+        "incident_analyses",
+        "incidents",
+        "remediation_recommendations",
+        "signals",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-036",
+      "method": "GET",
+      "path": "/api/v1/incident-records",
+      "handler": "get_incident_records",
+      "module": "backend/app/api/incident_records.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.incident_record_repository.list_incident_records"
+      ],
+      "persistence_touched": [
+        "incidents"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-037",
+      "method": "GET",
+      "path": "/api/v1/incident-records/{incident_id}/signals",
+      "handler": "get_incident_related_signals",
+      "module": "backend/app/api/incident_records.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentRelatedSignals",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.incident_record_repository.load_incident_record",
+        "app.repositories.signal_repository.list_signals_by_incident_fingerprint"
+      ],
+      "persistence_touched": [
+        "incidents",
+        "signals"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-038",
+      "method": "GET",
+      "path": "/api/v1/incident-records/{incident_id}",
+      "handler": "get_incident_record",
+      "module": "backend/app/api/incident_records.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentRecordView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.incident_record_repository.load_incident_record"
+      ],
+      "persistence_touched": [
+        "incidents"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-039",
+      "method": "PATCH",
+      "path": "/api/v1/incident-records/{incident_id}/status",
+      "handler": "patch_incident_status",
+      "module": "backend/app/api/incident_records.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "IncidentStatusUpdate"
+      ],
+      "response_model": "IncidentRecordView",
+      "service_calls": [
+        "app.services.webhook_delivery.build_webhook_event",
+        "app.services.webhook_delivery.publish_event_safely"
+      ],
+      "repository_calls": [
+        "app.repositories.incident_record_repository.update_incident_status"
+      ],
+      "persistence_touched": [
+        "incidents",
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-040",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/blast-radius",
+      "handler": "get_blast_radius",
+      "module": "backend/app/api/blast_radius.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "BlastRadiusResponse",
+      "service_calls": [
+        "app.services.blast_radius.calculate_blast_radius"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incidents",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-041",
+      "method": "POST",
+      "path": "/api/v1/predeployment/analyze",
+      "handler": "analyze_planned_change",
+      "module": "backend/app/api/predeployment.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "PreDeploymentImpactRequest"
+      ],
+      "response_model": "PreDeploymentImpactResponse",
+      "service_calls": [
+        "app.services.predeployment_impact.analyze_predeployment_impact",
+        "app.services.webhook_delivery.build_webhook_event",
+        "app.services.webhook_delivery.publish_event_safely"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "topology_snapshots",
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-042",
+      "method": "POST",
+      "path": "/api/v1/ownership/mappings",
+      "handler": "create_mapping",
+      "module": "backend/app/api/ownership.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "OwnershipMappingCreate"
+      ],
+      "response_model": "OwnershipMappingView",
+      "service_calls": [
+        "app.services.ownership_resolver.create_ownership_mapping"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "ownership_mappings",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-043",
+      "method": "GET",
+      "path": "/api/v1/ownership/mappings",
+      "handler": "get_mappings",
+      "module": "backend/app/api/ownership.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.ownership_repository.list_ownership_mappings"
+      ],
+      "persistence_touched": [
+        "ownership_mappings"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-044",
+      "method": "GET",
+      "path": "/api/v1/ownership/resolve",
+      "handler": "resolve_ownership",
+      "module": "backend/app/api/ownership.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "EntityOwnershipResolution",
+      "service_calls": [
+        "app.services.ownership_resolver.resolve_ownership_by_ids"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "ownership_mappings",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-045",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/ownership-impact",
+      "handler": "get_incident_ownership_impact",
+      "module": "backend/app/api/ownership.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentOwnershipImpact",
+      "service_calls": [
+        "app.services.business_impact.calculate_incident_ownership_impact"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incidents",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-046",
+      "method": "POST",
+      "path": "/api/v1/integrations/webhooks",
+      "handler": "create_webhook",
+      "module": "backend/app/api/webhooks.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "WebhookEndpointCreate"
+      ],
+      "response_model": "WebhookEndpointView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.webhook_repository.create_webhook_endpoint"
+      ],
+      "persistence_touched": [
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-047",
+      "method": "GET",
+      "path": "/api/v1/integrations/webhooks",
+      "handler": "get_webhooks",
+      "module": "backend/app/api/webhooks.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.webhook_repository.list_webhook_endpoints"
+      ],
+      "persistence_touched": [
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-048",
+      "method": "PATCH",
+      "path": "/api/v1/integrations/webhooks/{webhook_id}",
+      "handler": "patch_webhook",
+      "module": "backend/app/api/webhooks.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "WebhookEndpointUpdate"
+      ],
+      "response_model": "WebhookEndpointView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.webhook_repository.update_webhook_endpoint"
+      ],
+      "persistence_touched": [
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-049",
+      "method": "POST",
+      "path": "/api/v1/integrations/webhooks/{webhook_id}/test",
+      "handler": "test_webhook",
+      "module": "backend/app/api/webhooks.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "WebhookTestRequest"
+      ],
+      "response_model": "WebhookDeliveryView",
+      "service_calls": [
+        "app.services.webhook_delivery.create_test_event",
+        "app.services.webhook_delivery.deliver_event_to_endpoint"
+      ],
+      "repository_calls": [
+        "app.repositories.webhook_repository.load_webhook_endpoint_record"
+      ],
+      "persistence_touched": [
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-050",
+      "method": "GET",
+      "path": "/api/v1/integrations/deliveries",
+      "handler": "get_deliveries",
+      "module": "backend/app/api/webhooks.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.webhook_repository.list_webhook_deliveries"
+      ],
+      "persistence_touched": [
+        "webhook_deliveries",
+        "webhook_endpoints"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-051",
+      "method": "GET",
+      "path": "/api/v1/snapshots/{snapshot_id}/network-dependencies",
+      "handler": "get_network_dependencies",
+      "module": "backend/app/api/network_dependencies.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "NetworkDependencyAnalysisResponse",
+      "service_calls": [
+        "app.services.network_dependency_analysis.analyze_network_dependencies"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-052",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/explanations",
+      "handler": "create_explanation",
+      "module": "backend/app/api/incident_explanations.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "IncidentExplanationGenerateRequest"
+      ],
+      "response_model": "IncidentExplanationResponse",
+      "service_calls": [
+        "app.services.incident_explanation.generate_incident_explanation"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incident_explanations",
+        "incidents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-053",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/explanations/latest",
+      "handler": "get_latest_explanation",
+      "module": "backend/app/api/incident_explanations.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "Union",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.incident_explanation_repository.load_latest_incident_explanation"
+      ],
+      "persistence_touched": [
+        "incident_explanations"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-054",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/explanations",
+      "handler": "get_explanation_history",
+      "module": "backend/app/api/incident_explanations.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.incident_explanation_repository.list_incident_explanations"
+      ],
+      "persistence_touched": [
+        "incident_explanations"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-055",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/copilot/sessions",
+      "handler": "create_session",
+      "module": "backend/app/api/incident_copilot.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "CopilotSessionCreateRequest"
+      ],
+      "response_model": "CopilotSessionDetail",
+      "service_calls": [
+        "app.services.incident_copilot.create_incident_copilot_session"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incident_copilot_messages",
+        "incident_copilot_sessions",
+        "incidents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-056",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/copilot/sessions",
+      "handler": "get_sessions",
+      "module": "backend/app/api/incident_copilot.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.copilot_repository.list_incident_copilot_sessions"
+      ],
+      "persistence_touched": [
+        "incident_copilot_messages",
+        "incident_copilot_sessions"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-057",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/copilot/sessions/{session_id}",
+      "handler": "get_session_detail",
+      "module": "backend/app/api/incident_copilot.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "CopilotSessionDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.copilot_repository.load_copilot_session_detail"
+      ],
+      "persistence_touched": [
+        "incident_copilot_messages",
+        "incident_copilot_sessions"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-058",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/copilot/sessions/{session_id}/messages",
+      "handler": "post_message",
+      "module": "backend/app/api/incident_copilot.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "CopilotQuestionRequest"
+      ],
+      "response_model": "CopilotQuestionResponse",
+      "service_calls": [
+        "app.services.incident_copilot.answer_copilot_question"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incident_copilot_messages",
+        "incident_copilot_sessions",
+        "incidents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-059",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/investigation-plans",
+      "handler": "create_plan",
+      "module": "backend/app/api/investigation_plans.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "InvestigationPlanGenerateRequest"
+      ],
+      "response_model": "InvestigationPlanDetail",
+      "service_calls": [
+        "app.services.investigation_planner.generate_investigation_plan"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incident_explanations",
+        "incident_investigation_plans",
+        "incident_investigation_steps"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-060",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/investigation-plans",
+      "handler": "get_plans",
+      "module": "backend/app/api/investigation_plans.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.investigation_plan_repository.list_incident_investigation_plans"
+      ],
+      "persistence_touched": [
+        "incident_investigation_plans",
+        "incident_investigation_steps"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-061",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/investigation-plans/{plan_id}",
+      "handler": "get_plan",
+      "module": "backend/app/api/investigation_plans.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "InvestigationPlanDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.investigation_plan_repository.load_investigation_plan"
+      ],
+      "persistence_touched": [
+        "incident_investigation_plans",
+        "incident_investigation_steps"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-062",
+      "method": "PATCH",
+      "path": "/api/v1/incidents/{incident_id}/investigation-plans/{plan_id}/steps/{step_id}",
+      "handler": "patch_step",
+      "module": "backend/app/api/investigation_plans.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "InvestigationStepUpdateRequest"
+      ],
+      "response_model": "InvestigationPlanDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.investigation_plan_repository.update_investigation_step"
+      ],
+      "persistence_touched": [
+        "incident_investigation_plans",
+        "incident_investigation_steps"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-063",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/reports",
+      "handler": "create_report",
+      "module": "backend/app/api/post_incident_reports.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "PostIncidentReportGenerateRequest"
+      ],
+      "response_model": "PostIncidentReportDetail",
+      "service_calls": [
+        "app.services.post_incident_report.generate_post_incident_report"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incident_investigation_plans",
+        "incident_investigation_steps",
+        "post_incident_report_actions",
+        "post_incident_reports"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-064",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/reports",
+      "handler": "get_reports",
+      "module": "backend/app/api/post_incident_reports.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.post_incident_report_repository.list_post_incident_reports"
+      ],
+      "persistence_touched": [
+        "post_incident_report_actions",
+        "post_incident_reports"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-065",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/reports/{report_id}",
+      "handler": "get_report",
+      "module": "backend/app/api/post_incident_reports.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "PostIncidentReportDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.post_incident_report_repository.load_post_incident_report"
+      ],
+      "persistence_touched": [
+        "post_incident_report_actions",
+        "post_incident_reports"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-066",
+      "method": "PATCH",
+      "path": "/api/v1/incidents/{incident_id}/reports/{report_id}",
+      "handler": "patch_report",
+      "module": "backend/app/api/post_incident_reports.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "PostIncidentReportUpdateRequest"
+      ],
+      "response_model": "PostIncidentReportDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.post_incident_report_repository.load_post_incident_report",
+        "app.repositories.post_incident_report_repository.update_post_incident_report"
+      ],
+      "persistence_touched": [
+        "post_incident_report_actions",
+        "post_incident_reports"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-067",
+      "method": "PATCH",
+      "path": "/api/v1/incidents/{incident_id}/reports/{report_id}/actions/{action_item_id}",
+      "handler": "patch_action_item",
+      "module": "backend/app/api/post_incident_reports.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "ReportActionItemUpdateRequest"
+      ],
+      "response_model": "PostIncidentReportDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.post_incident_report_repository.load_post_incident_report",
+        "app.repositories.post_incident_report_repository.update_report_action_item"
+      ],
+      "persistence_touched": [
+        "post_incident_report_actions",
+        "post_incident_reports"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-068",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/reports/{report_id}/export",
+      "handler": "export_report",
+      "module": "backend/app/api/post_incident_reports.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "untyped/implicit",
+      "service_calls": [
+        "app.services.post_incident_report.render_post_incident_report_markdown"
+      ],
+      "repository_calls": [
+        "app.repositories.post_incident_report_repository.load_post_incident_report"
+      ],
+      "persistence_touched": [
+        "incident_investigation_plans",
+        "incident_investigation_steps",
+        "post_incident_report_actions",
+        "post_incident_reports"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-069",
+      "method": "GET",
+      "path": "/api/v1/system/whoami",
+      "handler": "whoami",
+      "module": "backend/app/api/system.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "dict",
+      "service_calls": [],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-070",
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/cloud-status",
+      "handler": "get_agent_cloud_status",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "AgentCloudStatusResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.cloud_repository.agent_cloud_status"
+      ],
+      "persistence_touched": [
+        "cloud_accounts",
+        "cloud_resources",
+        "topo_agents",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-071",
+      "method": "POST",
+      "path": "/api/v1/agents/enrollment-tokens",
+      "handler": "create_token",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "admin role required",
+      "request_models": [
+        "AgentEnrollmentTokenCreateRequest"
+      ],
+      "response_model": "AgentEnrollmentTokenResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.create_enrollment_token"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-072",
+      "method": "POST",
+      "path": "/api/v1/agents/enroll",
+      "handler": "enroll",
+      "module": "backend/app/api/agents.py",
+      "authentication": "one-time agent enrollment token",
+      "authorization": "token purpose and expiry",
+      "request_models": [
+        "AgentEnrollRequest"
+      ],
+      "response_model": "AgentEnrollResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.enroll_agent"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-073",
+      "method": "GET",
+      "path": "/api/v1/agents",
+      "handler": "get_agents",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.list_agents"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-074",
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}",
+      "handler": "get_agent",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "AgentDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.load_agent"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-075",
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/health",
+      "handler": "get_agent_health",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "AgentHealthResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.agent_health"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-076",
+      "method": "POST",
+      "path": "/api/v1/agents/{agent_id}/revoke",
+      "handler": "revoke",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "admin role required",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "AgentDetail",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.revoke_agent"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-077",
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/plugins",
+      "handler": "get_agent_plugins",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "AgentPluginsResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.agent_plugins"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-078",
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/sensors",
+      "handler": "get_runtime_sensors",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.load_agent",
+        "app.repositories.runtime_observability_repository.list_runtime_sensors"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "runtime_dependencies",
+        "runtime_processes",
+        "runtime_sensors",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-079",
+      "method": "GET",
+      "path": "/api/v1/agents/{agent_id}/runtime-dependencies",
+      "handler": "get_runtime_dependencies",
+      "module": "backend/app/api/agents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.load_agent",
+        "app.repositories.runtime_observability_repository.list_runtime_dependencies"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "runtime_dependencies",
+        "runtime_processes",
+        "runtime_sensors",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-080",
+      "method": "GET",
+      "path": "/api/v1/agent/config",
+      "handler": "runtime_config",
+      "module": "backend/app/api/agents.py",
+      "authentication": "agent bearer token",
+      "authorization": "bound active agent",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "AgentConfigView",
+      "service_calls": [],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-081",
+      "method": "POST",
+      "path": "/api/v1/agent/heartbeat",
+      "handler": "heartbeat",
+      "module": "backend/app/api/agents.py",
+      "authentication": "agent bearer token",
+      "authorization": "bound active agent",
+      "request_models": [
+        "AgentHeartbeatRequest"
+      ],
+      "response_model": "AgentHeartbeatResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.agent_repository.record_heartbeat"
+      ],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-082",
+      "method": "POST",
+      "path": "/api/v1/agent/snapshots",
+      "handler": "submit_snapshot",
+      "module": "backend/app/api/agents.py",
+      "authentication": "agent bearer token",
+      "authorization": "bound active agent",
+      "request_models": [
+        "AgentSnapshotSubmission"
+      ],
+      "response_model": "AgentSnapshotReceipt",
+      "service_calls": [
+        "app.services.agent_snapshot_ingest.persist_agent_snapshot"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "agent_enrollment_tokens",
+        "cloud_accounts",
+        "cloud_resources",
+        "topo_agents",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-083",
+      "method": "POST",
+      "path": "/api/v1/agent/runtime/heartbeat",
+      "handler": "runtime_sensor_heartbeat",
+      "module": "backend/app/api/agents.py",
+      "authentication": "agent bearer token",
+      "authorization": "bound active agent",
+      "request_models": [
+        "RuntimeSensorHeartbeatRequest"
+      ],
+      "response_model": "RuntimeSensorHeartbeatResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.runtime_observability_repository.record_sensor_heartbeat"
+      ],
+      "persistence_touched": [
+        "runtime_dependencies",
+        "runtime_processes",
+        "runtime_sensors",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-084",
+      "method": "POST",
+      "path": "/api/v1/agent/runtime/batches",
+      "handler": "runtime_event_batch",
+      "module": "backend/app/api/agents.py",
+      "authentication": "agent bearer token",
+      "authorization": "bound active agent",
+      "request_models": [
+        "RuntimeEventBatchRequest"
+      ],
+      "response_model": "RuntimeEventBatchReceipt",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.runtime_observability_repository.ingest_runtime_event_batch"
+      ],
+      "persistence_touched": [
+        "runtime_dependencies",
+        "runtime_processes",
+        "runtime_sensors",
+        "topo_agents"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-085",
+      "method": "POST",
+      "path": "/api/v1/agent/change-events",
+      "handler": "submit_change_events",
+      "module": "backend/app/api/agents.py",
+      "authentication": "agent bearer token",
+      "authorization": "bound active agent",
+      "request_models": [
+        "AgentChangeEventBatch"
+      ],
+      "response_model": "AgentChangeEventBatchReceipt",
+      "service_calls": [
+        "app.services.topology_checkpoint.is_topology_affecting_change_event"
+      ],
+      "repository_calls": [
+        "app.repositories.change_event_repository.ingest_change_event"
+      ],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "changes",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-086",
+      "method": "POST",
+      "path": "/api/v1/agent/signals",
+      "handler": "submit_failure_signals",
+      "module": "backend/app/api/agents.py",
+      "authentication": "agent bearer token",
+      "authorization": "bound active agent",
+      "request_models": [
+        "FailureSignalBatchRequest"
+      ],
+      "response_model": "FailureSignalBatchResult",
+      "service_calls": [
+        "app.services.continuous_lifecycle.ingest_failure_signal_batch"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses",
+        "incidents",
+        "signals",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-087",
+      "method": "GET",
+      "path": "/api/v1/clouds/accounts",
+      "handler": "get_cloud_accounts",
+      "module": "backend/app/api/clouds.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.cloud_repository.list_cloud_accounts"
+      ],
+      "persistence_touched": [
+        "cloud_accounts",
+        "cloud_resources",
+        "topo_agents",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-088",
+      "method": "GET",
+      "path": "/api/v1/clouds/resources",
+      "handler": "get_cloud_resources",
+      "module": "backend/app/api/clouds.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.cloud_repository.list_cloud_resources"
+      ],
+      "persistence_touched": [
+        "cloud_accounts",
+        "cloud_resources",
+        "topo_agents",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-089",
+      "method": "GET",
+      "path": "/api/v1/clouds/topology",
+      "handler": "get_cloud_topology",
+      "module": "backend/app/api/clouds.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "CloudTopologyResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.cloud_repository.latest_cloud_topology"
+      ],
+      "persistence_touched": [
+        "cloud_accounts",
+        "cloud_resources",
+        "topo_agents",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-090",
+      "method": "POST",
+      "path": "/api/v1/change-events",
+      "handler": "create_event",
+      "module": "backend/app/api/change_events.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "ChangeEventCreate"
+      ],
+      "response_model": "ChangeEventReceipt",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_event_repository.ingest_change_event"
+      ],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-091",
+      "method": "GET",
+      "path": "/api/v1/change-events",
+      "handler": "get_events",
+      "module": "backend/app/api/change_events.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_event_repository.list_change_events"
+      ],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-092",
+      "method": "GET",
+      "path": "/api/v1/change-events/{event_id}",
+      "handler": "get_event",
+      "module": "backend/app/api/change_events.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ChangeEventView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_event_repository.change_event_view",
+        "app.repositories.change_event_repository.load_change_event"
+      ],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-093",
+      "method": "POST",
+      "path": "/api/v1/change-events/{event_id}/correlate",
+      "handler": "correlate_event",
+      "module": "backend/app/api/change_events.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "ChangeCorrelationRequest"
+      ],
+      "response_model": "ChangeCorrelationResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_event_repository.correlate_change_event"
+      ],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-094",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/change-events",
+      "handler": "incident_change_events",
+      "module": "backend/app/api/change_events.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentChangeAnalysisResponse",
+      "service_calls": [
+        "app.services.incident_change_analysis.analyze_incident_change_events"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-095",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/suspected-change-events",
+      "handler": "suspected_changes",
+      "module": "backend/app/api/change_events.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentChangeAnalysisResponse",
+      "service_calls": [
+        "app.services.incident_change_analysis.analyze_incident_change_events"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-096",
+      "method": "POST",
+      "path": "/api/v1/change-sources",
+      "handler": "create",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "ChangeSourceCreate"
+      ],
+      "response_model": "ChangeSourceView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_source_repository.create_change_source"
+      ],
+      "persistence_touched": [
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-097",
+      "method": "GET",
+      "path": "/api/v1/change-sources",
+      "handler": "list_all",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_source_repository.list_change_sources"
+      ],
+      "persistence_touched": [
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-098",
+      "method": "GET",
+      "path": "/api/v1/change-sources/deliveries",
+      "handler": "deliveries",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_source_repository.list_deliveries"
+      ],
+      "persistence_touched": [
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-099",
+      "method": "GET",
+      "path": "/api/v1/change-sources/dead-letters",
+      "handler": "dead_letters",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_source_repository.list_dead_letters"
+      ],
+      "persistence_touched": [
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-100",
+      "method": "POST",
+      "path": "/api/v1/change-sources/dead-letters/{dead_letter_id}/replay",
+      "handler": "replay",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ChangeSourceReplayResponse",
+      "service_calls": [
+        "app.services.change_source_ingest.replay_dead_letter"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-101",
+      "method": "GET",
+      "path": "/api/v1/change-sources/{source_id}",
+      "handler": "get_one",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ChangeSourceView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_source_repository.get_change_source"
+      ],
+      "persistence_touched": [
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-102",
+      "method": "PATCH",
+      "path": "/api/v1/change-sources/{source_id}",
+      "handler": "patch",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "ChangeSourceUpdate"
+      ],
+      "response_model": "ChangeSourceView",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_source_repository.update_change_source"
+      ],
+      "persistence_touched": [
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-103",
+      "method": "GET",
+      "path": "/api/v1/change-sources/{source_id}/doctor",
+      "handler": "doctor",
+      "module": "backend/app/api/change_sources.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ChangeSourceDoctorResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.change_source_repository.load_change_source"
+      ],
+      "persistence_touched": [
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-104",
+      "method": "POST",
+      "path": "/api/v1/change-source-webhooks/{source_id}",
+      "handler": "receive",
+      "module": "backend/app/api/change_source_webhooks.py",
+      "authentication": "provider signature or configured shared secret",
+      "authorization": "enabled change source",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ChangeSourceDeliveryReceipt",
+      "service_calls": [
+        "app.services.change_source_ingest.ingest_change_source_webhook"
+      ],
+      "repository_calls": [
+        "app.repositories.change_source_repository.load_change_source"
+      ],
+      "persistence_touched": [
+        "change_entity_links",
+        "change_events",
+        "change_source_dead_letters",
+        "change_source_deliveries",
+        "change_sources",
+        "topology_snapshots"
+      ],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    },
+    {
+      "id": "api-105",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/causal-rca",
+      "handler": "analyze",
+      "module": "backend/app/api/causal_rca.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "CausalAnalysisRequest"
+      ],
+      "response_model": "CausalAnalysisResponse",
+      "service_calls": [
+        "app.services.causal_rca.analyze_causal_rca"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-106",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/causal-rca/latest",
+      "handler": "latest",
+      "module": "backend/app/api/causal_rca.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "CausalAnalysisResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.causal_analysis_repository.latest_causal_analysis"
+      ],
+      "persistence_touched": [
+        "causal_analyses"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-107",
+      "method": "GET",
+      "path": "/api/v1/causal-analyses/{analysis_id}",
+      "handler": "get_analysis",
+      "module": "backend/app/api/causal_rca.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "CausalAnalysisResponse",
+      "service_calls": [],
+      "repository_calls": [
+        "app.repositories.causal_analysis_repository.load_causal_analysis"
+      ],
+      "persistence_touched": [
+        "causal_analyses"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-108",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/operational-context",
+      "handler": "get_incident_operational_context",
+      "module": "backend/app/api/incident_context.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentOperationalContext",
+      "service_calls": [
+        "app.services.incident_context.build_incident_operational_context"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-109",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/response-plan",
+      "handler": "get_incident_response_plan",
+      "module": "backend/app/api/response_plan.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentResponsePlan",
+      "service_calls": [
+        "app.services.response_plan.build_incident_response_plan"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses",
+        "change_entity_links",
+        "change_events",
+        "incidents",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-110",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/outcome",
+      "handler": "get_outcome",
+      "module": "backend/app/api/incident_outcome.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentOutcome",
+      "service_calls": [
+        "app.services.incident_outcome.get_incident_outcome"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses",
+        "change_entity_links",
+        "change_events",
+        "incident_outcomes",
+        "incidents",
+        "recovery_verifications",
+        "remediation_recommendations",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-111",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/outcome",
+      "handler": "post_outcome",
+      "module": "backend/app/api/incident_outcome.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "IncidentOutcomeUpdate"
+      ],
+      "response_model": "IncidentOutcome",
+      "service_calls": [
+        "app.services.incident_outcome.record_incident_outcome"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses",
+        "change_entity_links",
+        "change_events",
+        "incident_outcomes",
+        "incidents",
+        "recovery_verifications",
+        "remediation_recommendations",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-112",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/historical-intelligence",
+      "handler": "get_historical_incident_intelligence",
+      "module": "backend/app/api/incident_memory.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentHistoricalIntelligence",
+      "service_calls": [
+        "app.services.incident_similarity.build_historical_incident_intelligence"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incident_outcomes"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-113",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/response-intelligence",
+      "handler": "get_incident_response_intelligence",
+      "module": "backend/app/api/response_intelligence.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentResponseIntelligence",
+      "service_calls": [
+        "app.services.response_intelligence.build_incident_response_intelligence"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-114",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/lifecycle-status",
+      "handler": "get_incident_lifecycle_status",
+      "module": "backend/app/api/incident_briefing.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentLifecycleStatusResponse",
+      "service_calls": [
+        "app.services.lifecycle_status.build_incident_lifecycle_status"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-115",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/briefing",
+      "handler": "get_incident_briefing",
+      "module": "backend/app/api/incident_briefing.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentBriefing",
+      "service_calls": [
+        "app.services.incident_briefing.build_incident_briefing"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses",
+        "incident_outcomes",
+        "incidents",
+        "topology_snapshots"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-116",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/execution-readiness",
+      "handler": "get_incident_execution_readiness",
+      "module": "backend/app/api/execution_readiness.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "IncidentExecutionReadiness",
+      "service_calls": [
+        "app.services.execution_readiness.build_incident_execution_readiness"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "incident_outcomes"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-117",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/approvals",
+      "handler": "create_approval_request",
+      "module": "backend/app/api/action_approvals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "ActionApprovalRequest"
+      ],
+      "response_model": "ActionApprovalDetail",
+      "service_calls": [
+        "app.services.action_approval.create_action_approval"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "action_approval_events",
+        "action_approvals"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-118",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/approvals",
+      "handler": "list_approval_history",
+      "module": "backend/app/api/action_approvals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [
+        "app.services.action_approval.list_action_approvals"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "action_approval_events",
+        "action_approvals"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-119",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/approvals/{approval_id}",
+      "handler": "get_approval_request",
+      "module": "backend/app/api/action_approvals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ActionApprovalDetail",
+      "service_calls": [
+        "app.services.action_approval.get_action_approval"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "action_approval_events",
+        "action_approvals"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-120",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/approvals/{approval_id}/approve",
+      "handler": "approve_request",
+      "module": "backend/app/api/action_approvals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "ActionApprovalDecisionRequest"
+      ],
+      "response_model": "ActionApprovalDetail",
+      "service_calls": [
+        "app.services.action_approval.decide_action_approval"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "action_approval_events",
+        "action_approvals"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-121",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/approvals/{approval_id}/reject",
+      "handler": "reject_request",
+      "module": "backend/app/api/action_approvals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "ActionApprovalDecisionRequest"
+      ],
+      "response_model": "ActionApprovalDetail",
+      "service_calls": [
+        "app.services.action_approval.decide_action_approval"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "action_approval_events",
+        "action_approvals"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-122",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/approvals/{approval_id}/revoke",
+      "handler": "revoke_request",
+      "module": "backend/app/api/action_approvals.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "ActionApprovalRevocationRequest"
+      ],
+      "response_model": "ActionApprovalDetail",
+      "service_calls": [
+        "app.services.action_approval.revoke_action_approval"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "action_approval_events",
+        "action_approvals"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-123",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/execution-intents",
+      "handler": "create_intent",
+      "module": "backend/app/api/execution_intents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "ExecutionIntentCreateRequest"
+      ],
+      "response_model": "ExecutionIntentDetail",
+      "service_calls": [
+        "app.services.execution_transaction.create_execution_intent"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "execution_intent_events",
+        "execution_intents"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-124",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/execution-intents",
+      "handler": "list_intents",
+      "module": "backend/app/api/execution_intents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "list",
+      "service_calls": [
+        "app.services.execution_transaction.list_execution_intents"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "execution_intent_events",
+        "execution_intents"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-125",
+      "method": "GET",
+      "path": "/api/v1/incidents/{incident_id}/execution-intents/{execution_id}",
+      "handler": "get_intent",
+      "module": "backend/app/api/execution_intents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "ExecutionIntentDetail",
+      "service_calls": [
+        "app.services.execution_transaction.get_execution_intent"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "execution_intent_events",
+        "execution_intents"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-126",
+      "method": "POST",
+      "path": "/api/v1/incidents/{incident_id}/execution-intents/{execution_id}/cancel",
+      "handler": "cancel_intent",
+      "module": "backend/app/api/execution_intents.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal plus admin/operator policy on mutations",
+      "request_models": [
+        "ExecutionIntentCancelRequest"
+      ],
+      "response_model": "ExecutionIntentDetail",
+      "service_calls": [
+        "app.services.execution_transaction.cancel_execution_intent"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "execution_intent_events",
+        "execution_intents"
+      ],
+      "v1_role": "future_execution",
+      "maturity": "DORMANT",
+      "classification": "DORMANT"
+    },
+    {
+      "id": "api-127",
+      "method": "GET",
+      "path": "/api/v1/automation/status",
+      "handler": "lifecycle_status",
+      "module": "backend/app/api/automation.py",
+      "authentication": "Topo API bearer token when TOPO_AUTH_ENABLED=true",
+      "authorization": "authenticated principal; most routes have no role gate",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "LifecycleStatusResponse",
+      "service_calls": [
+        "app.services.lifecycle_status.build_lifecycle_status"
+      ],
+      "repository_calls": [],
+      "persistence_touched": [
+        "causal_analyses"
+      ],
+      "v1_role": "primary_v1",
+      "maturity": "PROVEN",
+      "classification": "PROVEN"
+    },
+    {
+      "id": "api-128",
+      "method": "GET",
+      "path": "/health",
+      "handler": "health",
+      "module": "backend/app/main.py",
+      "authentication": "public",
+      "authorization": "none",
+      "request_models": [
+        "path/query parameters only"
+      ],
+      "response_model": "dict",
+      "service_calls": [],
+      "repository_calls": [],
+      "persistence_touched": [],
+      "v1_role": "advanced_or_supporting",
+      "maturity": "IMPLEMENTED_BUT_UNPROVEN",
+      "classification": "IMPLEMENTED_BUT_UNPROVEN"
+    }
+  ]
+}
+
