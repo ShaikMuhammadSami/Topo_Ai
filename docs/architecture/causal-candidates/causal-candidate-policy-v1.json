@@ -1,0 +1,93 @@
+{
+  "contract": "topoai-causal-candidate-policy",
+  "policy_version": "causal-candidate-v1",
+  "scoring_algorithm_version": "13c-causal-v1",
+  "selection_order": [
+    "classify_all_raw_candidates",
+    "choose_primary_population_or_legacy_fallback",
+    "rank_by_existing_incident_change_dimensions",
+    "apply_existing_hypothesis_candidate_limit",
+    "run_13c_causal_v1"
+  ],
+  "roles": {
+    "source_mutation": "primary_eligible",
+    "observed_resource_mutation": "primary_eligible",
+    "derived_topology_consequence": "supporting_only",
+    "derived_runtime_consequence": "supporting_only",
+    "runtime_symptom": "supporting_only",
+    "legacy_or_unknown": "fallback_eligible_or_ineligible"
+  },
+  "handled_change_types": [
+    "entity_added",
+    "entity_removed",
+    "entity_updated",
+    "relationship_added",
+    "relationship_removed",
+    "relationship_updated"
+  ],
+  "handled_change_categories": [
+    "deployment",
+    "scaling",
+    "image",
+    "configuration",
+    "runtime",
+    "service",
+    "networking",
+    "topology",
+    "other"
+  ],
+  "relationship_change_semantics": {
+    "topology_diff": {
+      "role": "derived_topology_consequence",
+      "eligibility": "supporting_only"
+    },
+    "provider_native_policy_mutation": {
+      "classification": "classify_the_native_event_not_the_derived_graph_edge"
+    }
+  },
+  "kubernetes_mutable_resource_kinds": [
+    "kubernetesconfigmap",
+    "kubernetescronjob",
+    "kubernetesdaemonset",
+    "kubernetesdeployment",
+    "kubernetesingress",
+    "kubernetesjob",
+    "kubernetesnetworkpolicy",
+    "kubernetessecret",
+    "kubernetesservice",
+    "kubernetesstatefulset"
+  ],
+  "kubernetes_generated_resource_kinds": [
+    "kubernetescontrollerrevision",
+    "kubernetesendpointslice",
+    "kubernetespod",
+    "kubernetesreplicaset"
+  ],
+  "kubernetes_derived_event_reasons": [
+    "killing",
+    "scalingreplicaset",
+    "successfulcreate",
+    "successfuldelete"
+  ],
+  "fallback": {
+    "allowed_role": "legacy_or_unknown",
+    "requires_no_primary_eligible_candidates": true,
+    "supporting_only_may_fallback": false
+  },
+  "raw_ranking": {
+    "score_formula_changed": false,
+    "raw_rank_persisted": true,
+    "raw_score_persisted": true,
+    "exact_tie_breaker": "stable_event_id"
+  },
+  "persistence": {
+    "location": "CausalAnalysisRecord.payload_json",
+    "old_payload_default": null,
+    "rewrite_old_payloads": false
+  },
+  "confidence": {
+    "score_type": "heuristic_ranking",
+    "calibration_status": "not_calibrated",
+    "calibrated_probability": null
+  }
+}
