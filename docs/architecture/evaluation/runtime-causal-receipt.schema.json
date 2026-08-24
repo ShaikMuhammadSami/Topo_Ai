@@ -1,0 +1,182 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo-ai.local/schemas/eval-runtime-causal-receipt-v1.json",
+  "title": "Topo AI independent runtime causal receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "experiment",
+    "kubernetes",
+    "ownership",
+    "container",
+    "deployment_status",
+    "observation",
+    "ground_truth",
+    "topo_used_to_construct_truth"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-runtime-causal-receipt-v1"},
+    "experiment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_id",
+        "source_parent_commit",
+        "source_failure_commit",
+        "immutable_image_ref",
+        "image_digest"
+      ],
+      "properties": {
+        "run_id": {"type": "integer", "minimum": 1},
+        "source_parent_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "source_failure_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "immutable_image_ref": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9.-]*(?::[0-9]+)?/[^@\\s]+@sha256:[0-9a-f]{64}$"
+        },
+        "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "kubernetes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "context",
+        "cluster",
+        "namespace",
+        "namespace_uid",
+        "deployment_name",
+        "deployment_uid",
+        "replicaset_name",
+        "replicaset_uid",
+        "pod_name",
+        "pod_uid"
+      ],
+      "properties": {
+        "context": {"type": "string", "minLength": 1},
+        "cluster": {"type": "string", "minLength": 1},
+        "namespace": {
+          "type": "string",
+          "pattern": "^topo-eval-lineage-causal-[1-9][0-9]*$"
+        },
+        "namespace_uid": {"type": "string", "minLength": 1},
+        "deployment_name": {"const": "lineage-causal-fixture"},
+        "deployment_uid": {"type": "string", "minLength": 1},
+        "replicaset_name": {"type": "string", "minLength": 1},
+        "replicaset_uid": {"type": "string", "minLength": 1},
+        "pod_name": {"type": "string", "minLength": 1},
+        "pod_uid": {"type": "string", "minLength": 1}
+      }
+    },
+    "ownership": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "replicaset_owner_deployment_uid",
+        "pod_owner_replicaset_uid"
+      ],
+      "properties": {
+        "replicaset_owner_deployment_uid": {"type": "string", "minLength": 1},
+        "pod_owner_replicaset_uid": {"type": "string", "minLength": 1}
+      }
+    },
+    "container": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "image",
+        "image_id",
+        "restart_count",
+        "waiting_reason",
+        "current_state",
+        "last_termination_reason",
+        "last_termination_exit_code",
+        "last_termination_started_at",
+        "last_termination_finished_at",
+        "backoff_observation"
+      ],
+      "properties": {
+        "name": {"const": "fixture"},
+        "image": {"type": "string", "minLength": 1},
+        "image_id": {"type": ["string", "null"]},
+        "restart_count": {"type": "integer", "minimum": 1},
+        "waiting_reason": {"type": ["string", "null"]},
+        "current_state": {"enum": ["waiting", "running", "terminated"]},
+        "last_termination_reason": {"const": "Error"},
+        "last_termination_exit_code": {"const": 42},
+        "last_termination_started_at": {"type": "string", "format": "date-time"},
+        "last_termination_finished_at": {"type": "string", "format": "date-time"},
+        "backoff_observation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "reason", "event_uid", "event_count", "observed_at"],
+          "properties": {
+            "source": {"enum": ["container_status_waiting", "kubernetes_event"]},
+            "reason": {"enum": ["BackOff", "CrashLoopBackOff"]},
+            "event_uid": {"type": ["string", "null"]},
+            "event_count": {"type": ["integer", "null"], "minimum": 1},
+            "observed_at": {
+              "oneOf": [
+                {"type": "string", "format": "date-time"},
+                {"type": "null"}
+              ]
+            }
+          }
+        }
+      }
+    },
+    "deployment_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "desired_replicas",
+        "ready_replicas",
+        "available_replicas",
+        "unavailable_replicas"
+      ],
+      "properties": {
+        "desired_replicas": {"const": 1},
+        "ready_replicas": {"const": 0},
+        "available_replicas": {"const": 0},
+        "unavailable_replicas": {"type": "integer", "minimum": 0}
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "started_at",
+        "failure_confirmed_at",
+        "captured_at",
+        "timeout_seconds"
+      ],
+      "properties": {
+        "started_at": {"type": "string", "format": "date-time"},
+        "failure_confirmed_at": {"type": "string", "format": "date-time"},
+        "captured_at": {"type": "string", "format": "date-time"},
+        "timeout_seconds": {"type": "integer", "minimum": 1, "maximum": 120}
+      }
+    },
+    "ground_truth": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "exact_image_identity_confirmed",
+        "ownership_chain_confirmed",
+        "failure_mechanism_confirmed",
+        "runtime_manifestation_confirmed",
+        "operational_impact_confirmed"
+      ],
+      "properties": {
+        "exact_image_identity_confirmed": {"const": true},
+        "ownership_chain_confirmed": {"const": true},
+        "failure_mechanism_confirmed": {"const": true},
+        "runtime_manifestation_confirmed": {"const": true},
+        "operational_impact_confirmed": {"const": true}
+      }
+    },
+    "topo_used_to_construct_truth": {"const": false}
+  }
+}
