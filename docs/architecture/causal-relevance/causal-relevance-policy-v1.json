@@ -1,0 +1,175 @@
+{
+  "schema_version": "1.0",
+  "policy_version": "causal-relevance-v1",
+  "runtime_owner": "backend/app/services/causal_relevance_policy.py",
+  "canonical_orientation": "candidate causal source -> incident affected entity/effect",
+  "implicit_predicate_fallback": false,
+  "path_preference": [
+    "direct_entity",
+    "control_ownership",
+    "artifact_lineage",
+    "dependency_impact",
+    "runtime_hosting",
+    "other_supported"
+  ],
+  "predicates": [
+    {
+      "predicate": "attached_to",
+      "tc2_direction": "attached object -> attachment target",
+      "causal_traversal_direction": "none",
+      "semantic_class": "runtime_hosting",
+      "support": "unsupported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "Attachment meaning spans host, network, and cloud domains; V1 has no measured uniform causal rule.",
+      "known_limitations": ["Provider domains require separate evaluation before traversal is enabled."]
+    },
+    {
+      "predicate": "calls",
+      "tc2_direction": "caller -> destination",
+      "causal_traversal_direction": "reverse",
+      "semantic_class": "dependency_impact",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "A changed destination may affect its caller.",
+      "known_limitations": ["Declared and observed calls retain their original TC-2 provenance quality."]
+    },
+    {
+      "predicate": "contains",
+      "tc2_direction": "scope/container -> member",
+      "causal_traversal_direction": "none",
+      "semantic_class": "structural_context",
+      "support": "structural_only",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "Shared scope is not operational source-to-effect evidence.",
+      "known_limitations": ["Containment remains available as topology context but never causal relevance."]
+    },
+    {
+      "predicate": "depends_on",
+      "tc2_direction": "dependent -> dependency",
+      "causal_traversal_direction": "reverse",
+      "semantic_class": "dependency_impact",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "A changed dependency may affect its dependent.",
+      "known_limitations": ["Current TC-2 coverage is primarily declared Kubernetes dependency annotations."]
+    },
+    {
+      "predicate": "exposes",
+      "tc2_direction": "resource -> exposed endpoint/listener",
+      "causal_traversal_direction": "forward",
+      "semantic_class": "runtime_hosting",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "A resource mutation may affect its explicitly exposed endpoint.",
+      "known_limitations": ["This is endpoint lineage, not proof of observed traffic failure."]
+    },
+    {
+      "predicate": "owns",
+      "tc2_direction": "owner -> owned object",
+      "causal_traversal_direction": "forward",
+      "semantic_class": "control_ownership",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "A controller or owner mutation may affect an owned runtime descendant.",
+      "known_limitations": ["Reverse traversal and sibling fan-out are forbidden."]
+    },
+    {
+      "predicate": "produces",
+      "tc2_direction": "source revision/run -> artifact",
+      "causal_traversal_direction": "forward",
+      "semantic_class": "artifact_lineage",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "An explicit producer edge carries source-to-artifact lineage.",
+      "known_limitations": ["Mutable tags and inferred producer edges retain their TC-2 limitations."]
+    },
+    {
+      "predicate": "protects",
+      "tc2_direction": "intended control -> protected object, with documented AWS inconsistency",
+      "causal_traversal_direction": "none",
+      "semantic_class": "unsupported_unknown",
+      "support": "unsupported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "The frozen TC-2 contract documents provider direction inconsistency.",
+      "known_limitations": ["Requires a future provider-specific semantic migration and evaluation."]
+    },
+    {
+      "predicate": "resolves_to",
+      "tc2_direction": "name/service -> declared resolution target",
+      "causal_traversal_direction": "none",
+      "semantic_class": "unsupported_unknown",
+      "support": "unsupported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "V1 has no measured DNS causal relevance scenario.",
+      "known_limitations": ["Topo does not actively prove DNS resolution behavior."]
+    },
+    {
+      "predicate": "routes_to",
+      "tc2_direction": "routing source -> destination",
+      "causal_traversal_direction": "none",
+      "semantic_class": "unsupported_unknown",
+      "support": "conditional",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "Static routing alone does not establish incident causality.",
+      "known_limitations": ["A future measured conditional evaluator may enable a bounded subset."]
+    },
+    {
+      "predicate": "runs",
+      "tc2_direction": "host/workload/owner -> running object",
+      "causal_traversal_direction": "forward",
+      "semantic_class": "runtime_hosting",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "Forward host/controller-to-runtime lineage is defensible and cannot reverse-fan to siblings.",
+      "known_limitations": ["The predicate covers both ownership-like and hosting semantics and ranks below pure ownership."]
+    },
+    {
+      "predicate": "selects",
+      "tc2_direction": "Service -> selected Pod",
+      "causal_traversal_direction": "none",
+      "semantic_class": "unsupported_unknown",
+      "support": "conditional",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "Selector membership alone does not establish causal impact.",
+      "known_limitations": ["CR-1 does not duplicate the BR-1 Service aggregate evaluator."]
+    },
+    {
+      "predicate": "triggers",
+      "tc2_direction": "source revision -> workflow run",
+      "causal_traversal_direction": "forward",
+      "semantic_class": "artifact_lineage",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "An observed trigger carries source-to-workflow lineage.",
+      "known_limitations": ["TC-2 marks provider coverage implemented but not golden-tested."]
+    },
+    {
+      "predicate": "uses",
+      "tc2_direction": "workload/runtime object -> artifact",
+      "causal_traversal_direction": "reverse",
+      "semantic_class": "artifact_lineage",
+      "support": "supported",
+      "allowed_source_kinds": [],
+      "allowed_effect_kinds": [],
+      "reason": "An artifact mutation may affect an explicit runtime consumer.",
+      "known_limitations": ["The relationship does not upgrade mutable artifact identity or provenance."]
+    }
+  ],
+  "no_path_semantics": "missing topology support, never contradiction",
+  "historical_source": "incident-pinned topology snapshot only",
+  "llm_involvement": false,
+  "numeric_formula_changed": false
+}

@@ -32,6 +32,10 @@ from app.models.causal_rca import (
     CausalNodeType,
 )
 from app.models.causal_candidates import CAUSAL_CANDIDATE_POLICY_VERSION
+from app.models.causal_relevance import (
+    CAUSAL_RELEVANCE_POLICY_VERSION,
+    CandidateCausalRelevanceAudit,
+)
 from app.models.confidence_semantics import CONFIDENCE_SEMANTICS_VERSION
 from app.models.change_events import (
     IncidentChangeCandidate,
@@ -47,6 +51,7 @@ from app.services.causal_evidence_ledger import (
     build_hypothesis_evidence_ledger,
 )
 from app.services.causal_candidate_policy import select_causal_candidates
+from app.services.causal_relevance_policy import evaluate_causal_relevance
 from app.services.confidence_semantics import (
     ensure_analysis_confidence_semantics,
 )
@@ -698,10 +703,6 @@ def analyze_causal_rca(
     )
     candidates = list(candidate_selection.selected_candidates)
 
-    adjacency = _adjacency(
-        snapshot
-    )
-
     affected_entity_ids = set(
         change_analysis
         .affected_entity_ids
@@ -996,6 +997,8 @@ def analyze_causal_rca(
         list[str] | None,
     ] = {}
 
+    relevance_by_event: dict[str, CandidateCausalRelevanceAudit] = {}
+
     for candidate in (
         candidates
     ):
@@ -1143,8 +1146,6 @@ def analyze_causal_rca(
             )
         )
 
-        best_path = None
-
         for linked_id in linked_ids:
             entity = entity_by_id.get(
                 linked_id
@@ -1265,41 +1266,32 @@ def analyze_causal_rca(
                 )
             ] = edge
 
-            if affected_entity_ids:
-                path = _shortest_path(
-                    adjacency,
-                    start=linked_id,
-                    targets=(
-                        affected_entity_ids
-                    ),
-                    max_hops=(
-                        request
-                        .max_topology_hops
-                    ),
-                )
-
-                if path is not None:
-                    if (
-                        best_path is None
-                        or len(path)
-                        < len(best_path)
-                    ):
-                        best_path = path
+        relevance = evaluate_causal_relevance(
+            snapshot,
+            candidate_event_id=event_id,
+            candidate_entity_ids=linked_ids,
+            affected_entity_ids=affected_entity_ids,
+            max_hops=request.max_topology_hops,
+        )
+        relevance_by_event[event_id] = relevance
+        best_path = (
+            list(relevance.path_entity_ids)
+            if relevance.path_entity_ids
+            else None
+        )
 
         best_entity_path_by_event[
             event_id
         ] = best_path
 
         if best_path:
-            for index in range(
-                len(best_path) - 1
-            ):
+            for index, semantic_hop in enumerate(relevance.hops):
                 left_id = (
-                    best_path[index]
+                    semantic_hop.source_entity_id
                 )
 
                 right_id = (
-                    best_path[index + 1]
+                    semantic_hop.target_entity_id
                 )
 
                 left_entity = (
@@ -1378,10 +1370,10 @@ def analyze_causal_rca(
                             "dependency path"
                         ),
                         detail=(
-                            f"{left_id} is "
-                            "topologically "
-                            f"connected to "
-                            f"{right_id}."
+                            f"{left_id} reaches "
+                            f"{right_id} through "
+                            f"{semantic_hop.predicate}/"
+                            f"{semantic_hop.traversal_direction.value}."
                         ),
                         weight=(
                             hop_confidence
@@ -1389,13 +1381,25 @@ def analyze_causal_rca(
                         entity_id=(
                             right_id
                         ),
-                        attributes=(
-                            _pinned_relationship_metadata(
-                                snapshot,
-                                left_entity_id=left_id,
-                                right_entity_id=right_id,
-                            )
-                        ),
+                        attributes={
+                            "topology_snapshot_id": snapshot.snapshot_id,
+                            "causal_relevance_policy_version": (
+                                CAUSAL_RELEVANCE_POLICY_VERSION
+                            ),
+                            "path_semantic": relevance.path_semantic.value,
+                            "relationship_id": semantic_hop.relationship_id,
+                            "relationship_type": semantic_hop.predicate,
+                            "relationship_direction": (
+                                semantic_hop.traversal_direction.value
+                            ),
+                            "relationship_source_system": (
+                                semantic_hop.relationship_source_system
+                            ),
+                            "relationship_provenance_status": (
+                                semantic_hop
+                                .relationship_provenance_completeness.value
+                            ),
+                        },
                     )
                 )
 
@@ -1419,10 +1423,9 @@ def analyze_causal_rca(
                     ),
                     reasons=[
                         (
-                            "Entities are "
-                            "connected in the "
-                            "incident-time "
-                            "topology snapshot."
+                            "The selected TC-2 edge is allowed by "
+                            "causal-relevance-v1 in canonical "
+                            "source-to-effect direction."
                         )
                     ],
                     evidence_ids=[
@@ -1651,20 +1654,14 @@ def analyze_causal_rca(
             .get(event_id)
         )
 
+        relevance = relevance_by_event[event_id]
+
         if entity_path:
             distance = (
                 len(entity_path) - 1
             )
 
-            topology_component = {
-                0: 1.00,
-                1: 0.85,
-                2: 0.65,
-                3: 0.45,
-            }.get(
-                distance,
-                0.25,
-            )
+            topology_component = relevance.topology_component
 
         else:
             distance = None
@@ -1977,13 +1974,13 @@ def analyze_causal_rca(
         if entity_path:
             reasons.append(
                 (
-                    "Change reaches an "
-                    "affected incident "
-                    f"entity within "
-                    f"{len(entity_path)-1} "
-                    "topology hops."
+                    "Change reaches an affected incident entity through "
+                    f"a {relevance.path_semantic.value} source-to-effect "
+                    f"path within {len(entity_path)-1} topology hops."
                 )
             )
+        else:
+            reasons.append(relevance.reason)
 
         if len(event_chain) > 1:
             reasons.append(
@@ -2029,9 +2026,17 @@ def analyze_causal_rca(
             f"event '{root_event.title}'. "
             f"The target change "
             f"'{event.title}' occurred "
-            f"{timing_text} and has a "
-            "topology/evidence path to "
-            "the incident."
+            f"{timing_text}. "
+            + (
+                "A semantic incident-time topology path connects it to the "
+                "incident."
+                if entity_path
+                else (
+                    "No supported incident-time topology path was found; "
+                    "the change remains an alternative based on independent "
+                    "change and temporal evidence."
+                )
+            )
         )
 
         hypothesis_id = _stable_id(
@@ -2105,6 +2110,9 @@ def analyze_causal_rca(
                     incident_time=incident_time,
                     snapshot=snapshot,
                     primary_signal=primary_signal,
+                    path_relationship_ids=(
+                        relevance.path_relationship_ids
+                    ),
                 ),
                 chain=chain_steps,
             )
@@ -2170,6 +2178,8 @@ def analyze_causal_rca(
             ALGORITHM_VERSION,
         "candidate_policy":
             CAUSAL_CANDIDATE_POLICY_VERSION,
+        "causal_relevance_policy":
+            CAUSAL_RELEVANCE_POLICY_VERSION,
         "evidence_ledger":
             CAUSAL_EVIDENCE_LEDGER_VERSION,
         "confidence_semantics":
@@ -2214,6 +2224,13 @@ def analyze_causal_rca(
             candidate_selection_audit=list(
                 candidate_selection.audit
             ),
+            causal_relevance_policy_version=(
+                CAUSAL_RELEVANCE_POLICY_VERSION
+            ),
+            candidate_relevance_audit=[
+                relevance_by_event[candidate.event.event_id]
+                for candidate in candidates
+            ],
             generated_at=(
                 utc_now_iso()
             ),

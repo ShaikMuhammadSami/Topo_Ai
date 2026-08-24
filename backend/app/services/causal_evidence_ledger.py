@@ -244,6 +244,8 @@ def _relationship_between(
     snapshot: GraphSnapshot,
     left_entity_id: str,
     right_entity_id: str,
+    *,
+    relationship_id: str | None = None,
 ) -> Relationship | None:
     matches = [
         relationship
@@ -253,6 +255,10 @@ def _relationship_between(
             relationship.target_entity_id,
         }
         == {left_entity_id, right_entity_id}
+        and (
+            relationship_id is None
+            or relationship.id == relationship_id
+        )
     ]
     return sorted(matches, key=lambda item: item.id)[0] if matches else None
 
@@ -350,6 +356,7 @@ def build_hypothesis_evidence_ledger(
     incident_time: datetime,
     snapshot: GraphSnapshot | None,
     primary_signal: NormalizedSignal | None,
+    path_relationship_ids: list[str] | None = None,
 ) -> CausalEvidenceLedger:
     items: dict[str, CausalEvidenceLedgerItem] = {}
 
@@ -747,8 +754,20 @@ def build_hypothesis_evidence_ledger(
             )
 
     if snapshot is not None and entity_path:
-        for left_id, right_id in zip(entity_path, entity_path[1:]):
-            relationship = _relationship_between(snapshot, left_id, right_id)
+        path_pairs = list(zip(entity_path, entity_path[1:]))
+        selected_relationship_ids = path_relationship_ids or []
+        for index, (left_id, right_id) in enumerate(path_pairs):
+            selected_relationship_id = (
+                selected_relationship_ids[index]
+                if index < len(selected_relationship_ids)
+                else None
+            )
+            relationship = _relationship_between(
+                snapshot,
+                left_id,
+                right_id,
+                relationship_id=selected_relationship_id,
+            )
             if relationship is None:
                 add(
                     _item(
@@ -812,8 +831,8 @@ def build_hypothesis_evidence_ledger(
                     source_category=CausalEvidenceSourceCategory.TOPOLOGY,
                     quality=quality,
                     why_it_matters=(
-                        "This is the exact incident-time relationship traversed "
-                        "by the existing 13C shortest path."
+                        "This is the exact incident-time relationship selected "
+                        "by the versioned causal relevance policy."
                     ),
                     **common,
                 )
