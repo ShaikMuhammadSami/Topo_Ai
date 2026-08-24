@@ -31,6 +31,12 @@ from app.services.external_change_normalizers import (
     normalize_jenkins,
     normalize_terraform_cloud,
 )
+from app.services.github_source_file_enrichment import (
+    GitHubSourceEvidenceProviderFactory,
+    enrich_github_push_events,
+    github_source_evidence_provider,
+    unavailable_github_push_events,
+)
 from app.services.webhook_security import (
     resolve_secret,
     verify_basic_auth,
@@ -394,6 +400,9 @@ def _normalize(
     source: ChangeSourceRecord,
     event_type: str,
     payload: dict[str, Any],
+    github_provider_factory: GitHubSourceEvidenceProviderFactory = (
+        github_source_evidence_provider
+    ),
 ):
     config = json.loads(
         source.config_json
@@ -401,11 +410,30 @@ def _normalize(
     )
 
     if source.source_type == "github":
-        return normalize_github(
+        events = normalize_github(
             event_type=event_type,
             payload=payload,
             config=config,
         )
+        if event_type == "push" and events:
+            try:
+                return enrich_github_push_events(
+                    events=events,
+                    payload=payload,
+                    config=config,
+                    provider_factory=github_provider_factory,
+                )
+            except Exception:
+                # File evidence is optional enrichment. Never discard an
+                # authenticated parent source event because provider evidence
+                # is temporarily unavailable or malformed.
+                return unavailable_github_push_events(
+                    events=events,
+                    payload=payload,
+                    config=config,
+                    reason="provider_enrichment_error",
+                )
+        return events
 
     if source.source_type == "gitlab":
         return normalize_gitlab(
@@ -562,6 +590,9 @@ def ingest_change_source_webhook(
     source: ChangeSourceRecord,
     body: bytes,
     headers: dict[str, str],
+    github_provider_factory: GitHubSourceEvidenceProviderFactory = (
+        github_source_evidence_provider
+    ),
 ) -> ChangeSourceDeliveryReceipt:
     if not source.enabled:
         raise ValueError(
@@ -696,6 +727,7 @@ def ingest_change_source_webhook(
             source=source,
             event_type=event_type,
             payload=payload,
+            github_provider_factory=github_provider_factory,
         )
 
         filters = json.loads(
