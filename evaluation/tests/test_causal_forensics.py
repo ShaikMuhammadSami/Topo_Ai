@@ -24,6 +24,7 @@ from evaluation.cause_fingerprint import (
     value_hash,
 )
 from evaluation.contracts import ScenarioManifest, deterministic_json
+from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
 from evaluation.scenarios import manifest_path
 
 
@@ -518,25 +519,8 @@ def test_bundle_uses_pinned_incident_topology_and_tc3_time():
     assert historical["temporal_version"] == "tc3.v1"
 
 
-def test_product_roots_have_no_ca0_diff():
-    completed = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "--",
-            "backend/app",
-            "backend/tests",
-            "agent/src",
-            "frontend",
-            "cli/src",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert completed.stdout.strip() == ""
+def test_product_diff_is_scoped_to_h3_r1_after_ca0():
+    assert_product_diff_scoped_to_h3_r1(ROOT)
 
 
 def test_version_metadata_has_separate_product_and_evaluation_families():

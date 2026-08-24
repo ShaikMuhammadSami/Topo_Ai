@@ -18,6 +18,12 @@ from app.db.models import (
     RuntimeDependencyRecord,
 )
 from app.models.agents import AgentSnapshotSubmission
+from app.models.build_artifacts import (
+    BuildArtifactEvidence,
+    BuildArtifactEvidenceCompleteness,
+    BuildArtifactEvidenceType,
+    BuildArtifactType,
+)
 from app.models.lifecycle_automation import TopologyCheckpointReason
 from app.models.topology import (
     Entity,
@@ -47,6 +53,9 @@ from app.services.container_image_graph import (
 from app.services.github_actions_graph import (
     augment_snapshot_with_github_actions,
 )
+from app.services.github_actions_artifact_lineage import (
+    reconcile_build_artifact_lineage,
+)
 from app.services.github_graph import augment_snapshot_with_github
 from app.services.relationship_provenance import (
     ACTIVE_RELATIONSHIP_PREDICATES,
@@ -58,6 +67,7 @@ from app.services.runtime_snapshot_enrichment import (
     enrich_snapshot_with_runtime_dependencies,
 )
 from app.services.snapshot_diff import compare_snapshots
+from app.services.temporal_semantics import build_temporal_metadata
 from app.services.topology_checkpoint import persist_topology_checkpoint
 
 
@@ -655,11 +665,61 @@ def test_source_to_runtime_existing_hops_have_honest_provenance() -> None:
                 "id": 42,
                 "name": "build",
                 "run_number": 7,
+                "run_attempt": 1,
                 "head_sha": sha,
                 "conclusion": "success",
+                "updated_at": NOW.isoformat(),
             }
         ],
         repository_full_name="acme/payment",
+        api_url="https://api.github.com",
+    )
+    snapshot, _ = reconcile_build_artifact_lineage(
+        snapshot,
+        evidence=[
+            BuildArtifactEvidence(
+                evidence_id="build-artifact-evidence:relationship-provenance",
+                provider="github_actions",
+                repository_id="101",
+                repository="acme/payment",
+                workflow_id=None,
+                workflow_ref="acme/payment/.github/workflows/build.yml@refs/heads/main",
+                run_id="42",
+                run_attempt=1,
+                commit_sha=sha,
+                artifact_type=BuildArtifactType.CONTAINER_IMAGE,
+                image_repository="ghcr.io/acme/payment",
+                image_reference="ghcr.io/acme/payment:release",
+                image_digest=digest,
+                immutable_image_ref=f"ghcr.io/acme/payment@{digest}",
+                provider_evidence_type=(
+                    BuildArtifactEvidenceType.GITHUB_ACTIONS_DOCKER_BUILD_RECORD
+                ),
+                provider_evidence_id="9001",
+                provider_evidence_reference=(
+                    "https://api.github.com/repos/acme/payment/actions/artifacts/9001"
+                ),
+                provider_evidence_digest="sha256:" + "c" * 64,
+                provider_build_record_digest="sha256:" + "d" * 64,
+                provider_builder_id=(
+                    "https://github.com/acme/payment/actions/runs/42/attempts/1"
+                ),
+                provider_build_started_at=NOW - timedelta(minutes=2),
+                provider_build_finished_at=NOW - timedelta(minutes=1),
+                provider_run_updated_at=NOW,
+                observed_at=NOW,
+                temporal=build_temporal_metadata(
+                    source_event_at=NOW - timedelta(minutes=1),
+                    observed_at=NOW,
+                    recorded_at=NOW,
+                    source_time_trusted=True,
+                    source_field=(
+                        "docker_build_record.slsa.runDetails.metadata.finishedOn"
+                    ),
+                ),
+                completeness=BuildArtifactEvidenceCompleteness.COMPLETE,
+            )
+        ],
         api_url="https://api.github.com",
     )
     entities = {item.id: item for item in snapshot.entities}
@@ -683,10 +743,8 @@ def test_source_to_runtime_existing_hops_have_honest_provenance() -> None:
     assert commit_run.provenance is not None
     assert commit_run.provenance.origin == RelationshipOrigin.OBSERVED
     assert run_image.provenance is not None
-    assert run_image.provenance.origin == RelationshipOrigin.INFERRED
-    assert run_image.confidence_semantics == (
-        RelationshipConfidenceSemantics.HEURISTIC_SCORE
-    )
+    assert run_image.provenance.origin == RelationshipOrigin.OBSERVED
+    assert run_image.confidence is None
     assert workload_image.provenance is not None
     assert workload_image.provenance.origin == RelationshipOrigin.DERIVED
     assert workload_image.confidence is None
@@ -962,6 +1020,7 @@ def test_every_product_relationship_constructor_sets_provenance() -> None:
                 "agent_snapshot_ingest.py",
                 "container_image_graph.py",
                 "github_actions_graph.py",
+                "github_actions_artifact_lineage.py",
                 "github_graph.py",
                 "network_topology_enricher.py",
                 "runtime_snapshot_enrichment.py",

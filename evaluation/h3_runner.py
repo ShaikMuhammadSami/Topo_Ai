@@ -269,29 +269,62 @@ def _exercise_product_path(
     *,
     namespace: str,
     provider_payloads: dict[str, Any],
+    github_token: str,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     sys.path.insert(0, str(BACKEND))
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import Session
+
     from app.collectors.kubernetes_collector import KubernetesCollector
-    from app.services.github_actions_graph import augment_snapshot_with_github_actions
+    from app.connectors.github_connector import GitHubConnector, GitHubSettings
+    from app.db.database import Base
+    from app.services.github_actions_artifact_lineage import (
+        enrich_snapshot_with_github_actions_provider_evidence,
+    )
     from app.services.github_graph import augment_snapshot_with_github
 
+    provider_repository = provider_payloads["repository"]
+    owner, repository_name = str(provider_repository["full_name"]).split("/", 1)
+    connector = GitHubConnector(
+        GitHubSettings(
+            owner=owner,
+            repository=repository_name,
+            token=github_token,
+            api_url="https://api.github.com",
+            api_version="2026-03-10",
+            timeout_seconds=30,
+            commit_limit=1,
+        )
+    )
+    repository = connector.get_repository()
+    commit = connector.get_commit(provider_payloads["commit"]["sha"])
+    workflow_run = connector.get_workflow_run(
+        provider_payloads["workflow_run"]["id"]
+    )
     collector = KubernetesCollector(namespace=namespace, environment="evaluation")
     snapshot = collector.collect()
     snapshot, github_stats = augment_snapshot_with_github(
         snapshot,
-        provider_payloads["repository"],
-        [provider_payloads["commit"]],
-        "https://api.github.com",
+        repository,
+        [commit],
+        connector.settings.api_url,
     )
-    snapshot, actions_stats = augment_snapshot_with_github_actions(
-        snapshot,
-        [provider_payloads["workflow_run"]],
-        provider_payloads["repository"]["full_name"],
-        "https://api.github.com",
-    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        snapshot, actions_stats, lineage_stats = (
+            enrich_snapshot_with_github_actions_provider_evidence(
+                session,
+                snapshot=snapshot,
+                connector=connector,
+                repository=repository,
+                workflow_runs=[workflow_run],
+            )
+        )
     return snapshot.model_dump(mode="json"), {
         "github_enrichment": _plain_stats(github_stats),
         "github_actions_enrichment": _plain_stats(actions_stats),
+        "github_actions_build_artifact_lineage": _plain_stats(lineage_stats),
     }
 
 
@@ -310,6 +343,9 @@ def run_h3_observation(args: argparse.Namespace) -> Path:
     }
     run_id = str(receipt["run_id"])
     namespace = f"{NAMESPACE_PREFIX}{run_id}"
+    github_token = _run(["gh", "auth", "token"]).stdout.strip()
+    if not github_token:
+        raise RuntimeError("GitHub CLI did not provide an authenticated token")
     created = False
     try:
         _create_materialization(namespace, run_id, receipt["immutable_image_ref"])
@@ -317,14 +353,15 @@ def run_h3_observation(args: argparse.Namespace) -> Path:
         snapshot, enrichment_stats = _exercise_product_path(
             namespace=namespace,
             provider_payloads=provider_payloads,
+            github_token=github_token,
         )
         observation = observe_topo_snapshot(snapshot, expected)
         evaluation = evaluate_h3(expected, observation)
         product_commit = _run(["git", "rev-parse", "HEAD"]).stdout.strip()
         ingestion_exercise = {
-            "mode": "provider_native_payload_replay_into_current_service_layer",
+            "mode": "general_product_provider_connector_and_build_record_ingestion",
             "fresh_isolated_scope": namespace,
-            "github_delivery": "read_only_provider_api_payload_replayed",
+            "github_delivery": "read_only_product_connector_provider_api_ingestion",
             "receipt_used_as_product_input": False,
             "kubernetes_materialization_required": True,
             "kubernetes_materialization": {
@@ -337,7 +374,7 @@ def run_h3_observation(args: argparse.Namespace) -> Path:
                 "workflow_run_metadata_added": False,
             },
             "enrichment_stats": enrichment_stats,
-            "product_code_changed": False,
+            "product_code_changed": True,
         }
         warnings = []
         if registry_verification["registry_read_verification"] == "unavailable":
@@ -366,7 +403,7 @@ def run_h3_observation(args: argparse.Namespace) -> Path:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Observe current Topo H3 Actions-to-image lineage without repair."
+        description="Observe current Topo H3 Actions-to-image lineage."
     )
     parser.add_argument("--receipt", type=Path, default=DEFAULT_RECEIPT)
     return parser

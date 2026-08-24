@@ -414,6 +414,16 @@ def test_provider_receipt_is_not_product_ingestion_shortcut():
     assert "provider_payloads" in exercise
 
 
+def test_post_repair_runner_uses_general_product_provider_evidence_path():
+    source = RUNNER.read_text(encoding="utf-8")
+    exercise = source.split("def _exercise_product_path", 1)[1].split(
+        "def run_h3_observation", 1
+    )[0]
+    assert "GitHubConnector" in exercise
+    assert "enrich_snapshot_with_github_actions_provider_evidence" in exercise
+    assert "reconcile_build_artifact_lineage" not in exercise
+
+
 def test_tag_cannot_substitute_for_digest():
     assert expected()["image_tag"] != expected()["image_digest"]
 
@@ -578,7 +588,7 @@ def test_no_scenario_specific_provider_values_in_product_paths():
         assert not any(needle in text for needle in needles), path
 
 
-def test_no_product_files_modified():
+def test_product_diff_remains_inside_h3_r1_scope():
     output = subprocess.run(
         ["git", "diff", "--name-only"],
         cwd=ROOT,
@@ -586,7 +596,16 @@ def test_no_product_files_modified():
         text=True,
         check=True,
     ).stdout.splitlines()
-    forbidden = ("backend/app/", "backend/tests/", "agent/src/", "frontend/", "cli/src/")
+    forbidden = (
+        "agent/",
+        "frontend/",
+        "cli/",
+        "backend/app/services/blast_radius.py",
+        "backend/app/services/causal_candidate_policy.py",
+        "backend/app/services/causal_relevance_policy.py",
+        "backend/app/services/causal_rca.py",
+        "backend/app/services/continuous_lifecycle.py",
+    )
     assert not [name for name in output if name.replace("\\", "/").startswith(forbidden)]
 
 

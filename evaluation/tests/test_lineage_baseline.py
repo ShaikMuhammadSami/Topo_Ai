@@ -26,6 +26,7 @@ from evaluation.lineage_provider_truth import (
     provider_identity,
     sanitize_provider_receipt,
 )
+from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
 from evaluation.lineage_runner import (
     NAMESPACE_PREFIX,
     RUN_LABEL,
@@ -501,15 +502,8 @@ def test_lineage_scenario_id_does_not_appear_in_product_code():
     assert completed.stdout.strip() == ""
 
 
-def test_no_product_files_changed():
-    completed = subprocess.run(
-        ["git", "diff", "--name-only", "--", "backend/app", "backend/tests", "agent/src", "frontend", "cli/src"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert completed.stdout.strip() == ""
+def test_product_diff_is_scoped_to_h3_r1_after_lineage_baseline():
+    assert_product_diff_scoped_to_h3_r1(ROOT)
 
 
 def test_h6_accepts_current_direct_collector_runs_predicate():

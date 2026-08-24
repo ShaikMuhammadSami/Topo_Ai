@@ -7,6 +7,9 @@ from typing import Any
 import httpx
 
 
+MAX_GITHUB_ARTIFACT_BYTES = 32 * 1024 * 1024
+
+
 class GitHubConnectorError(RuntimeError):
     pass
 
@@ -231,6 +234,22 @@ class GitHubConnector:
             if isinstance(item, dict)
         ]
 
+    def get_commit(
+        self,
+        sha: str,
+    ) -> dict[str, Any]:
+        payload = self._get(
+            (
+                f"/repos/{self.settings.owner}/"
+                f"{self.settings.repository}/commits/{sha}"
+            )
+        )
+        if not isinstance(payload, dict):
+            raise GitHubConnectorError(
+                "Unexpected commit response."
+            )
+        return payload
+
     def connection_information(
         self,
     ) -> dict[str, Any]:
@@ -314,3 +333,81 @@ class GitHubConnector:
             for item in workflow_runs
             if isinstance(item, dict)
         ]
+
+    def get_workflow_run(
+        self,
+        run_id: str | int,
+    ) -> dict[str, Any]:
+        payload = self._get(
+            (
+                f"/repos/{self.settings.owner}/"
+                f"{self.settings.repository}/actions/runs/{run_id}"
+            )
+        )
+        if not isinstance(payload, dict):
+            raise GitHubConnectorError(
+                "Unexpected workflow-run response."
+            )
+        return payload
+
+    def list_workflow_run_artifacts(
+        self,
+        run_id: str | int,
+        limit: int = 100,
+    ) -> list[dict[str, Any]]:
+        requested_limit = max(1, min(limit, 100))
+        payload = self._get(
+            (
+                f"/repos/{self.settings.owner}/"
+                f"{self.settings.repository}/actions/runs/{run_id}/artifacts"
+            ),
+            params={"per_page": requested_limit},
+        )
+        if not isinstance(payload, dict) or not isinstance(
+            payload.get("artifacts"), list
+        ):
+            raise GitHubConnectorError(
+                "Unexpected workflow-artifact response."
+            )
+        return [
+            item
+            for item in payload["artifacts"]
+            if isinstance(item, dict)
+        ]
+
+    def download_actions_artifact(
+        self,
+        artifact_id: str | int,
+    ) -> bytes:
+        url = (
+            f"{self.settings.api_url}/repos/{self.settings.owner}/"
+            f"{self.settings.repository}/actions/artifacts/{artifact_id}/zip"
+        )
+        try:
+            response = httpx.get(
+                url,
+                headers=self._headers(),
+                timeout=self.settings.timeout_seconds,
+                follow_redirects=True,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as exc:
+            raise GitHubConnectorError(
+                "GitHub artifact download returned "
+                f"{exc.response.status_code}."
+            ) from exc
+        except httpx.RequestError as exc:
+            raise GitHubConnectorError(
+                f"Could not download the GitHub artifact: {exc}"
+            ) from exc
+        declared = response.headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > MAX_GITHUB_ARTIFACT_BYTES:
+            raise GitHubConnectorError(
+                "GitHub build artifact exceeds the safe size limit."
+            )
+        payload = response.content
+        if len(payload) > MAX_GITHUB_ARTIFACT_BYTES:
+            raise GitHubConnectorError(
+                "GitHub build artifact exceeds the safe size limit."
+            )
+        return payload
