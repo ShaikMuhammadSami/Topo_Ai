@@ -1,0 +1,139 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo-ai.local/schemas/eval-lineage-result-v1.json",
+  "title": "Topo AI LINEAGE-0 result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "result_version",
+    "hop_contract_version",
+    "run_id",
+    "scenario_id",
+    "started_at",
+    "completed_at",
+    "product_git_commit",
+    "execution_mode",
+    "prerequisites",
+    "provider_truth",
+    "topo_observation",
+    "hop_results",
+    "first_broken_hop",
+    "first_broken_hop_id",
+    "proven_hop_count",
+    "partial_hop_count",
+    "missing_hop_count",
+    "wrong_hop_count",
+    "inconclusive_hop_count",
+    "provider_blocked_hop_count",
+    "lineage_complete",
+    "immutable_artifact_chain_complete",
+    "source_to_runtime_strength",
+    "source_change_causally_proven",
+    "commercial_proof_status",
+    "warnings"
+  ],
+  "properties": {
+    "result_version": {"const": "eval-lineage-result-v1"},
+    "hop_contract_version": {"const": "eval-lineage-hop-v1"},
+    "run_id": {"type": "string", "minLength": 1},
+    "scenario_id": {"const": "lineage-source-to-runtime-v1"},
+    "started_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": "string", "format": "date-time"},
+    "product_git_commit": {"type": "string", "minLength": 7},
+    "execution_mode": {"enum": ["MODE_A", "MODE_B", "MODE_C"]},
+    "prerequisites": {"type": "object"},
+    "provider_truth": {"type": "object"},
+    "topo_observation": {"type": "object"},
+    "hop_results": {
+      "type": "array",
+      "minItems": 7,
+      "maxItems": 7,
+      "items": {"$ref": "#/$defs/hop"}
+    },
+    "first_broken_hop": {
+      "enum": [
+        "H1_REPO_COMMIT",
+        "H2_COMMIT_ACTIONS",
+        "H3_ACTIONS_IMAGE",
+        "H4_IMAGE_DEPLOYMENT",
+        "H5_DEPLOYMENT_RS",
+        "H6_RS_POD",
+        "H7_POD_FAILURE",
+        "NO_BROKEN_HOP",
+        "PROVIDER_PREREQUISITE_BLOCKED"
+      ]
+    },
+    "first_broken_hop_id": {"type": ["string", "null"], "enum": ["H1", "H2", "H3", "H4", "H5", "H6", "H7", null]},
+    "proven_hop_count": {"type": "integer", "minimum": 0, "maximum": 7},
+    "partial_hop_count": {"type": "integer", "minimum": 0, "maximum": 7},
+    "missing_hop_count": {"type": "integer", "minimum": 0, "maximum": 7},
+    "wrong_hop_count": {"type": "integer", "minimum": 0, "maximum": 7},
+    "inconclusive_hop_count": {"type": "integer", "minimum": 0, "maximum": 7},
+    "provider_blocked_hop_count": {"type": "integer", "minimum": 0, "maximum": 7},
+    "lineage_complete": {"type": "boolean"},
+    "immutable_artifact_chain_complete": {"type": "boolean"},
+    "source_to_runtime_strength": {"enum": ["STRONG", "MEDIUM", "WEAK", "UNKNOWN"]},
+    "source_change_causally_proven": {"enum": ["true", "false", "not_tested", "inconclusive"]},
+    "commercial_proof_status": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repo_commit_proven",
+        "commit_ci_proven",
+        "ci_image_digest_proven",
+        "image_deployment_proven",
+        "deployment_runtime_proven",
+        "runtime_failure_proven",
+        "full_source_to_runtime_lineage_proven"
+      ],
+      "properties": {
+        "repo_commit_proven": {"type": "boolean"},
+        "commit_ci_proven": {"type": "boolean"},
+        "ci_image_digest_proven": {"type": "boolean"},
+        "image_deployment_proven": {"type": "boolean"},
+        "deployment_runtime_proven": {"type": "boolean"},
+        "runtime_failure_proven": {"type": "boolean"},
+        "full_source_to_runtime_lineage_proven": {"type": "boolean"}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "hop": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hop_version",
+        "hop_id",
+        "source_logical_alias",
+        "target_logical_alias",
+        "expected_source_provider_identity",
+        "expected_target_provider_identity",
+        "expected_relationship_semantic",
+        "provider_truth",
+        "topo_observation",
+        "evaluation"
+      ],
+      "properties": {
+        "hop_version": {"const": "eval-lineage-hop-v1"},
+        "hop_id": {"enum": ["H1", "H2", "H3", "H4", "H5", "H6", "H7"]},
+        "source_logical_alias": {"type": "string"},
+        "target_logical_alias": {"type": "string"},
+        "expected_source_provider_identity": {"type": ["object", "null"]},
+        "expected_target_provider_identity": {"type": ["object", "null"]},
+        "expected_relationship_semantic": {"type": "string"},
+        "provider_truth": {"type": "object"},
+        "topo_observation": {"type": "object"},
+        "evaluation": {
+          "type": "object",
+          "required": ["status", "reason", "lineage_strength"],
+          "properties": {
+            "status": {"enum": ["PROVEN", "PARTIAL", "MISSING", "WRONG", "INCONCLUSIVE", "PROVIDER_PREREQUISITE_BLOCKED"]},
+            "reason": {"type": "string"},
+            "lineage_strength": {"enum": ["STRONG", "MEDIUM", "WEAK", "UNKNOWN"]}
+          }
+        }
+      }
+    }
+  }
+}
