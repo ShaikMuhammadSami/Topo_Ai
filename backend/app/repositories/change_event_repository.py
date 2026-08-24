@@ -70,6 +70,32 @@ def _json_dict(
     )
 
 
+def _source_file_evidence_quality(
+    metadata: dict[str, Any],
+) -> tuple[int, int, int]:
+    capture = metadata.get("source_file_mutation_enrichment")
+    mutations = metadata.get("source_file_mutations")
+    if not isinstance(capture, dict) or not isinstance(mutations, list):
+        return (0, 0, 0)
+    completeness_rank = {
+        "unavailable": 1,
+        "partial": 2,
+        "complete": 3,
+    }.get(str(capture.get("completeness")), 0)
+    captured_sides = 0
+    for mutation in mutations:
+        if not isinstance(mutation, dict):
+            continue
+        for side_name in ("before", "after"):
+            side = mutation.get(side_name)
+            if (
+                isinstance(side, dict)
+                and side.get("content_capture_state") == "captured"
+            ):
+                captured_sides += 1
+    return (len(mutations), completeness_rank, captured_sides)
+
+
 def risk_level(
     score: int,
 ) -> ChangeEventRiskLevel:
@@ -1020,6 +1046,18 @@ def ingest_change_event(
         old_metadata = _json_dict(
             record.metadata_json
         )
+
+        # A transient provider failure on a later observation must not erase
+        # richer immutable source-file evidence captured earlier.
+        if _source_file_evidence_quality(old_metadata) > (
+            _source_file_evidence_quality(metadata)
+        ):
+            for key in (
+                "source_file_mutation_enrichment",
+                "source_file_mutations",
+            ):
+                if key in old_metadata:
+                    metadata[key] = old_metadata[key]
 
         # A redelivery can add non-temporal context, but it must not replace
         # the original effective/observation/recorded interpretation with a
