@@ -1,8 +1,12 @@
 # Runtime Causal Receipt v1
 
-Status: **LINEAGE-1C independent evaluation contract**
+Status: **historical LINEAGE-1C exact-index contract**
 
 Version: `eval-runtime-causal-receipt-v1`
+
+New runtime observations use `eval-runtime-causal-receipt-v2`. V1 remains
+loadable so accepted historical receipts do not change meaning; it represents
+only the original exact-index `imageID` case.
 
 This receipt freezes provider-native Kubernetes truth before any Topo RCA is
 read. Topo is the system under test and cannot supply any expected field.
