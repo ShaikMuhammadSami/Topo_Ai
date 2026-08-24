@@ -5,7 +5,10 @@ from enum import Enum
 from typing import Any, Iterable
 
 from evaluation.lineage_contracts import deterministic_json
-from evaluation.runtime_causal_observer import validate_runtime_causal_receipt
+from evaluation.runtime_causal_observer import (
+    provider_index_digest,
+    validate_runtime_causal_receipt,
+)
 from evaluation.source_mutation_truth import validate_source_mutation_contract
 
 
@@ -480,7 +483,7 @@ def _matrix(
         ("Actions run", runtime["experiment"]["run_id"], (observation["entities"]["actions_run"].get("provider_identity") or {}).get("run_id")),
         ("Run attempt", 1, (observation["entities"]["actions_run"].get("provider_identity") or {}).get("run_attempt")),
         ("Actions -> Image", True, _present(observation, "relationships", "actions_image")),
-        ("Image digest", runtime["experiment"]["image_digest"], (observation["entities"]["image"].get("provider_identity") or {}).get("image_digest")),
+        ("Image digest", provider_index_digest(runtime), (observation["entities"]["image"].get("provider_identity") or {}).get("image_digest")),
         ("Image -> Deployment", True, _present(observation, "relationships", "image_deployment")),
         ("Deployment UID", runtime["kubernetes"]["deployment_uid"], (observation["entities"]["deployment"].get("provider_identity") or {}).get("uid")),
         ("Deployment -> ReplicaSet", True, _present(observation, "relationships", "deployment_replicaset")),
@@ -530,7 +533,7 @@ def evaluate_source_cause(
     partial = _commit_image_partial(
         top1,
         expected=expected,
-        expected_image_digest=runtime_receipt["experiment"]["image_digest"],
+        expected_image_digest=provider_index_digest(runtime_receipt),
     )
     evidence_audit = audit_evidence_ledger(
         topo_observation["causal"]["evidence_ledger"]

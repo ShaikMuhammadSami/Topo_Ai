@@ -11,9 +11,16 @@ from typing import Any, Callable
 from urllib.parse import urlsplit
 
 from evaluation.lineage_contracts import deterministic_json
+from evaluation.oci_artifact_identity import (
+    digest_from_runtime_image_id,
+    platform_value,
+    resolve_runtime_artifact_identity,
+    validate_runtime_identity_resolution,
+)
 
 
 RUNTIME_CAUSAL_RECEIPT_VERSION = "eval-runtime-causal-receipt-v1"
+RUNTIME_CAUSAL_RECEIPT_V2_VERSION = "eval-runtime-causal-receipt-v2"
 EVALUATION_LABEL = "topo.ai/evaluation-run"
 NAMESPACE_PREFIX = "topo-eval-lineage-causal-"
 DEPLOYMENT_NAME = "lineage-causal-fixture"
@@ -250,6 +257,8 @@ def _runtime_sample(
     *,
     namespace: str,
     immutable_image_ref: str,
+    target_platform: dict[str, Any],
+    provider_descriptors: list[dict[str, Any]],
 ) -> dict[str, Any] | None:
     namespace_object = kubectl.get_json("namespace", namespace)
     deployment = kubectl.get_json("deployment", DEPLOYMENT_NAME, "-n", namespace)
@@ -284,8 +293,12 @@ def _runtime_sample(
     deployment_spec = deployment.get("spec") or {}
     deployment_status = deployment.get("status") or {}
     image_id = status.get("imageID")
-    expected_digest = image_digest_from_ref(immutable_image_ref)
-    image_id_matches = image_id is None or expected_digest in str(image_id)
+    artifact_resolution = resolve_runtime_artifact_identity(
+        requested_immutable_ref=immutable_image_ref,
+        runtime_image_id=image_id,
+        target_platform=target_platform,
+        provider_descriptors=provider_descriptors,
+    )
     return {
         "namespace": namespace_object,
         "deployment": deployment,
@@ -295,7 +308,9 @@ def _runtime_sample(
         "backoff": backoff,
         "facts": {
             "image_ref_matches": status.get("image") == immutable_image_ref,
-            "image_id_matches": image_id_matches,
+            "runtime_artifact_identity_confirmed": artifact_resolution[
+                "accepted"
+            ],
             "owner_chain_matches": (
                 _owner_uid(replica_set, "Deployment") == deployment_uid
                 and _owner_uid(pod, "ReplicaSet") == replica_set_uid
@@ -316,6 +331,7 @@ def _runtime_sample(
             "waiting_reason": waiting.get("reason"),
             "last_termination": terminated,
         },
+        "artifact_resolution": artifact_resolution,
     }
 
 
@@ -327,7 +343,7 @@ def _sample_complete(sample: dict[str, Any] | None) -> bool:
         facts.get(name) is True
         for name in (
             "image_ref_matches",
-            "image_id_matches",
+            "runtime_artifact_identity_confirmed",
             "owner_chain_matches",
             "failure_mechanism_confirmed",
             "runtime_manifestation_confirmed",
@@ -345,6 +361,8 @@ def observe_runtime_causal_truth(
     immutable_image_ref: str,
     context: str,
     cluster: str,
+    target_platform: dict[str, Any],
+    provider_descriptors: list[dict[str, Any]],
     timeout_seconds: int = 120,
     poll_interval_seconds: float = 2.0,
     now: Callable[[], str] = utc_now,
@@ -360,6 +378,8 @@ def observe_runtime_causal_truth(
             kubectl,
             namespace=namespace,
             immutable_image_ref=immutable_image_ref,
+            target_platform=target_platform,
+            provider_descriptors=provider_descriptors,
         )
         if _sample_complete(sample):
             break
@@ -379,13 +399,15 @@ def observe_runtime_causal_truth(
     terminated = facts["last_termination"]
     deployment_status = deployment.get("status") or {}
     receipt = {
-        "schema_version": RUNTIME_CAUSAL_RECEIPT_VERSION,
+        "schema_version": RUNTIME_CAUSAL_RECEIPT_V2_VERSION,
         "experiment": {
             "run_id": int(run_id),
             "source_parent_commit": source_parent_commit.lower(),
             "source_failure_commit": source_failure_commit.lower(),
-            "immutable_image_ref": immutable_image_ref,
-            "image_digest": image_digest_from_ref(immutable_image_ref),
+            "requested_artifact": {
+                "immutable_ref": immutable_image_ref,
+                "index_digest": image_digest_from_ref(immutable_image_ref),
+            },
         },
         "kubernetes": {
             "context": context,
@@ -409,6 +431,7 @@ def observe_runtime_causal_truth(
             "name": status.get("name"),
             "image": status.get("image"),
             "image_id": status.get("imageID"),
+            "runtime_digest": sample["artifact_resolution"]["runtime_digest"],
             "restart_count": int(status.get("restartCount") or 0),
             "waiting_reason": facts.get("waiting_reason"),
             "current_state": facts.get("current_state"),
@@ -428,6 +451,7 @@ def observe_runtime_causal_truth(
                 deployment_status.get("unavailableReplicas") or 0
             ),
         },
+        "artifact_resolution": sample["artifact_resolution"],
         "observation": {
             "started_at": started_at,
             "failure_confirmed_at": failure_confirmed_at,
@@ -436,7 +460,8 @@ def observe_runtime_causal_truth(
         },
         "ground_truth": {
             "exact_image_identity_confirmed": (
-                facts["image_ref_matches"] and facts["image_id_matches"]
+                facts["image_ref_matches"]
+                and facts["runtime_artifact_identity_confirmed"]
             ),
             "ownership_chain_confirmed": facts["owner_chain_matches"],
             "failure_mechanism_confirmed": facts[
@@ -456,6 +481,17 @@ def observe_runtime_causal_truth(
 
 
 def validate_runtime_causal_receipt(value: dict[str, Any]) -> None:
+    version = value.get("schema_version")
+    if version == RUNTIME_CAUSAL_RECEIPT_VERSION:
+        _validate_runtime_causal_receipt_v1(value)
+        return
+    if version == RUNTIME_CAUSAL_RECEIPT_V2_VERSION:
+        _validate_runtime_causal_receipt_v2(value)
+        return
+    raise ValueError("Unsupported runtime causal receipt version.")
+
+
+def _validate_runtime_causal_receipt_v1(value: dict[str, Any]) -> None:
     expected_top = {
         "schema_version",
         "experiment",
@@ -593,6 +629,168 @@ def validate_runtime_causal_receipt(value: dict[str, Any]) -> None:
         raise ValueError("Independent runtime ground truth is incomplete.")
 
 
+def _validate_runtime_causal_receipt_v2(value: dict[str, Any]) -> None:
+    expected_top = {
+        "schema_version",
+        "experiment",
+        "kubernetes",
+        "ownership",
+        "container",
+        "deployment_status",
+        "artifact_resolution",
+        "observation",
+        "ground_truth",
+        "topo_used_to_construct_truth",
+    }
+    if set(value) != expected_top:
+        raise ValueError("Runtime causal receipt v2 fields do not match.")
+    if value.get("topo_used_to_construct_truth") is not False:
+        raise ValueError("Topo cannot define independent runtime truth.")
+
+    experiment = value.get("experiment") or {}
+    if set(experiment) != {
+        "run_id",
+        "source_parent_commit",
+        "source_failure_commit",
+        "requested_artifact",
+    }:
+        raise ValueError("Runtime experiment v2 identity fields do not match.")
+    if not isinstance(experiment.get("run_id"), int) or experiment["run_id"] < 1:
+        raise ValueError("Runtime experiment run ID is invalid.")
+    for field in ("source_parent_commit", "source_failure_commit"):
+        if not re.fullmatch(r"[0-9a-f]{40}", str(experiment.get(field) or "")):
+            raise ValueError("Runtime experiment commit identity is invalid.")
+    if experiment["source_parent_commit"] == experiment["source_failure_commit"]:
+        raise ValueError("Runtime source parent and failure commit must differ.")
+    requested = experiment.get("requested_artifact") or {}
+    if set(requested) != {"immutable_ref", "index_digest"}:
+        raise ValueError("Requested OCI artifact fields do not match v2.")
+    digest = image_digest_from_ref(str(requested.get("immutable_ref") or ""))
+    if requested.get("index_digest") != digest:
+        raise ValueError("Requested OCI index digest is inconsistent.")
+
+    resolution = value.get("artifact_resolution") or {}
+    validate_runtime_identity_resolution(resolution)
+    if resolution.get("requested_immutable_ref") != requested["immutable_ref"]:
+        raise ValueError("Runtime resolution requested reference is inconsistent.")
+    if resolution.get("requested_index_digest") != digest:
+        raise ValueError("Runtime resolution index digest is inconsistent.")
+    if resolution.get("accepted") is not True:
+        raise ValueError("Runtime artifact identity remains inconclusive.")
+
+    kubernetes = value.get("kubernetes") or {}
+    required_kubernetes = {
+        "context",
+        "cluster",
+        "namespace",
+        "namespace_uid",
+        "deployment_name",
+        "deployment_uid",
+        "replicaset_name",
+        "replicaset_uid",
+        "pod_name",
+        "pod_uid",
+    }
+    if set(kubernetes) != required_kubernetes:
+        raise ValueError("Runtime Kubernetes identity fields do not match v2.")
+    require_safe_namespace(
+        str(kubernetes.get("namespace") or ""), experiment["run_id"]
+    )
+    if kubernetes.get("deployment_name") != DEPLOYMENT_NAME:
+        raise ValueError("Runtime deployment name is invalid.")
+    for field in ("namespace_uid", "deployment_uid", "replicaset_uid", "pod_uid"):
+        if not _UID.fullmatch(str(kubernetes.get(field) or "")):
+            raise ValueError(f"Runtime {field} is required.")
+
+    ownership = value.get("ownership") or {}
+    if ownership != {
+        "replicaset_owner_deployment_uid": kubernetes["deployment_uid"],
+        "pod_owner_replicaset_uid": kubernetes["replicaset_uid"],
+    }:
+        raise ValueError("Runtime owner-reference UID chain is invalid.")
+
+    container = value.get("container") or {}
+    required_container = {
+        "name",
+        "image",
+        "image_id",
+        "runtime_digest",
+        "restart_count",
+        "waiting_reason",
+        "current_state",
+        "last_termination_reason",
+        "last_termination_exit_code",
+        "last_termination_started_at",
+        "last_termination_finished_at",
+        "backoff_observation",
+    }
+    if set(container) != required_container:
+        raise ValueError("Runtime container fields do not match v2.")
+    if container.get("name") != CONTAINER_NAME:
+        raise ValueError("Runtime container identity is invalid.")
+    if container.get("image") != requested["immutable_ref"]:
+        raise ValueError("A different image was requested by the Pod.")
+    if container.get("image_id") != resolution.get("runtime_image_id"):
+        raise ValueError("Runtime imageID and artifact resolution differ.")
+    if container.get("runtime_digest") != resolution.get("runtime_digest"):
+        raise ValueError("Runtime digest and artifact resolution differ.")
+    if digest_from_runtime_image_id(str(container.get("image_id") or "")) != (
+        container.get("runtime_digest")
+    ):
+        raise ValueError("Runtime imageID digest is inconsistent.")
+    if not isinstance(container.get("restart_count"), int) or container[
+        "restart_count"
+    ] < 1:
+        raise ValueError("At least one runtime restart is required.")
+    if container.get("last_termination_exit_code") != FAIL_EXIT_CODE:
+        raise ValueError("Runtime failure mechanism is not exit code 42.")
+    if container.get("last_termination_reason") != EXPECTED_TERMINATION_REASON:
+        raise ValueError("Runtime termination reason is not Error.")
+    backoff = container.get("backoff_observation") or {}
+    if backoff.get("reason") not in ACCEPTED_WAITING_REASONS:
+        raise ValueError("Structured runtime backoff evidence is required.")
+
+    deployment_status = value.get("deployment_status") or {}
+    if deployment_status.get("desired_replicas") != 1:
+        raise ValueError("Runtime desired replica truth is invalid.")
+    if deployment_status.get("ready_replicas") != 0:
+        raise ValueError("Runtime ready replica truth is invalid.")
+    if deployment_status.get("available_replicas") != 0:
+        raise ValueError("Runtime available replica truth is invalid.")
+
+    observation = value.get("observation") or {}
+    if not isinstance(observation.get("timeout_seconds"), int) or not (
+        1 <= observation["timeout_seconds"] <= 120
+    ):
+        raise ValueError("Runtime observation timeout is invalid.")
+    timestamps = [
+        _aware_datetime(str(observation.get(field) or ""))
+        for field in ("started_at", "failure_confirmed_at", "captured_at")
+    ]
+    if timestamps != sorted(timestamps):
+        raise ValueError("Runtime observation timestamps are out of order.")
+
+    ground_truth = value.get("ground_truth") or {}
+    required_truth = {
+        "exact_image_identity_confirmed",
+        "ownership_chain_confirmed",
+        "failure_mechanism_confirmed",
+        "runtime_manifestation_confirmed",
+        "operational_impact_confirmed",
+    }
+    if set(ground_truth) != required_truth or any(
+        ground_truth.get(field) is not True for field in required_truth
+    ):
+        raise ValueError("Independent runtime ground truth is incomplete.")
+
+
+def provider_index_digest(value: dict[str, Any]) -> str:
+    validate_runtime_causal_receipt(value)
+    if value["schema_version"] == RUNTIME_CAUSAL_RECEIPT_VERSION:
+        return str(value["experiment"]["image_digest"])
+    return str(value["experiment"]["requested_artifact"]["index_digest"])
+
+
 def guarded_cleanup(
     kubectl: KubectlJson, *, run_id: str | int, timeout_seconds: int = 120
 ) -> None:
@@ -621,6 +819,16 @@ def _parser() -> argparse.ArgumentParser:
     capture.add_argument("--parent-commit", required=True)
     capture.add_argument("--failure-commit", required=True)
     capture.add_argument("--image", required=True)
+    capture.add_argument(
+        "--platform",
+        required=True,
+        help="Explicit OCI runtime platform, for example linux/amd64.",
+    )
+    capture.add_argument(
+        "--provider-descriptors",
+        type=Path,
+        help="Independent provider descriptor JSON; required for child-manifest identity.",
+    )
     capture.add_argument("--template", type=Path, required=True)
     capture.add_argument("--rendered", type=Path, required=True)
     capture.add_argument("--output", type=Path, required=True)
@@ -639,6 +847,26 @@ def main(arguments: list[str] | None = None) -> int:
         return 0
 
     template = args.template.read_text(encoding="utf-8")
+    platform_tokens = args.platform.split("/")
+    if len(platform_tokens) not in {2, 3}:
+        raise ValueError("Runtime platform must be os/architecture[/variant].")
+    target_platform = platform_value(
+        os_name=platform_tokens[0],
+        architecture=platform_tokens[1],
+        variant=platform_tokens[2] if len(platform_tokens) == 3 else None,
+    )
+    provider_descriptors: list[dict[str, Any]] = []
+    if args.provider_descriptors:
+        descriptor_document = json.loads(
+            args.provider_descriptors.read_text(encoding="utf-8")
+        )
+        provider_descriptors = (
+            descriptor_document
+            if isinstance(descriptor_document, list)
+            else descriptor_document.get("descriptors") or []
+        )
+        if not isinstance(provider_descriptors, list):
+            raise ValueError("Provider descriptor document must contain a list.")
     rendered = render_deployment_template(
         template, run_id=args.run_id, immutable_image_ref=args.image
     )
@@ -653,6 +881,8 @@ def main(arguments: list[str] | None = None) -> int:
         immutable_image_ref=args.image,
         context=cluster_truth["context"],
         cluster=cluster_truth["cluster"],
+        target_platform=target_platform,
+        provider_descriptors=provider_descriptors,
         timeout_seconds=args.timeout,
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
