@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo-ai.local/schemas/eval-lineage-provider-receipt-v1.json",
+  "title": "Topo AI evaluation lineage provider receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "provider",
+    "repository",
+    "repository_id",
+    "commit_sha",
+    "workflow_name",
+    "workflow_ref",
+    "workflow_sha",
+    "run_id",
+    "run_attempt",
+    "run_number",
+    "event_name",
+    "image_registry",
+    "image_repository",
+    "image_tag",
+    "image_digest",
+    "immutable_image_ref",
+    "built_at",
+    "receipt_created_at",
+    "source_ref",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-lineage-provider-receipt-v1"},
+    "provider": {"const": "github"},
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "repository_id": {"type": ["string", "null"]},
+    "commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "workflow_name": {"type": "string", "minLength": 1},
+    "workflow_ref": {"type": "string", "minLength": 1},
+    "workflow_sha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "run_id": {"type": "integer", "minimum": 1},
+    "run_attempt": {"type": "integer", "minimum": 1},
+    "run_number": {"type": "integer", "minimum": 1},
+    "event_name": {"const": "workflow_dispatch"},
+    "image_registry": {"const": "ghcr.io"},
+    "image_repository": {
+      "type": "string",
+      "pattern": "^ghcr\\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*-topo-lineage-eval$"
+    },
+    "image_tag": {
+      "type": "string",
+      "pattern": "^run-[1-9][0-9]*-[1-9][0-9]*$"
+    },
+    "image_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "immutable_image_ref": {
+      "type": "string",
+      "pattern": "^ghcr\\.io/[a-z0-9][a-z0-9._-]*/[a-z0-9][a-z0-9._-]*-topo-lineage-eval@sha256:[0-9a-f]{64}$"
+    },
+    "built_at": {
+      "oneOf": [
+        {"type": "string", "format": "date-time"},
+        {"type": "null"}
+      ]
+    },
+    "receipt_created_at": {"type": "string", "format": "date-time"},
+    "source_ref": {"type": "string", "minLength": 1},
+    "provenance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["digest_source", "commit_source", "run_source"],
+      "properties": {
+        "digest_source": {"const": "build_push_action_output"},
+        "commit_source": {"const": "github_context"},
+        "run_source": {"const": "github_context"}
+      }
+    }
+  }
+}
