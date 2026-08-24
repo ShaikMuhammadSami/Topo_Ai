@@ -15,7 +15,7 @@ from evaluation.evidence_semantics import (
     EvidenceInterpretation,
     interpret_explicit_non_cause_evidence,
 )
-from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
+from evaluation.product_diff_guard import assert_h3_r1_historical_product_scope
 from evaluation.scenarios import manifest_path
 from evaluation.tests.test_contracts import execution_receipt, observation, provider
 
@@ -513,5 +513,5 @@ def test_classifier_contains_no_scenario_specific_special_cases():
     )
 
 
-def test_product_diff_is_scoped_to_h3_r1_after_non_cause_evaluation():
-    assert_product_diff_scoped_to_h3_r1(ROOT)
+def test_h3_r1_historical_product_scope_remains_frozen_after_non_cause_evaluation():
+    assert_h3_r1_historical_product_scope(ROOT)

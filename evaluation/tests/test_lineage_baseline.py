@@ -26,7 +26,11 @@ from evaluation.lineage_provider_truth import (
     provider_identity,
     sanitize_provider_receipt,
 )
-from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
+from evaluation.product_diff_guard import (
+    PRODUCT_SOURCE_ROOTS,
+    assert_h3_r1_historical_product_scope,
+    scan_repository_text,
+)
 from evaluation.lineage_runner import (
     NAMESPACE_PREFIX,
     RUN_LABEL,
@@ -492,18 +496,16 @@ def test_lineage_tooling_has_no_scenario_specific_product_override():
 
 
 def test_lineage_scenario_id_does_not_appear_in_product_code():
-    completed = subprocess.run(
-        ["rg", "-l", "lineage-source-to-runtime-v1|topo-eval-lineage", "backend/app", "backend/tests", "agent/src", "frontend", "cli/src"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
+    matches = scan_repository_text(
+        ROOT,
+        source_roots=PRODUCT_SOURCE_ROOTS,
+        patterns=("lineage-source-to-runtime-v1|topo-eval-lineage",),
     )
-    assert completed.stdout.strip() == ""
+    assert matches == ()
 
 
-def test_product_diff_is_scoped_to_h3_r1_after_lineage_baseline():
-    assert_product_diff_scoped_to_h3_r1(ROOT)
+def test_h3_r1_historical_product_scope_remains_frozen_after_lineage_baseline():
+    assert_h3_r1_historical_product_scope(ROOT)
 
 
 def test_h6_accepts_current_direct_collector_runs_predicate():

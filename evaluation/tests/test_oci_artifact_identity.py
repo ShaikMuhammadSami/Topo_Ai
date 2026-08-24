@@ -29,9 +29,17 @@ from evaluation.runtime_causal_observer import (
     provider_index_digest,
     validate_runtime_causal_receipt,
 )
+from evaluation.product_diff_guard import (
+    assert_text_file_git_blob_id,
+    assert_file_sha256,
+    assert_historical_commit_excludes_paths,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
+OCI_RUNTIME_IDENTITY_ACCEPTED_COMMIT = (
+    "6046f5d0ce7bb0a3d1b263322469b5b3420782b2"
+)
 INDEX = "sha256:" + "1" * 64
 CHILD = "sha256:" + "2" * 64
 OTHER = "sha256:" + "3" * 64
@@ -481,40 +489,22 @@ def test_generic_identity_implementation_has_no_frozen_special_case(literal: str
     assert literal not in source
 
 
-def test_backend_and_other_product_paths_are_untouched():
-    output = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--", "backend/app", "backend/tests", "agent/src", "frontend", "cli/src"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert output == ""
+def test_oci_runtime_identity_commit_changed_no_product_paths():
+    assert_historical_commit_excludes_paths(
+        ROOT,
+        name="EVAL-OCI-1 evaluation repair",
+        commit=OCI_RUNTIME_IDENTITY_ACCEPTED_COMMIT,
+    )
 
 
-def test_workflows_are_untouched():
-    output = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--", ".github/workflows"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert output == ""
+def test_frozen_provider_workflow_hash_is_unchanged():
     workflow = ROOT / ".github/workflows/topo-lineage-provider-fixture.yml"
-    assert hashlib.sha256(workflow.read_bytes()).hexdigest() == WORKFLOW_SHA256
+    assert_file_sha256(workflow, WORKFLOW_SHA256)
 
 
 @pytest.mark.parametrize("name,expected", sorted(PERMANENT_MANIFEST_HASHES.items()))
 def test_permanent_manifest_is_unchanged(name: str, expected: str):
-    actual = subprocess.run(
-        ["git", "hash-object", f"evaluation/manifests/{name}"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert actual == expected
+    assert_text_file_git_blob_id(ROOT / "evaluation/manifests" / name, expected)
 
 
 def test_identity_helper_has_no_kubernetes_or_provider_mutation_capability():

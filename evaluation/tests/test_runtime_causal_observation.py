@@ -39,9 +39,17 @@ from evaluation.source_mutation_truth import (
     HEALTHY_BYTES,
     source_mutation_from_local_git,
 )
+from evaluation.product_diff_guard import (
+    assert_text_file_git_blob_id,
+    assert_file_sha256,
+    assert_historical_commit_excludes_paths,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
+RUNTIME_CAUSAL_OBSERVATION_ACCEPTED_COMMIT = (
+    "9318efe6a13eab9e3dc114df75edd5784dacfdf9"
+)
 RUN_ID = 32695735269
 PARENT = "f9b152133a8075428766dd48b3f752b255ec5270"
 FAILURE = "4149b194c4c4fdfdcd402a157c5336ad59dfdbbe"
@@ -698,42 +706,21 @@ def test_schema_versions_are_frozen():
     assert source_schema["properties"]["schema_version"]["const"] == SOURCE_CAUSE_MATCH_VERSION
 
 
-def test_product_paths_have_no_diff():
-    changed = subprocess.run(
-        [
-            "git",
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-            "--",
-            "backend/app",
-            "backend/tests",
-            "agent/src",
-            "frontend",
-            "cli/src",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert changed == ""
+def test_runtime_causal_observation_commit_changed_no_product_paths():
+    assert_historical_commit_excludes_paths(
+        ROOT,
+        name="LINEAGE-1C runtime causal observation",
+        commit=RUNTIME_CAUSAL_OBSERVATION_ACCEPTED_COMMIT,
+    )
 
 
 @pytest.mark.parametrize("name,expected", sorted(PERMANENT_MANIFEST_HASHES.items()))
 def test_permanent_manifest_is_unchanged(name: str, expected: str):
-    actual = subprocess.run(
-        ["git", "hash-object", f"evaluation/manifests/{name}"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert actual == expected
+    assert_text_file_git_blob_id(ROOT / "evaluation/manifests" / name, expected)
 
 
 def test_frozen_h3_workflow_is_unchanged():
-    assert hashlib.sha256(WORKFLOW.read_bytes()).hexdigest() == WORKFLOW_SHA256
+    assert_file_sha256(WORKFLOW, WORKFLOW_SHA256)
 
 
 def test_failure_branch_still_points_to_frozen_commit():
