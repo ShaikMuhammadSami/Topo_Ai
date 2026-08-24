@@ -12,8 +12,23 @@ V2 separates:
 
 - `experiment.requested_artifact`: immutable reference and provider index
   digest;
-- `container`: runtime `imageID` and its normalized digest;
+- `container.image`: the exact image reference requested by the matching named
+  container in `pod.spec.containers`;
+- `container.image_id`: the matching named container's runtime `imageID`;
+- `container.runtime_digest`: the normalized digest derived from `imageID`;
+- optional `container.runtime_status_image`: the matching named container's
+  runtime-normalized diagnostic `status.containerStatuses[].image` value;
 - `artifact_resolution`: the bounded `eval-oci-runtime-identity-v1` decision.
+
+Pod spec containers and container statuses are joined by exact container name.
+Missing or ambiguous matches keep the observation gate closed. Array position is
+not identity.
+
+`runtime_status_image` is non-authoritative because Kubernetes runtimes may
+report a tag, repository digest, normalized digest, image-config digest, or
+another runtime-specific representation. Missing, malformed, or different
+diagnostic status-image text cannot establish or override the authoritative
+Pod-spec request and `imageID` proof.
 
 Only `EXACT_INDEX` and `VERIFIED_PLATFORM_MANIFEST` can appear in a complete
 runtime receipt. `MISMATCH` and `UNVERIFIED` keep the runtime ground-truth gate
