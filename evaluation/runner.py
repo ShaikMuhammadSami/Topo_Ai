@@ -300,6 +300,7 @@ def run_scenario(
     context: str | None = None,
     timeout_seconds: float = 240.0,
     output_dir: Path = RESULTS_DIR,
+    forensic_output_dir: Path | None = None,
 ) -> tuple[EvaluationResult, Path]:
     manifest = ScenarioManifest.load(manifest_path(scenario_id))
     run_id = uuid.uuid4().hex[:8]
@@ -329,6 +330,7 @@ def run_scenario(
     metrics: dict[str, Any] = {}
     assertions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
+    persistence_state: dict[str, Any] = {}
 
     try:
         managed.start_backend()
@@ -355,6 +357,14 @@ def run_scenario(
             topo,
             scenario_started_at=started_at,
         )
+        if forensic_output_dir is not None:
+            from evaluation.causal_forensics import capture_persistence_state
+
+            persistence_state = capture_persistence_state(
+                managed.root / "topo-eval.db",
+                namespace=namespace,
+                incident_id=(topo.incident or {}).get("incident_id"),
+            )
     except Exception as exc:
         failures.append(
             {
@@ -409,4 +419,16 @@ def run_scenario(
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{scenario_id}-{run_id}.json"
     output_path.write_text(result.to_json(), encoding="utf-8")
+    if forensic_output_dir is not None:
+        from evaluation.causal_forensics import (
+            build_forensic_bundle,
+            write_forensic_bundle,
+        )
+
+        bundle = build_forensic_bundle(result.as_dict(), persistence_state)
+        write_forensic_bundle(
+            bundle,
+            forensic_output_dir
+            / f"{scenario_id}-{run_id}-causal-forensics.json",
+        )
     return result, output_path

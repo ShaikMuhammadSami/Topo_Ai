@@ -19,10 +19,12 @@ def main() -> int:
     run.add_argument("--context")
     run.add_argument("--timeout", type=float, default=240.0)
     run.add_argument("--output-dir", type=Path, default=RESULTS_DIR)
+    run.add_argument("--forensic-output-dir", type=Path)
     run_all = subparsers.add_parser("run-all", help="Run all four Sentinels sequentially")
     run_all.add_argument("--context")
     run_all.add_argument("--timeout", type=float, default=240.0)
     run_all.add_argument("--output-dir", type=Path, default=RESULTS_DIR)
+    run_all.add_argument("--forensic-output-dir", type=Path)
     run_blast = subparsers.add_parser(
         "run-blast",
         help="Run Sentinel D plus the three permanent BR-0 scenarios sequentially",
@@ -30,6 +32,7 @@ def main() -> int:
     run_blast.add_argument("--context")
     run_blast.add_argument("--timeout", type=float, default=240.0)
     run_blast.add_argument("--output-dir", type=Path, default=RESULTS_DIR)
+    run_blast.add_argument("--forensic-output-dir", type=Path)
     arguments = parser.parse_args()
     if arguments.command == "run-all":
         scenarios = SENTINEL_SCENARIOS
@@ -44,6 +47,7 @@ def main() -> int:
             context=arguments.context,
             timeout_seconds=arguments.timeout,
             output_dir=arguments.output_dir,
+            forensic_output_dir=arguments.forensic_output_dir,
         )
         print(f"{scenario}: {result.overall_status.value} -> {path}")
         if result.overall_status.value in {"HARNESS_ERROR", "INCONCLUSIVE"}:

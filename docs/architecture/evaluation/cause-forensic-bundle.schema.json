@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo.ai/schemas/evaluation/cause-forensic-bundle-v1.json",
+  "title": "TopoAI CA-0 Causal Forensic Bundle",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "bundle_version",
+    "scenario_id",
+    "run_id",
+    "product_git_commit",
+    "scenario_manifest_version",
+    "versions",
+    "environment",
+    "historical_correctness",
+    "root_cause_semantic_layers",
+    "expected_cause_fingerprint",
+    "execution_receipt_fingerprint",
+    "provider_fingerprint",
+    "normalized_change_fingerprint",
+    "change_record_fingerprint",
+    "change_event_fingerprint",
+    "candidate_fingerprint",
+    "candidate_policy",
+    "causal_relevance",
+    "causal_component_breakdown",
+    "tc4_evidence_summary",
+    "root_hypothesis",
+    "root_hypothesis_direct_fingerprint",
+    "root_event_reference_fingerprint",
+    "evaluator_match",
+    "layer_verdicts",
+    "first_divergence"
+  ],
+  "properties": {
+    "bundle_version": {"const": "ca-0-causal-forensics-v1"},
+    "scenario_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "product_git_commit": {"type": "string", "minLength": 7},
+    "scenario_manifest_version": {"type": ["string", "null"]},
+    "versions": {
+      "type": "object",
+      "required": ["truth_contracts", "product_reasoning", "evaluation_contracts"],
+      "properties": {
+        "truth_contracts": {"type": "object"},
+        "product_reasoning": {"type": "object"},
+        "evaluation_contracts": {
+          "type": "object",
+          "required": ["non_cause_evidence", "cause_fingerprint", "cause_match"],
+          "properties": {
+            "non_cause_evidence": {"const": "non-cause-evidence-v1"},
+            "cause_fingerprint": {"const": "eval-cause-fingerprint-v1"},
+            "cause_match": {"const": "eval-cause-match-v1"}
+          }
+        }
+      }
+    },
+    "environment": {"type": "object"},
+    "historical_correctness": {"type": "object"},
+    "root_cause_semantic_layers": {"type": "object"},
+    "expected_cause_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "execution_receipt_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "provider_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "normalized_change_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "change_record_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "change_event_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "candidate_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "candidate_policy": {"type": ["object", "null"]},
+    "causal_relevance": {"type": ["object", "null"]},
+    "causal_component_breakdown": {
+      "type": "array",
+      "items": {"type": "object"}
+    },
+    "tc4_evidence_summary": {"type": "object"},
+    "root_hypothesis": {"type": "object"},
+    "root_hypothesis_direct_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "root_event_reference_fingerprint": {"$ref": "#/$defs/fingerprint"},
+    "evaluator_match": {"type": "object"},
+    "layer_verdicts": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["layer", "truth_preserved", "classification", "reason"],
+        "properties": {
+          "layer": {"type": "string"},
+          "truth_preserved": {"type": "boolean"},
+          "classification": {"$ref": "#/$defs/divergenceClassification"},
+          "reason": {"type": "string"}
+        }
+      }
+    },
+    "first_divergence": {
+      "type": "object",
+      "required": ["classification", "layer", "layer_ordinal", "reason"],
+      "properties": {
+        "classification": {"$ref": "#/$defs/divergenceClassification"},
+        "layer": {"type": ["string", "null"]},
+        "layer_ordinal": {"type": ["integer", "null"], "minimum": 1},
+        "reason": {"type": ["string", "null"]}
+      }
+    }
+  },
+  "$defs": {
+    "fingerprint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "fingerprint_version",
+        "provider",
+        "entity_kind",
+        "canonical_entity_id",
+        "provider_native_entity_id",
+        "mutation_family",
+        "changed_field",
+        "before_value_ref",
+        "before_value_hash",
+        "after_value_ref",
+        "after_value_hash",
+        "initiating_event_id",
+        "source_change_id",
+        "scenario_logical_entity",
+        "scenario_logical_change",
+        "evidence_source",
+        "fingerprint_completeness"
+      ],
+      "properties": {
+        "fingerprint_version": {"const": "eval-cause-fingerprint-v1"},
+        "provider": {"type": ["string", "null"]},
+        "entity_kind": {"type": ["string", "null"]},
+        "canonical_entity_id": {"type": ["string", "null"]},
+        "provider_native_entity_id": {"type": ["string", "null"]},
+        "mutation_family": {"type": ["string", "null"]},
+        "changed_field": {"type": ["string", "null"]},
+        "before_value_ref": {},
+        "before_value_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "after_value_ref": {},
+        "after_value_hash": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "initiating_event_id": {"type": ["string", "null"]},
+        "source_change_id": {"type": ["string", "null"]},
+        "scenario_logical_entity": {"type": ["string", "null"]},
+        "scenario_logical_change": {"type": ["string", "null"]},
+        "evidence_source": {"type": ["string", "null"]},
+        "fingerprint_completeness": {
+          "enum": ["complete", "partial", "insufficient_structure"]
+        }
+      }
+    },
+    "divergenceClassification": {
+      "enum": [
+        "SCENARIO_INTENT_DEFECT",
+        "ORCHESTRATION_DEFECT",
+        "PROVIDER_STATE_DEFECT",
+        "NORMALIZATION_DEFECT",
+        "CHANGE_RECORD_DEFECT",
+        "CHANGE_EVENT_DEFECT",
+        "CANDIDATE_SEMANTICS_DEFECT",
+        "CAUSAL_RELEVANCE_DEFECT",
+        "RANKING_DISCRIMINATION_DEFECT",
+        "EVIDENCE_LEDGER_DEFECT",
+        "HYPOTHESIS_REPRESENTATION_DEFECT",
+        "EVALUATOR_CAUSE_MATCH_DEFECT",
+        "NO_DIVERGENCE_FOUND",
+        "HARNESS_ERROR"
+      ]
+    }
+  }
+}
