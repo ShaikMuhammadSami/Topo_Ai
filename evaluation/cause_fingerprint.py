@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 from dataclasses import asdict, dataclass
@@ -19,6 +20,9 @@ _FIELD_EQUIVALENCE = {
     "properties.images": "kubernetes.workload.container_image",
     "properties.images[0]": "kubernetes.workload.container_image",
     "spec.template.spec.containers[0].image": "kubernetes.workload.container_image",
+    "properties.replicas": "kubernetes.workload.desired_replicas",
+    "spec.replicas": "kubernetes.workload.desired_replicas",
+    "properties.available_replicas": "kubernetes.workload.available_replicas",
 }
 
 
@@ -92,10 +96,25 @@ def _kind(value: Any) -> str | None:
     return normalized or None
 
 
-def _field(value: str | None) -> str | None:
+def canonical_mutation_field(value: str | None) -> tuple[str | None, bool]:
     if value is None:
-        return None
-    return _FIELD_EQUIVALENCE.get(value, value)
+        return None, False
+    if value in _FIELD_EQUIVALENCE:
+        return _FIELD_EQUIVALENCE[value], True
+    return value, False
+
+
+def _field_comparison(expected: str | None, actual: str | None) -> str:
+    if expected is None or actual is None:
+        return "not_comparable"
+    expected_value, expected_known = canonical_mutation_field(expected)
+    actual_value, actual_known = canonical_mutation_field(actual)
+    if expected == actual:
+        return "matched"
+    if expected_known and actual_known:
+        return "matched" if expected_value == actual_value else "mismatched"
+    # Unknown cross-representation transformations are not guessed.
+    return "not_comparable"
 
 
 def _provider_object(
@@ -168,9 +187,18 @@ def expected_cause_fingerprint(
     before = action.get("before", {})
     after = action.get("after", {})
     before_value = before.get("image") if isinstance(before, dict) else None
-    after_value = after.get("image") if isinstance(after, dict) else None
+    receipt_after_value = after.get("image") if isinstance(after, dict) else None
+    provider_spec = provider_object.get("spec", {})
+    provider_after_value = (
+        provider_spec.get("images") if isinstance(provider_spec, dict) else None
+    )
+    after_value = (
+        provider_after_value
+        if provider_after_value is not None
+        else receipt_after_value
+    )
     changed_field = _ACTION_FIELDS.get(action_type)
-    native_id = action.get("provider_uid") or provider_object.get("uid")
+    native_id = provider_object.get("uid") or action.get("provider_uid")
 
     return _finish(
         provider="kubernetes" if provider_object or native_id else None,
@@ -186,6 +214,44 @@ def expected_cause_fingerprint(
         scenario_logical_change=intent.get("root_change"),
         evidence_source="scenario_intent+execution_receipt+provider_verification",
     )
+
+
+def expected_cause_fingerprints(
+    manifest: dict[str, Any],
+    execution_receipt: dict[str, Any],
+    provider_verification: dict[str, Any],
+) -> list[CauseFingerprint]:
+    """Build one independent fingerprint for every explicitly accepted alias."""
+
+    selectors = manifest.get("expected_behavior", {}).get(
+        "accepted_top_causes", []
+    )
+    aliases = [
+        str(selector.get("entity_alias"))
+        for selector in selectors
+        if selector.get("entity_alias")
+    ]
+    if not aliases and not manifest.get("expected_behavior", {}).get(
+        "should_abstain", False
+    ):
+        root = manifest.get("causal_intent", {}).get("root_entity")
+        if root:
+            aliases.append(str(root))
+    results: list[CauseFingerprint] = []
+    seen: set[str] = set()
+    for alias in aliases:
+        alternative = copy.deepcopy(manifest)
+        alternative.setdefault("causal_intent", {})["root_entity"] = alias
+        fingerprint = expected_cause_fingerprint(
+            alternative,
+            execution_receipt,
+            provider_verification,
+        )
+        key = json.dumps(fingerprint.as_dict(), sort_keys=True, default=str)
+        if key not in seen:
+            seen.add(key)
+            results.append(fingerprint)
+    return results
 
 
 def execution_cause_fingerprint(
@@ -249,14 +315,14 @@ def provider_cause_fingerprint(
 
 
 def _native_id(change: dict[str, Any]) -> str | None:
+    entity_id = change.get("entity_id")
+    if isinstance(entity_id, str) and entity_id.startswith("k8s:"):
+        return entity_id.rsplit(":", 1)[-1]
     for side in (change.get("after"), change.get("before")):
         if isinstance(side, dict):
             properties = side.get("properties")
             if isinstance(properties, dict) and properties.get("uid"):
                 return str(properties["uid"])
-    entity_id = change.get("entity_id")
-    if isinstance(entity_id, str) and entity_id.startswith("k8s:"):
-        return entity_id.rsplit(":", 1)[-1]
     return None
 
 
@@ -330,17 +396,31 @@ def fingerprints_from_event(
     if not event:
         return [CauseFingerprint(evidence_source=evidence_source)]
     metadata = event.get("metadata")
-    change = dict(metadata) if isinstance(metadata, dict) else {}
-    refs = change.get("entity_refs") or []
-    if refs and isinstance(refs[0], dict):
-        change.setdefault("entity_id", refs[0].get("entity_id"))
-        change.setdefault("entity_kind", refs[0].get("kind"))
-    return fingerprints_from_change(
-        change,
-        evidence_source=evidence_source,
-        initiating_event_id=event.get("event_id"),
-        source_change_id=event.get("origin_change_id"),
-    )
+    base_change = dict(metadata) if isinstance(metadata, dict) else {}
+    refs = [item for item in base_change.get("entity_refs") or [] if isinstance(item, dict)]
+    changes: list[dict[str, Any]] = []
+    if refs:
+        for ref in refs:
+            change = dict(base_change)
+            change["entity_id"] = ref.get("entity_id")
+            change["entity_kind"] = ref.get("kind") or change.get("entity_kind")
+            changes.append(change)
+    else:
+        changes.append(base_change)
+    results: list[CauseFingerprint] = []
+    seen: set[str] = set()
+    for change in changes:
+        for fingerprint in fingerprints_from_change(
+            change,
+            evidence_source=evidence_source,
+            initiating_event_id=event.get("event_id"),
+            source_change_id=event.get("origin_change_id"),
+        ):
+            key = json.dumps(fingerprint.as_dict(), sort_keys=True, default=str)
+            if key not in seen:
+                seen.add(key)
+                results.append(fingerprint)
+    return results
 
 
 def _comparison(expected: Any, actual: Any) -> str:
@@ -369,8 +449,8 @@ def compare_causes(
         "mutation_family": _comparison(
             expected.mutation_family, actual.mutation_family
         ),
-        "changed_field": _comparison(
-            _field(expected.changed_field), _field(actual.changed_field)
+        "changed_field": _field_comparison(
+            expected.changed_field, actual.changed_field
         ),
         "before_value": _comparison(
             expected.before_value_hash, actual.before_value_hash
@@ -406,9 +486,19 @@ def compare_causes(
         "after_value",
     )
     if mismatched:
-        if entity_match and any(
+        if (
+            entity_match
+            and comparisons["mutation_family"] == "matched"
+            and comparisons["changed_field"] == "matched"
+            and any(
+                comparisons[key] == "mismatched"
+                for key in ("before_value", "after_value")
+            )
+        ):
+            status = "value_mismatch"
+        elif entity_match and any(
             comparisons[key] == "mismatched"
-            for key in ("mutation_family", "changed_field", "before_value", "after_value")
+            for key in ("mutation_family", "changed_field")
         ):
             status = "entity_match_mutation_mismatch"
         elif mutation_matches and comparisons["entity_identity"] == "mismatched":
@@ -438,7 +528,8 @@ def best_cause_match(
         "exact": 5,
         "compatible_partial": 4,
         "insufficient_structure": 3,
-        "entity_match_mutation_mismatch": 2,
+        "value_mismatch": 2,
+        "entity_match_mutation_mismatch": 1,
         "mutation_match_entity_mismatch": 1,
         "different_cause": 0,
     }

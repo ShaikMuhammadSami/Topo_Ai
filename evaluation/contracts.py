@@ -226,6 +226,14 @@ class EvaluationResult:
     warnings: list[str]
     overall_status: EvaluationStatus
     evidence_semantics_version: str | None = None
+    cause_fingerprint_version: str | None = None
+    cause_match_version: str | None = None
+    cause_match_status: str | None = None
+    expected_cause_fingerprints: list[dict[str, Any]] = field(default_factory=list)
+    top1_actual_cause_fingerprint: dict[str, Any] | None = None
+    top1_cause_match: dict[str, Any] | None = None
+    top3_cause_matches: list[dict[str, Any]] = field(default_factory=list)
+    cause_match_diagnostics: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         value = asdict(self)
