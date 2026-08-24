@@ -20,6 +20,10 @@ from evaluation.contracts import (
     ScenarioManifest,
     TopoObservation,
 )
+from evaluation.cause_fingerprint import (
+    CAUSE_FINGERPRINT_VERSION,
+    CAUSE_MATCH_VERSION,
+)
 from evaluation.evaluator import IndependentEvaluator
 from evaluation.evidence_semantics import NON_CAUSE_EVIDENCE_SEMANTICS_VERSION
 from evaluation.kubernetes import Kubectl, utc_now
@@ -331,6 +335,21 @@ def run_scenario(
     assertions: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     persistence_state: dict[str, Any] = {}
+    # Every current-model result declares the evaluation contract even when
+    # the run terminates before the evaluator can inspect a root cause.
+    cause_details: dict[str, Any] = {
+        "cause_fingerprint_version": CAUSE_FINGERPRINT_VERSION,
+        "cause_match_version": CAUSE_MATCH_VERSION,
+        "cause_match_status": "not_evaluated",
+        "expected_cause_fingerprints": [],
+        "top1_actual_cause_fingerprint": None,
+        "top1_cause_match": None,
+        "top3_cause_matches": [],
+        "diagnostics": {
+            "title_authoritative": False,
+            "reason": "Evaluation ended before root-cause matching.",
+        },
+    }
 
     try:
         managed.start_backend()
@@ -356,6 +375,8 @@ def run_scenario(
             provider,
             topo,
             scenario_started_at=started_at,
+            execution_receipt=receipt,
+            cause_output=cause_details,
         )
         if forensic_output_dir is not None:
             from evaluation.causal_forensics import capture_persistence_state
@@ -415,6 +436,18 @@ def run_scenario(
         warnings=warnings,
         overall_status=status,
         evidence_semantics_version=NON_CAUSE_EVIDENCE_SEMANTICS_VERSION,
+        cause_fingerprint_version=cause_details.get("cause_fingerprint_version"),
+        cause_match_version=cause_details.get("cause_match_version"),
+        cause_match_status=cause_details.get("cause_match_status"),
+        expected_cause_fingerprints=cause_details.get(
+            "expected_cause_fingerprints", []
+        ),
+        top1_actual_cause_fingerprint=cause_details.get(
+            "top1_actual_cause_fingerprint"
+        ),
+        top1_cause_match=cause_details.get("top1_cause_match"),
+        top3_cause_matches=cause_details.get("top3_cause_matches", []),
+        cause_match_diagnostics=cause_details.get("diagnostics", {}),
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{scenario_id}-{run_id}.json"

@@ -11,6 +11,11 @@ from evaluation.contracts import (
     TopoObservation,
 )
 from evaluation.evidence_semantics import interpret_explicit_non_cause_evidence
+from evaluation.structured_cause_match import (
+    STRUCTURED_CAUSE_MATCH_VERSION,
+    evaluate_structured_root_causes,
+)
+from evaluation.cause_fingerprint import CAUSE_FINGERPRINT_VERSION
 
 
 def _time(value: str | None) -> datetime | None:
@@ -135,10 +140,29 @@ class IndependentEvaluator:
         topo: TopoObservation,
         *,
         scenario_started_at: str | None = None,
+        execution_receipt: dict[str, Any] | None = None,
+        cause_output: dict[str, Any] | None = None,
     ) -> tuple[EvaluationStatus, dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
         assertions: list[dict[str, Any]] = []
         failures: list[dict[str, Any]] = []
         metrics: dict[str, Any] = {}
+        if cause_output is not None:
+            cause_output.clear()
+            cause_output.update(
+                {
+                    "cause_match_version": STRUCTURED_CAUSE_MATCH_VERSION,
+                    "cause_fingerprint_version": CAUSE_FINGERPRINT_VERSION,
+                    "cause_match_status": "not_evaluated",
+                    "expected_cause_fingerprints": [],
+                    "top1_actual_cause_fingerprint": None,
+                    "top1_cause_match": None,
+                    "top3_cause_matches": [],
+                    "diagnostics": {
+                        "title_authoritative": False,
+                        "reason": "Evaluation ended before root-cause matching.",
+                    },
+                }
+            )
 
         if not provider.established:
             failures.append(self._failure("provider_truth", "HARNESS", "Provider-native truth was not established."))
@@ -206,14 +230,63 @@ class IndependentEvaluator:
         hypotheses = sorted(analysis.get("hypotheses", []), key=lambda item: item.get("rank", 999))
         expected = manifest.value["expected_behavior"]
         top1 = hypotheses[0] if hypotheses else None
-        top3 = hypotheses[:3]
-        top1_correct = bool(top1 and self._hypothesis_matches(top1, manifest, topo, alias_entity_ids))
-        top3_correct = any(self._hypothesis_matches(item, manifest, topo, alias_entity_ids) for item in top3)
+        cause_result = evaluate_structured_root_causes(
+            manifest.ground_truth_copy(),
+            execution_receipt or {},
+            asdict(provider),
+            asdict(topo),
+        )
+        presentation_top1 = (
+            self._legacy_hypothesis_title_matches(
+                top1, manifest, topo, alias_entity_ids
+            )
+            if top1
+            else None
+        )
+        cause_result["diagnostics"].update(
+            {
+                "legacy_top1_title_match": presentation_top1,
+                "top1_presentation_status": (
+                    "specific_match"
+                    if presentation_top1 is True
+                    else "generic_or_mismatched"
+                    if presentation_top1 is False
+                    else "not_available"
+                ),
+                "presentation_warning": (
+                    "Structured cause matches, but the root title does not satisfy the legacy presentation selector."
+                    if cause_result["root_cause_top1_correct"] is True
+                    and presentation_top1 is False
+                    else None
+                ),
+            }
+        )
+        if cause_output is not None:
+            cause_output.clear()
+            cause_output.update(cause_result)
+        top1_correct = cause_result["root_cause_top1_correct"]
+        top3_correct = cause_result["root_cause_top3_contains_truth"]
         metrics["root_cause_top1_correct"] = top1_correct
         metrics["root_cause_top3_contains_truth"] = top3_correct
+        metrics["root_cause_title_match"] = presentation_top1
+        metrics["cause_presentation_generic"] = bool(
+            top1 and presentation_top1 is False
+        )
         if not expected.get("should_abstain", False):
-            self._assert(assertions, failures, "root_cause_top1", top1_correct, "Top-1 must match the predeclared cause.")
-            self._assert(assertions, failures, "root_cause_top3", top3_correct, "Top-3 must contain the predeclared cause.")
+            self._assert_cause_result(
+                assertions,
+                failures,
+                "root_cause_top1",
+                top1_correct,
+                "Top-1 must structurally match the independently established initiating mutation.",
+            )
+            self._assert_cause_result(
+                assertions,
+                failures,
+                "root_cause_top3",
+                top3_correct,
+                "Top-3 must structurally contain the independently established initiating mutation.",
+            )
 
         noncause_ids = {
             entity_id
@@ -354,6 +427,26 @@ class IndependentEvaluator:
         if not passed:
             failures.append(self._failure(name, "PRODUCT", detail))
 
+    def _assert_cause_result(
+        self,
+        assertions: list[dict[str, Any]],
+        failures: list[dict[str, Any]],
+        name: str,
+        value: bool | None,
+        detail: str,
+    ) -> None:
+        assertions.append({"name": name, "passed": value is True, "detail": detail})
+        if value is False:
+            failures.append(self._failure(name, "PRODUCT", detail))
+        elif value is None:
+            failures.append(
+                self._failure(
+                    name,
+                    "INCONCLUSIVE",
+                    detail + " Structured cause equivalence is indeterminate.",
+                )
+            )
+
     @staticmethod
     def _entity_matches_provider(entity: dict[str, Any], uid: str) -> bool:
         properties = entity.get("properties") or {}
@@ -363,7 +456,7 @@ class IndependentEvaluator:
             str(properties.get("object_uid") or ""),
         }
 
-    def _hypothesis_matches(
+    def _legacy_hypothesis_title_matches(
         self,
         hypothesis: dict[str, Any],
         manifest: ScenarioManifest,

@@ -8,6 +8,30 @@
     "evidence_semantics_version": {
       "enum": ["non-cause-evidence-v1", null]
     },
+    "cause_fingerprint_version": {
+      "enum": ["eval-cause-fingerprint-v1", null]
+    },
+    "cause_match_version": {
+      "enum": ["eval-cause-match-v1", null]
+    },
+    "cause_match_status": {
+      "enum": ["matched", "mismatched", "inconclusive", "not_applicable_abstention", "not_evaluated", null]
+    },
+    "expected_cause_fingerprints": {
+      "items": {"$ref": "#/$defs/cause_fingerprint"},
+      "type": "array"
+    },
+    "top1_actual_cause_fingerprint": {
+      "anyOf": [{"$ref": "#/$defs/cause_fingerprint"}, {"type": "null"}]
+    },
+    "top1_cause_match": {
+      "anyOf": [{"$ref": "#/$defs/cause_match_assessment"}, {"type": "null"}]
+    },
+    "top3_cause_matches": {
+      "items": {"$ref": "#/$defs/cause_match_assessment"},
+      "type": "array"
+    },
+    "cause_match_diagnostics": {"type": "object"},
     "run_id": {"minLength": 6, "type": "string"},
     "scenario_id": {"type": "string"},
     "topo_git_commit": {"minLength": 7, "type": "string"},
@@ -43,6 +67,118 @@
   "title": "TopoAI EVAL-1 Result",
   "type": "object",
   "$defs": {
+    "cause_comparison": {
+      "additionalProperties": false,
+      "properties": {
+        "match_version": {"const": "eval-cause-match-v1"},
+        "status": {
+          "enum": [
+            "exact", "compatible_partial", "insufficient_structure",
+            "ambiguous", "value_mismatch",
+            "entity_match_mutation_mismatch",
+            "mutation_match_entity_mismatch", "different_cause"
+          ]
+        },
+        "comparisons": {
+          "additionalProperties": {
+            "enum": ["matched", "mismatched", "not_comparable"]
+          },
+          "type": "object"
+        },
+        "compared_fields": {"items": {"type": "string"}, "type": "array"},
+        "mismatched_fields": {"items": {"type": "string"}, "type": "array"},
+        "unavailable_fields": {"items": {"type": "string"}, "type": "array"}
+      },
+      "required": [
+        "match_version", "status", "comparisons", "compared_fields",
+        "mismatched_fields", "unavailable_fields"
+      ],
+      "type": "object"
+    },
+    "cause_match_pair": {
+      "additionalProperties": false,
+      "properties": {
+        "expected_cause_fingerprint": {"$ref": "#/$defs/cause_fingerprint"},
+        "actual_cause_fingerprint": {"$ref": "#/$defs/cause_fingerprint"},
+        "match": {"$ref": "#/$defs/cause_comparison"},
+        "accepted": {"type": "boolean"}
+      },
+      "required": [
+        "expected_cause_fingerprint", "actual_cause_fingerprint", "match",
+        "accepted"
+      ],
+      "type": "object"
+    },
+    "cause_match_assessment": {
+      "additionalProperties": false,
+      "properties": {
+        "cause_match_version": {"const": "eval-cause-match-v1"},
+        "hypothesis_id": {"type": ["string", "null"]},
+        "rank": {"type": ["integer", "null"]},
+        "root_event_id": {"type": ["string", "null"]},
+        "root_title": {"type": ["string", "null"]},
+        "actual_event_resolution": {"type": "string"},
+        "status": {
+          "enum": [
+            "exact", "compatible_partial", "insufficient_structure",
+            "ambiguous", "value_mismatch",
+            "entity_match_mutation_mismatch",
+            "mutation_match_entity_mismatch", "different_cause"
+          ]
+        },
+        "correct": {"type": ["boolean", "null"]},
+        "reason": {"type": "string"},
+        "actual_cause_fingerprint": {
+          "anyOf": [{"$ref": "#/$defs/cause_fingerprint"}, {"type": "null"}]
+        },
+        "matched_expected_cause_fingerprint": {
+          "anyOf": [{"$ref": "#/$defs/cause_fingerprint"}, {"type": "null"}]
+        },
+        "match": {
+          "anyOf": [{"$ref": "#/$defs/cause_comparison"}, {"type": "null"}]
+        },
+        "all_matches": {
+          "items": {"$ref": "#/$defs/cause_match_pair"},
+          "type": "array"
+        }
+      },
+      "required": [
+        "cause_match_version", "hypothesis_id", "rank", "root_event_id",
+        "root_title", "actual_event_resolution", "status", "correct",
+        "reason", "actual_cause_fingerprint", "match", "all_matches"
+      ],
+      "type": "object"
+    },
+    "cause_fingerprint": {
+      "additionalProperties": false,
+      "properties": {
+        "fingerprint_version": {"const": "eval-cause-fingerprint-v1"},
+        "provider": {"type": ["string", "null"]},
+        "entity_kind": {"type": ["string", "null"]},
+        "canonical_entity_id": {"type": ["string", "null"]},
+        "provider_native_entity_id": {"type": ["string", "null"]},
+        "mutation_family": {"type": ["string", "null"]},
+        "changed_field": {"type": ["string", "null"]},
+        "before_value_ref": {},
+        "before_value_hash": {"type": ["string", "null"]},
+        "after_value_ref": {},
+        "after_value_hash": {"type": ["string", "null"]},
+        "initiating_event_id": {"type": ["string", "null"]},
+        "source_change_id": {"type": ["string", "null"]},
+        "scenario_logical_entity": {"type": ["string", "null"]},
+        "scenario_logical_change": {"type": ["string", "null"]},
+        "evidence_source": {"type": ["string", "null"]},
+        "fingerprint_completeness": {"enum": ["complete", "partial", "insufficient_structure"]}
+      },
+      "required": [
+        "fingerprint_version", "provider", "entity_kind", "canonical_entity_id",
+        "provider_native_entity_id", "mutation_family", "changed_field",
+        "before_value_ref", "before_value_hash", "after_value_ref", "after_value_hash",
+        "initiating_event_id", "source_change_id", "scenario_logical_entity",
+        "scenario_logical_change", "evidence_source", "fingerprint_completeness"
+      ],
+      "type": "object"
+    },
     "execution_action": {
       "additionalProperties": false,
       "properties": {

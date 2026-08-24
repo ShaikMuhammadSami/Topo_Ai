@@ -1,8 +1,9 @@
 # Evaluation Cause Fingerprint v1
 
-Status: **CA-0 forensic contract**. This contract is evaluation-only and does
-not change product behavior, product persistence, scenario expectations, or
-EVAL-1 pass/fail semantics.
+Status: **accepted evaluation fingerprint contract**. CA-0 introduced the
+contract for forensics; EVAL-1.2 promotes its structured comparator to the
+authoritative current-model root-cause evaluator. It remains evaluation-only
+and does not change product behavior, persistence, or scenario expectations.
 
 ## Contract families
 
@@ -62,10 +63,11 @@ The comparator evaluates:
 - canonical before and after value hashes;
 - initiating event and source change IDs when both sides expose them.
 
-It returns one of:
+The low-level comparator returns one of:
 
 - `exact`;
 - `compatible_partial`;
+- `value_mismatch`;
 - `entity_match_mutation_mismatch`;
 - `mutation_match_entity_mismatch`;
 - `insufficient_structure`;
@@ -77,7 +79,9 @@ because independent provider truth does not originate with Topo IDs. A partial
 record never becomes exact.
 
 The comparator deliberately does not consume titles, summaries, fuzzy text,
-embeddings, display-name similarity, or LLM output.
+embeddings, display-name similarity, or LLM output. Authoritative acceptance,
+ambiguity, Top-1/Top-3, and INCONCLUSIVE semantics are defined by
+[`structured-cause-match-v1.md`](structured-cause-match-v1.md).
 
 ## First-divergence rule
 

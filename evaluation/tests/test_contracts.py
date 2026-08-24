@@ -50,11 +50,42 @@ def provider() -> ProviderVerification:
                 name=name,
                 uid=uid,
                 observed_at="2026-08-23T10:00:01+00:00",
+                spec=(
+                    {"images": ["registry.invalid/eval/image:bad"]}
+                    if alias == "root_deployment"
+                    else {}
+                ),
             )
             for alias, kind, name, uid in values
         ],
         assertions=[{"failure_observed_at": "2026-08-23T10:00:00+00:00", "passed": True}],
     )
+
+
+def execution_receipt() -> dict:
+    return {
+        "receipt_version": "eval-1.execution.v1",
+        "scenario_id": "sentinel-a",
+        "run_id": "abcdef12",
+        "namespace": "topo-eval-a-abcdef",
+        "started_at": "2026-08-23T10:00:00+00:00",
+        "completed_at": "2026-08-23T10:00:01+00:00",
+        "actions": [
+            {
+                "action_id": "a1",
+                "action_type": "causal_bad_image",
+                "logical_target": "root_deployment",
+                "provider_uid": "uid-dep",
+                "executed_at": "2026-08-23T10:00:00+00:00",
+                "before": {"generation": 2, "image": "nginx:1.27-alpine"},
+                "after": {
+                    "generation": 3,
+                    "image": "registry.invalid/eval/image:bad",
+                },
+                "provider_receipt": {},
+            }
+        ],
+    }
 
 
 def semantics(state: str = "supported_under_current_model") -> dict:
@@ -112,7 +143,43 @@ def observation() -> TopoObservation:
         },
         briefing={"incident_id": "inc-1"},
         blast_radius={"affected_entities": [{"entity_id": item} for item in ("e-pod", "e-rs", "e-dep")]},
-        change_events=[{"event_id": "event-true", "title": "Deployment configuration changed", "entity_links": [{"entity_id": "e-dep"}]}],
+        change_events=[
+            {
+                "event_id": "event-true",
+                "origin_change_id": "change-true",
+                "title": "Deployment configuration changed",
+                "kind": "scaling",
+                "links": [{"entity_id": "e-dep"}],
+                "metadata": {
+                    "change_id": "change-true",
+                    "change_type": "entity_updated",
+                    "entity_refs": [
+                        {
+                            "entity_id": "k8s:cluster:deployment:uid-dep",
+                            "kind": "KubernetesDeployment",
+                        }
+                    ],
+                    "changed_fields": {
+                        "properties.images": {
+                            "before": ["nginx:1.27-alpine"],
+                            "after": ["registry.invalid/eval/image:bad"],
+                        }
+                    },
+                    "before": {
+                        "properties": {
+                            "uid": "uid-dep",
+                            "images": ["nginx:1.27-alpine"],
+                        }
+                    },
+                    "after": {
+                        "properties": {
+                            "uid": "uid-dep",
+                            "images": ["registry.invalid/eval/image:bad"],
+                        }
+                    },
+                },
+            }
+        ],
         observed_times={
             "incident": "2026-08-23T10:00:02+00:00",
             "causal_analysis": "2026-08-23T10:00:03+00:00",
@@ -126,6 +193,7 @@ def evaluate(manifest: ScenarioManifest | None = None, truth: ProviderVerificati
         manifest or ScenarioManifest.load(manifest_path("sentinel-a")),
         truth or provider(),
         topo or observation(),
+        execution_receipt=execution_receipt(),
     )
 
 
@@ -195,6 +263,18 @@ def test_top1_wrong_but_top3_contains_truth_is_product_failure():
     true = topo.causal_analysis["hypotheses"][0]
     wrong = copy.deepcopy(true)
     wrong.update({"hypothesis_id": "wrong", "rank": 1, "root_event_id": "wrong-event", "root_title": "unrelated config change"})
+    wrong_event = copy.deepcopy(topo.change_events[0])
+    wrong_event.update(
+        {
+            "event_id": "wrong-event",
+            "origin_change_id": "wrong-change",
+            "title": "Deployment configuration changed",
+        }
+    )
+    wrong_event["metadata"]["changed_fields"] = {
+        "properties.replicas": {"before": 2, "after": 3}
+    }
+    topo.change_events.append(wrong_event)
     true["rank"] = 2
     topo.causal_analysis["hypotheses"] = [wrong, true]
     topo.causal_analysis["top_hypothesis"] = wrong

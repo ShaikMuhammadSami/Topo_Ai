@@ -16,7 +16,7 @@ from evaluation.evidence_semantics import (
     interpret_explicit_non_cause_evidence,
 )
 from evaluation.scenarios import manifest_path
-from evaluation.tests.test_contracts import observation, provider
+from evaluation.tests.test_contracts import execution_receipt, observation, provider
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -106,7 +106,12 @@ def evaluation_case(items: list[dict], **kwargs):
     topo.change_events.append(
         {"event_id": EVENT, "links": [{"entity_id": CANDIDATE}]}
     )
-    return IndependentEvaluator().evaluate(manifest, provider(), topo)
+    return IndependentEvaluator().evaluate(
+        manifest,
+        provider(),
+        topo,
+        execution_receipt=execution_receipt(),
+    )
 
 
 def valid_result_payload() -> dict:
