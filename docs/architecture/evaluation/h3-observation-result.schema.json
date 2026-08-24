@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo-ai.local/schemas/eval-h3-observation-v1.json",
+  "title": "Topo AI H3 Actions-to-image observation result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "observed_at",
+    "product_git_commit",
+    "provider_expected",
+    "provider_verification",
+    "ingestion_exercise",
+    "topo_observation",
+    "evaluation",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-h3-observation-v1"},
+    "observed_at": {"type": "string", "format": "date-time"},
+    "product_git_commit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "provider_expected": {
+      "type": "object",
+      "required": [
+        "truth_source",
+        "repository",
+        "repository_id",
+        "commit_sha",
+        "workflow_name",
+        "run_id",
+        "run_attempt",
+        "image_repository",
+        "image_tag",
+        "image_digest",
+        "immutable_image_ref",
+        "built_at",
+        "receipt_created_at"
+      ],
+      "properties": {
+        "truth_source": {"const": "accepted_provider_receipt"},
+        "repository": {"type": "string"},
+        "repository_id": {"type": "string"},
+        "commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "workflow_name": {"type": "string"},
+        "run_id": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+        "run_attempt": {"type": "integer", "minimum": 1},
+        "image_repository": {"type": "string"},
+        "image_tag": {"type": "string"},
+        "image_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "immutable_image_ref": {"type": "string"},
+        "built_at": {"type": ["string", "null"]},
+        "receipt_created_at": {"type": "string", "format": "date-time"}
+      }
+    },
+    "provider_verification": {"type": "object"},
+    "ingestion_exercise": {
+      "type": "object",
+      "required": [
+        "mode",
+        "receipt_used_as_product_input",
+        "kubernetes_materialization_required",
+        "product_code_changed"
+      ],
+      "properties": {
+        "mode": {"type": "string"},
+        "receipt_used_as_product_input": {"const": false},
+        "kubernetes_materialization_required": {"type": "boolean"},
+        "product_code_changed": {"const": false}
+      }
+    },
+    "topo_observation": {
+      "type": "object",
+      "required": [
+        "snapshot_id",
+        "context",
+        "topo_run_entity",
+        "topo_image_entity",
+        "topo_relationship"
+      ],
+      "properties": {
+        "snapshot_id": {"type": ["string", "null"]},
+        "context": {"type": "object"},
+        "topo_run_entity": {"$ref": "#/$defs/entityObservation"},
+        "topo_image_entity": {"$ref": "#/$defs/entityObservation"},
+        "topo_relationship": {"$ref": "#/$defs/relationshipObservation"}
+      }
+    },
+    "evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "run_identity_match",
+        "image_identity_match",
+        "edge_present",
+        "predicate_match",
+        "direction_match",
+        "provenance_present",
+        "source_reference_present",
+        "temporal_consistent",
+        "status",
+        "first_divergence",
+        "reason"
+      ],
+      "properties": {
+        "run_identity_match": {"type": "boolean"},
+        "image_identity_match": {"type": "boolean"},
+        "edge_present": {"type": "boolean"},
+        "predicate_match": {"type": "boolean"},
+        "direction_match": {"type": "boolean"},
+        "provenance_present": {"type": "boolean"},
+        "source_reference_present": {"type": "boolean"},
+        "temporal_consistent": {"type": "boolean"},
+        "status": {"enum": ["PROVEN", "PARTIAL", "MISSING", "WRONG", "INCONCLUSIVE"]},
+        "first_divergence": {
+          "enum": [
+            "ACTIONS_RUN_ENTITY_MISSING",
+            "ACTIONS_RUN_IDENTITY_WRONG",
+            "IMAGE_ENTITY_MISSING",
+            "IMAGE_DIGEST_IDENTITY_WRONG",
+            "RUN_IMAGE_RELATIONSHIP_MISSING",
+            "RUN_IMAGE_PREDICATE_WRONG",
+            "RUN_IMAGE_DIRECTION_WRONG",
+            "RUN_IMAGE_PROVENANCE_INCOMPLETE",
+            "RUN_IMAGE_SOURCE_REFERENCE_INCOMPLETE",
+            "RUN_IMAGE_TEMPORAL_INCOMPLETE",
+            "TOPO_PROVIDER_ACCESS_UNAVAILABLE",
+            "NO_DIVERGENCE"
+          ]
+        },
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "warnings": {"type": "array", "items": {"type": "string"}}
+  },
+  "$defs": {
+    "entityObservation": {
+      "type": "object",
+      "required": ["present", "canonical_entity_id", "entity_kind", "provider_native_id"]
+    },
+    "relationshipObservation": {
+      "type": "object",
+      "required": [
+        "present",
+        "relationship_id",
+        "predicate",
+        "stored_source_entity_id",
+        "stored_target_entity_id",
+        "source_references"
+      ]
+    }
+  }
+}
