@@ -21,6 +21,8 @@ from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/topo-lineage-provider-fixture.yml"
 DOCKERFILE = ROOT / "evaluation/fixtures/lineage-image/Dockerfile"
+RUN_SCRIPT = ROOT / "evaluation/fixtures/lineage-image/run.sh"
+RUNTIME_MODE = ROOT / "evaluation/fixtures/lineage-image/runtime-mode.txt"
 SCHEMA = ROOT / "docs/architecture/evaluation/lineage-provider-receipt.schema.json"
 EXAMPLE = ROOT / "evaluation/fixtures/lineage-provider-receipt.example.json"
 DOC = ROOT / "docs/architecture/evaluation/lineage-provider-receipt-v1.md"
@@ -294,7 +296,9 @@ def test_dockerfile_exposes_no_service():
 def test_image_runtime_is_long_running_and_non_root():
     text = DOCKERFILE.read_text(encoding="utf-8")
     assert "USER 65532:65532" in text
-    assert "while true; do sleep 3600; done" in text
+    assert 'ENTRYPOINT ["/opt/topo/run.sh"]' in text
+    assert "while :; do" in RUN_SCRIPT.read_text(encoding="utf-8")
+    assert RUNTIME_MODE.read_bytes() == b"healthy\n"
 
 
 def test_schema_validates_representative_receipt():
