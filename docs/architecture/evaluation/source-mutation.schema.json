@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo-ai.local/schemas/eval-source-mutation-v1.json",
+  "title": "Topo AI evaluation source mutation truth",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "provider",
+    "repository_id",
+    "repository",
+    "parent_commit_sha",
+    "commit_sha",
+    "file_path",
+    "mutation_family",
+    "before_hash",
+    "after_hash",
+    "before_semantic_value",
+    "after_semantic_value",
+    "expected_failure_mechanism",
+    "scenario_role",
+    "truth_source",
+    "topo_output_used"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-source-mutation-v1"},
+    "status": {"enum": ["pending", "complete"]},
+    "provider": {"const": "github"},
+    "repository_id": {
+      "type": ["string", "null"],
+      "pattern": "^[1-9][0-9]*$"
+    },
+    "repository": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "parent_commit_sha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "commit_sha": {
+      "type": ["string", "null"],
+      "pattern": "^[0-9a-f]{40}$"
+    },
+    "file_path": {
+      "const": "evaluation/fixtures/lineage-image/runtime-mode.txt"
+    },
+    "mutation_family": {"const": "file_content_change"},
+    "before_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "after_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "before_semantic_value": {"const": "healthy"},
+    "after_semantic_value": {"const": "fail"},
+    "expected_failure_mechanism": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "exit_code"],
+      "properties": {
+        "type": {"const": "container_entrypoint_exit"},
+        "exit_code": {"const": 42}
+      }
+    },
+    "scenario_role": {"const": "initiating_mutation"},
+    "truth_source": {"const": "git_provider"},
+    "topo_output_used": {"const": false}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "pending"}}},
+      "then": {
+        "properties": {
+          "repository_id": {"type": "null"},
+          "repository": {"type": "null"},
+          "parent_commit_sha": {"type": "null"},
+          "commit_sha": {"type": "null"}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"status": {"const": "complete"}}},
+      "then": {
+        "properties": {
+          "repository_id": {"type": "string", "pattern": "^[1-9][0-9]*$"},
+          "repository": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+          },
+          "parent_commit_sha": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{40}$"
+          },
+          "commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"}
+        }
+      }
+    }
+  ]
+}

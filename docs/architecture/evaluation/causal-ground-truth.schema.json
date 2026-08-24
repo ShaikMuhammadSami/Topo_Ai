@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo-ai.local/schemas/eval-causal-ground-truth-v1.json",
+  "title": "Topo AI evaluation causal ground truth",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "status",
+    "scenario_id",
+    "expected_truth_source",
+    "topo_role",
+    "levels"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-causal-ground-truth-v1"},
+    "status": {"enum": ["pending_provider_run", "source_truth_complete"]},
+    "scenario_id": {"const": "lineage-source-failure-causal-v1"},
+    "expected_truth_source": {"const": "git_and_provider_runtime"},
+    "topo_role": {"const": "system_under_test"},
+    "levels": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "initiating_mutation",
+        "failure_mechanism",
+        "runtime_manifestation",
+        "operational_impact"
+      ],
+      "properties": {
+        "initiating_mutation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "contract_version",
+            "file_path",
+            "mutation_family",
+            "before_semantic_value",
+            "after_semantic_value",
+            "scenario_role"
+          ],
+          "properties": {
+            "contract_version": {"const": "eval-source-mutation-v1"},
+            "file_path": {
+              "const": "evaluation/fixtures/lineage-image/runtime-mode.txt"
+            },
+            "mutation_family": {"const": "file_content_change"},
+            "before_semantic_value": {"const": "healthy"},
+            "after_semantic_value": {"const": "fail"},
+            "scenario_role": {"const": "initiating_mutation"}
+          }
+        },
+        "failure_mechanism": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["type", "exit_code", "deterministic"],
+          "properties": {
+            "type": {"const": "container_entrypoint_exit"},
+            "exit_code": {"const": 42},
+            "deterministic": {"const": true}
+          }
+        },
+        "runtime_manifestation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "last_termination_exit_code",
+            "minimum_restart_count",
+            "accepted_waiting_reasons",
+            "accepted_termination_reasons",
+            "structured_fields_required"
+          ],
+          "properties": {
+            "provider": {"const": "kubernetes"},
+            "last_termination_exit_code": {"const": 42},
+            "minimum_restart_count": {"const": 1},
+            "accepted_waiting_reasons": {
+              "const": ["BackOff", "CrashLoopBackOff"]
+            },
+            "accepted_termination_reasons": {"const": ["Error"]},
+            "structured_fields_required": {"const": true}
+          }
+        },
+        "operational_impact": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "provider",
+            "resource_kind",
+            "desired_replicas",
+            "ready_replicas",
+            "available_replicas"
+          ],
+          "properties": {
+            "provider": {"const": "kubernetes"},
+            "resource_kind": {"const": "Deployment"},
+            "desired_replicas": {"const": 1},
+            "ready_replicas": {"const": 0},
+            "available_replicas": {"const": 0}
+          }
+        }
+      }
+    }
+  }
+}

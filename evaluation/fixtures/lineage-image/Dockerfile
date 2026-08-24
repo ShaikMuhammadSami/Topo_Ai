@@ -6,6 +6,8 @@ ARG GITHUB_RUN_ID
 ARG GITHUB_RUN_ATTEMPT
 ARG GITHUB_WORKFLOW_REF
 
+COPY --chown=65532:65532 run.sh runtime-mode.txt /opt/topo/
+
 RUN set -eu; \
     printf '%s\n' \
       "fixture=topo-lineage-provider" \
@@ -15,8 +17,9 @@ RUN set -eu; \
       "github_run_attempt=${GITHUB_RUN_ATTEMPT}" \
       "github_workflow_ref=${GITHUB_WORKFLOW_REF}" \
       > /topo-lineage-provider.txt; \
-    chmod 0444 /topo-lineage-provider.txt
+    chmod 0444 /topo-lineage-provider.txt /opt/topo/runtime-mode.txt; \
+    chmod 0555 /opt/topo/run.sh
 
 USER 65532:65532
 
-CMD ["sh", "-c", "while true; do sleep 3600; done"]
+ENTRYPOINT ["/opt/topo/run.sh"]
