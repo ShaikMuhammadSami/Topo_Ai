@@ -1,0 +1,66 @@
+{
+  "apiVersion": "v1",
+  "kind": "Pod",
+  "metadata": {
+    "creationTimestamp": "2026-01-01T00:00:00Z",
+    "name": "fixture-rs-pod",
+    "namespace": "topo-eval-lineage-causal-1",
+    "ownerReferences": [
+      {
+        "apiVersion": "apps/v1",
+        "controller": true,
+        "kind": "ReplicaSet",
+        "name": "fixture-rs",
+        "uid": "replicaset-uid"
+      }
+    ],
+    "uid": "pod-uid"
+  },
+  "spec": {
+    "containers": [
+      {
+        "image": "registry.example/evaluation/sidecar@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "name": "sidecar"
+      },
+      {
+        "image": "registry.example/evaluation/image@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "name": "fixture"
+      }
+    ]
+  },
+  "status": {
+    "containerStatuses": [
+      {
+        "image": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+        "imageID": "registry.example/evaluation/image@sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "lastState": {
+          "terminated": {
+            "exitCode": 42,
+            "finishedAt": "2026-01-01T00:00:02Z",
+            "reason": "Error",
+            "startedAt": "2026-01-01T00:00:01Z"
+          }
+        },
+        "name": "fixture",
+        "restartCount": 2,
+        "state": {
+          "waiting": {
+            "reason": "CrashLoopBackOff"
+          }
+        }
+      },
+      {
+        "image": "registry.example/evaluation/sidecar:stable",
+        "imageID": "registry.example/evaluation/sidecar@sha256:5555555555555555555555555555555555555555555555555555555555555555",
+        "lastState": {},
+        "name": "sidecar",
+        "restartCount": 0,
+        "state": {
+          "running": {
+            "startedAt": "2026-01-01T00:00:00Z"
+          }
+        }
+      }
+    ]
+  }
+}

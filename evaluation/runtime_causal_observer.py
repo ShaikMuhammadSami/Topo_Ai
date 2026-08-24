@@ -207,13 +207,29 @@ def _owned_item(
     )[0] if matches else None
 
 
-def _container_status(pod: dict[str, Any]) -> dict[str, Any] | None:
+def _named_container(
+    values: list[dict[str, Any]], *, name: str
+) -> dict[str, Any] | None:
     matches = [
         item
-        for item in pod.get("status", {}).get("containerStatuses") or []
-        if item.get("name") == CONTAINER_NAME
+        for item in values
+        if isinstance(item, dict) and item.get("name") == name
     ]
     return matches[0] if len(matches) == 1 else None
+
+
+def _container_pair(
+    pod: dict[str, Any], *, name: str = CONTAINER_NAME
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    spec_container = _named_container(
+        pod.get("spec", {}).get("containers") or [], name=name
+    )
+    status_container = _named_container(
+        pod.get("status", {}).get("containerStatuses") or [], name=name
+    )
+    if spec_container is None or status_container is None:
+        return None
+    return spec_container, status_container
 
 
 def _backoff_observation(
@@ -278,9 +294,10 @@ def _runtime_sample(
     pod = _owned_item(pods, owner_kind="ReplicaSet", owner_uid=replica_set_uid)
     if pod is None:
         return None
-    status = _container_status(pod)
-    if status is None:
+    container_pair = _container_pair(pod)
+    if container_pair is None:
         return None
+    spec_container, status = container_pair
     events = kubectl.get_json("events", "-n", namespace).get("items") or []
     backoff = _backoff_observation(pod=pod, status=status, events=events)
     state = status.get("state") or {}
@@ -304,10 +321,13 @@ def _runtime_sample(
         "deployment": deployment,
         "replica_set": replica_set,
         "pod": pod,
+        "spec_container": spec_container,
         "status": status,
         "backoff": backoff,
         "facts": {
-            "image_ref_matches": status.get("image") == immutable_image_ref,
+            "requested_image_ref_matches": (
+                spec_container.get("image") == immutable_image_ref
+            ),
             "runtime_artifact_identity_confirmed": artifact_resolution[
                 "accepted"
             ],
@@ -342,7 +362,7 @@ def _sample_complete(sample: dict[str, Any] | None) -> bool:
     return all(
         facts.get(name) is True
         for name in (
-            "image_ref_matches",
+            "requested_image_ref_matches",
             "runtime_artifact_identity_confirmed",
             "owner_chain_matches",
             "failure_mechanism_confirmed",
@@ -394,6 +414,7 @@ def observe_runtime_causal_truth(
     deployment = sample["deployment"]
     replica_set = sample["replica_set"]
     pod = sample["pod"]
+    spec_container = sample["spec_container"]
     status = sample["status"]
     facts = sample["facts"]
     terminated = facts["last_termination"]
@@ -428,8 +449,9 @@ def observe_runtime_causal_truth(
             "pod_owner_replicaset_uid": _owner_uid(pod, "ReplicaSet"),
         },
         "container": {
-            "name": status.get("name"),
-            "image": status.get("image"),
+            "name": spec_container.get("name"),
+            "image": spec_container.get("image"),
+            "runtime_status_image": status.get("image"),
             "image_id": status.get("imageID"),
             "runtime_digest": sample["artifact_resolution"]["runtime_digest"],
             "restart_count": int(status.get("restartCount") or 0),
@@ -460,7 +482,7 @@ def observe_runtime_causal_truth(
         },
         "ground_truth": {
             "exact_image_identity_confirmed": (
-                facts["image_ref_matches"]
+                facts["requested_image_ref_matches"]
                 and facts["runtime_artifact_identity_confirmed"]
             ),
             "ownership_chain_confirmed": facts["owner_chain_matches"],
@@ -724,12 +746,20 @@ def _validate_runtime_causal_receipt_v2(value: dict[str, Any]) -> None:
         "last_termination_finished_at",
         "backoff_observation",
     }
-    if set(container) != required_container:
+    optional_container = {"runtime_status_image"}
+    if not required_container.issubset(container) or not set(container).issubset(
+        required_container | optional_container
+    ):
         raise ValueError("Runtime container fields do not match v2.")
     if container.get("name") != CONTAINER_NAME:
         raise ValueError("Runtime container identity is invalid.")
     if container.get("image") != requested["immutable_ref"]:
         raise ValueError("A different image was requested by the Pod.")
+    runtime_status_image = container.get("runtime_status_image")
+    if runtime_status_image is not None and not isinstance(
+        runtime_status_image, str
+    ):
+        raise ValueError("Runtime status image diagnostic must be text or null.")
     if container.get("image_id") != resolution.get("runtime_image_id"):
         raise ValueError("Runtime imageID and artifact resolution differ.")
     if container.get("runtime_digest") != resolution.get("runtime_digest"):

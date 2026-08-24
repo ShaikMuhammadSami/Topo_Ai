@@ -73,6 +73,7 @@
       "properties": {
         "name": {"const": "fixture"},
         "image": {"type": "string", "minLength": 1},
+        "runtime_status_image": {"type": ["string", "null"]},
         "image_id": {"type": "string", "minLength": 1},
         "runtime_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "restart_count": {"type": "integer", "minimum": 1},
