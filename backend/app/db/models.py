@@ -2915,6 +2915,179 @@ class CloudResourceRecord(Base):
         )
     )
 
+class BuildArtifactEvidenceRecord(Base):
+    __tablename__ = "build_artifact_evidence"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "provider",
+            "repository_id",
+            "workflow_run_id",
+            "run_attempt",
+            "image_digest",
+            "provider_evidence_id",
+            name="uq_build_artifact_provider_fact",
+        ),
+    )
+
+    evidence_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+
+    provider: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    repository_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    repository: Mapped[str] = mapped_column(
+        String(1000),
+        nullable=False,
+        index=True,
+    )
+
+    workflow_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+    workflow_ref: Mapped[str | None] = mapped_column(
+        String(2000),
+        nullable=True,
+    )
+
+    workflow_run_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    run_attempt: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        index=True,
+    )
+
+    commit_sha: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+        index=True,
+    )
+
+    artifact_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+        index=True,
+    )
+
+    image_repository: Mapped[str] = mapped_column(
+        String(2000),
+        nullable=False,
+        index=True,
+    )
+
+    image_reference: Mapped[str | None] = mapped_column(
+        String(3000),
+        nullable=True,
+    )
+
+    image_digest: Mapped[str] = mapped_column(
+        String(71),
+        nullable=False,
+        index=True,
+    )
+
+    immutable_image_ref: Mapped[str] = mapped_column(
+        String(3000),
+        nullable=False,
+    )
+
+    provider_evidence_type: Mapped[str] = mapped_column(
+        String(150),
+        nullable=False,
+        index=True,
+    )
+
+    provider_evidence_id: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+
+    provider_evidence_reference: Mapped[str] = mapped_column(
+        String(3000),
+        nullable=False,
+    )
+
+    provider_evidence_digest: Mapped[str] = mapped_column(
+        String(71),
+        nullable=False,
+    )
+
+    provider_build_record_digest: Mapped[str] = mapped_column(
+        String(71),
+        nullable=False,
+    )
+
+    provider_builder_id: Mapped[str] = mapped_column(
+        String(3000),
+        nullable=False,
+    )
+
+    provider_build_started_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    provider_build_finished_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )
+
+    provider_run_updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    observed_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    temporal_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    completeness: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+
+    created_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+    updated_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        default=utc_now_iso,
+    )
+
+
 class ChangeEventRecord(Base):
     __tablename__ = "change_events"
 

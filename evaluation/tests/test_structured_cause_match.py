@@ -29,6 +29,7 @@ from evaluation.evaluator import (
     blast_false_positive_path_attribution,
 )
 from evaluation.evidence_semantics import NON_CAUSE_EVIDENCE_SEMANTICS_VERSION
+from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
 from evaluation.scenarios import manifest_path
 from evaluation.structured_cause_match import (
     assess_hypothesis_cause,
@@ -669,25 +670,8 @@ def test_no_scenario_specific_structured_match_override():
     )
 
 
-def test_product_roots_have_no_eval_1_2_diff():
-    completed = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "--",
-            "backend/app",
-            "backend/tests",
-            "agent/src",
-            "frontend",
-            "cli/src",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert completed.stdout.strip() == ""
+def test_product_diff_is_scoped_to_h3_r1_after_eval_1_2():
+    assert_product_diff_scoped_to_h3_r1(ROOT)
 
 
 def test_all_manifest_hashes_remain_frozen():

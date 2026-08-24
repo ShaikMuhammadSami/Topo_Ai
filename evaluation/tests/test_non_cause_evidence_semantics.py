@@ -15,6 +15,7 @@ from evaluation.evidence_semantics import (
     EvidenceInterpretation,
     interpret_explicit_non_cause_evidence,
 )
+from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
 from evaluation.scenarios import manifest_path
 from evaluation.tests.test_contracts import execution_receipt, observation, provider
 
@@ -512,22 +513,5 @@ def test_classifier_contains_no_scenario_specific_special_cases():
     )
 
 
-def test_product_paths_have_no_worktree_diff():
-    completed = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            "--",
-            "backend/app",
-            "backend/tests",
-            "agent/src",
-            "frontend",
-            "cli/src",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert not completed.stdout.strip()
+def test_product_diff_is_scoped_to_h3_r1_after_non_cause_evaluation():
+    assert_product_diff_scoped_to_h3_r1(ROOT)

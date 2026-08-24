@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import re
-from collections import defaultdict
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Any
@@ -14,7 +12,6 @@ from app.models.topology import (
     EvidenceType,
     GraphSnapshot,
     Relationship,
-    RelationshipConfidenceSemantics,
     RelationshipOrigin,
     RelationshipType,
 )
@@ -24,39 +21,6 @@ from app.services.canonical_identity import (
 from app.services.relationship_provenance import (
     relationship_provenance,
     source_reference,
-)
-
-
-WORKFLOW_RUN_ID_KEYS = (
-    "topo.ai/workflow-run-id",
-    "github.actions/run-id",
-    "ci.workflow-run-id",
-)
-
-REVISION_KEYS = (
-    "topo.ai/source-revision",
-    "org.opencontainers.image.revision",
-    "vcs.revision",
-    "git.sha",
-    "git.commit",
-    "commit.sha",
-    "commit_sha",
-)
-
-IMAGE_DIGEST_KEYS = (
-    "topo.ai/image-digest",
-    "org.opencontainers.image.digest",
-)
-
-REPOSITORY_KEYS = (
-    "topo.ai/source-repository",
-    "vcs.repository",
-    "git.repository",
-    "app.kubernetes.io/source",
-)
-
-DIGEST_PATTERN = re.compile(
-    r"sha256:[0-9a-fA-F]{64}"
 )
 
 
@@ -88,57 +52,13 @@ def _relationship_id(
     return f"rel:{digest}"
 
 
-def _metadata_values(
-    entity: Entity,
-) -> dict[str, str]:
-    values: dict[str, str] = {
-        str(key): str(value)
-        for key, value in entity.labels.items()
-    }
-
-    annotations = entity.properties.get(
-        "annotations"
-    )
-
-    if isinstance(annotations, dict):
-        for key, value in annotations.items():
-            values[str(key)] = str(value)
-
-    return values
-
-
-def _find_value(
-    entity: Entity,
-    keys: tuple[str, ...],
-) -> str | None:
-    values = _metadata_values(entity)
-
-    for key in keys:
-        value = values.get(key)
-
-        if value:
-            return value.strip()
-
-    return None
-
-
 def _normalize_repository(
     value: str,
 ) -> str:
-    normalized = value.strip().lower()
+    normalized = value.strip().lower().removesuffix(".git")
 
-    normalized = normalized.removesuffix(
-        ".git"
-    )
-
-    if normalized.startswith(
-        "git@github.com:"
-    ):
-        normalized = normalized.replace(
-            "git@github.com:",
-            "",
-            1,
-        )
+    if normalized.startswith("git@github.com:"):
+        normalized = normalized.replace("git@github.com:", "", 1)
 
     for prefix in (
         "https://github.com/",
@@ -146,60 +66,9 @@ def _normalize_repository(
         "ssh://git@github.com/",
     ):
         if normalized.startswith(prefix):
-            normalized = normalized[
-                len(prefix):
-            ]
+            normalized = normalized[len(prefix) :]
 
     return normalized.strip("/")
-
-
-def _repository_matches(
-    repository_hint: str | None,
-    expected_repository: str,
-) -> bool:
-    if not repository_hint:
-        return True
-
-    return (
-        _normalize_repository(
-            repository_hint
-        )
-        == _normalize_repository(
-            expected_repository
-        )
-    )
-
-
-def _normalize_sha(
-    value: str | None,
-) -> str | None:
-    if not value:
-        return None
-
-    match = re.search(
-        r"\b[0-9a-fA-F]{7,40}\b",
-        value,
-    )
-
-    if not match:
-        return None
-
-    return match.group(0).lower()
-
-
-def _extract_digest(
-    value: str | None,
-) -> str | None:
-    if not value:
-        return None
-
-    match = DIGEST_PATTERN.search(value)
-
-    return (
-        match.group(0).lower()
-        if match
-        else None
-    )
 
 
 def _safe_datetime(
@@ -275,36 +144,7 @@ def augment_snapshot_with_github_actions(
         if entity.kind == "GitCommit"
     }
 
-    image_entities = {
-        entity.id: entity
-        for entity in result.entities
-        if entity.kind == "ContainerImage"
-    }
-
-    images_by_workload: dict[
-        str,
-        set[str],
-    ] = defaultdict(set)
-
-    for relationship in result.relationships:
-        if (
-            relationship.relationship_type
-            == RelationshipType.USES
-            and relationship.target_entity_id
-            in image_entities
-        ):
-            images_by_workload[
-                relationship.source_entity_id
-            ].add(
-                relationship.target_entity_id
-            )
-
     run_entities: dict[
-        str,
-        Entity,
-    ] = {}
-
-    runs_by_external_id: dict[
         str,
         Entity,
     ] = {}
@@ -317,11 +157,6 @@ def augment_snapshot_with_github_actions(
     repository_run_relationships: dict[
         str,
         Relationship,
-    ] = {}
-
-    run_payloads_by_id: dict[
-        str,
-        dict[str, Any],
     ] = {}
 
     for run in workflow_runs:
@@ -428,14 +263,6 @@ def augment_snapshot_with_github_actions(
         run_entities[
             run_entity_id
         ] = run_entity
-
-        runs_by_external_id[
-            external_run_id
-        ] = run_entity
-
-        run_payloads_by_id[
-            external_run_id
-        ] = run
 
         repository_relationship = (
             Relationship(
@@ -551,11 +378,6 @@ def augment_snapshot_with_github_actions(
             trigger_relationship.id
         ] = trigger_relationship
 
-    entities_by_id = {
-        entity.id: entity
-        for entity in result.entities
-    }
-
     run_image_relationships: dict[
         str,
         Relationship,
@@ -565,271 +387,6 @@ def augment_snapshot_with_github_actions(
 
     mapped_run_ids: set[str] = set()
     mapped_image_ids: set[str] = set()
-
-    workload_kinds = {
-        "KubernetesDeployment",
-        "KubernetesPod",
-    }
-
-    for workload_id, image_ids in (
-        images_by_workload.items()
-    ):
-        workload = entities_by_id.get(
-            workload_id
-        )
-
-        if (
-            workload is None
-            or workload.kind
-            not in workload_kinds
-        ):
-            continue
-
-        repository_hint = _find_value(
-            workload,
-            REPOSITORY_KEYS,
-        )
-
-        if not _repository_matches(
-            repository_hint,
-            repository_full_name,
-        ):
-            continue
-
-        run_id = _find_value(
-            workload,
-            WORKFLOW_RUN_ID_KEYS,
-        )
-
-        if not run_id:
-            continue
-
-        run_entity = (
-            runs_by_external_id.get(
-                run_id
-            )
-        )
-
-        run_payload = (
-            run_payloads_by_id.get(
-                run_id
-            )
-        )
-
-        if (
-            run_entity is None
-            or run_payload is None
-        ):
-            warnings.append(
-                (
-                    f"Workload {workload.name} "
-                    f"references workflow run "
-                    f"{run_id}, but that run was "
-                    "not included in the collected "
-                    "GitHub Actions window."
-                )
-            )
-
-            continue
-
-        if (
-            run_payload.get("conclusion")
-            != "success"
-        ):
-            warnings.append(
-                (
-                    f"Workflow run {run_id} was "
-                    "not successful, so no image "
-                    "production relationship was "
-                    "created."
-                )
-            )
-
-            continue
-
-        workload_revision = (
-            _normalize_sha(
-                _find_value(
-                    workload,
-                    REVISION_KEYS,
-                )
-            )
-        )
-
-        run_revision = str(
-            run_payload.get("head_sha")
-            or ""
-        ).lower()
-
-        revision_matches = bool(
-            workload_revision
-            and (
-                run_revision
-                == workload_revision
-                or run_revision.startswith(
-                    workload_revision
-                )
-            )
-        )
-
-        annotated_digest = (
-            _extract_digest(
-                _find_value(
-                    workload,
-                    IMAGE_DIGEST_KEYS,
-                )
-            )
-        )
-
-        for image_id in image_ids:
-            image = image_entities.get(
-                image_id
-            )
-
-            if image is None:
-                continue
-
-            graph_digest = (
-                _extract_digest(
-                    str(
-                        image.properties.get(
-                            "digest"
-                        )
-                        or ""
-                    )
-                )
-            )
-
-            digest_matches = bool(
-                annotated_digest
-                and graph_digest
-                and annotated_digest
-                == graph_digest
-            )
-
-            if (
-                annotated_digest
-                and graph_digest
-                and not digest_matches
-            ):
-                warnings.append(
-                    (
-                        f"Image digest mismatch for "
-                        f"{workload.name}: metadata "
-                        f"contains {annotated_digest}, "
-                        f"but runtime contains "
-                        f"{graph_digest}."
-                    )
-                )
-
-                continue
-
-            if (
-                revision_matches
-                and digest_matches
-            ):
-                confidence = 0.99
-                method = (
-                    "run_id_revision_digest"
-                )
-
-            elif revision_matches:
-                confidence = 0.95
-                method = (
-                    "run_id_revision"
-                )
-
-            else:
-                confidence = 0.85
-                method = "run_id_only"
-
-            relationship = Relationship(
-                id=_relationship_id(
-                    run_entity.id,
-                    RelationshipType.PRODUCES,
-                    image_id,
-                ),
-                source_entity_id=(
-                    run_entity.id
-                ),
-                target_entity_id=image_id,
-                relationship_type=(
-                    RelationshipType.PRODUCES
-                ),
-                source_system=(
-                    "github-actions"
-                ),
-                observed_at=observed_at,
-                confidence=confidence,
-                confidence_semantics=(
-                    RelationshipConfidenceSemantics.HEURISTIC_SCORE
-                ),
-                directed=True,
-                evidence_ids=[
-                    evidence_id
-                ],
-                provenance=relationship_provenance(
-                    predicate=RelationshipType.PRODUCES,
-                    origin=RelationshipOrigin.INFERRED,
-                    source_component=(
-                        "backend.app.services.github_actions_graph"
-                    ),
-                    source_references=[
-                        source_reference(
-                            reference_type="github_workflow_run_id",
-                            reference=run_id,
-                            source_system="github-actions",
-                        ),
-                        source_reference(
-                            reference_type="container_image_digest",
-                            reference=(annotated_digest or graph_digest),
-                            source_system="kubernetes",
-                        ),
-                        source_reference(
-                            reference_type="mapping_method",
-                            reference=method,
-                            source_system="topo",
-                        ),
-                    ],
-                    linker_version="github-actions-artifact-linker:v1",
-                ),
-                properties={
-                    "mapping_method": method,
-                    "workflow_run_id": (
-                        run_id
-                    ),
-                    "workflow_head_sha": (
-                        run_revision
-                    ),
-                    "workload_revision": (
-                        workload_revision
-                    ),
-                    "annotated_digest": (
-                        annotated_digest
-                    ),
-                    "runtime_digest": (
-                        graph_digest
-                    ),
-                    "workload_entity_id": (
-                        workload.id
-                    ),
-                    "workload_kind": (
-                        workload.kind
-                    ),
-                },
-            )
-
-            run_image_relationships[
-                relationship.id
-            ] = relationship
-
-            mapped_run_ids.add(
-                run_entity.id
-            )
-
-            mapped_image_ids.add(
-                image_id
-            )
 
     existing_entity_ids = {
         entity.id
@@ -880,10 +437,11 @@ def augment_snapshot_with_github_actions(
             source_system="github-actions",
             summary=(
                 "GitHub Actions workflow runs "
-                "were connected to Git commits "
-                "and container images using run, "
-                "revision and image-digest "
-                "provenance metadata."
+                "were connected to Git repositories "
+                "and commits using provider-native "
+                "run metadata. Immutable artifact "
+                "lineage requires separate explicit "
+                "provider build evidence."
             ),
             observed_at=observed_at,
             related_entity_ids=[

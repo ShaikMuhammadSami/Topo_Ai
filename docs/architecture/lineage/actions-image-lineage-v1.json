@@ -1,0 +1,84 @@
+{
+  "schema_version": "actions-image-lineage-v1",
+  "status": "implemented",
+  "scope": "github_actions_provider_build_record_to_existing_container_image",
+  "relationship": {
+    "subject_kind": "GitHubWorkflowRun",
+    "predicate": "produces",
+    "object_kind": "ContainerImage",
+    "direction": "subject_to_object",
+    "origin": "observed",
+    "completeness": "complete",
+    "confidence": null,
+    "source_component": "backend.app.services.github_actions_artifact_lineage",
+    "linker_version": "github-actions-build-artifact-lineage:v1"
+  },
+  "provider_evidence": {
+    "provider": "github_actions",
+    "type": "github_actions_docker_build_record",
+    "format": "oci_buildkit_history_record",
+    "required_exact_facts": [
+      "repository_id",
+      "repository_name",
+      "workflow_run_id",
+      "run_attempt",
+      "commit_sha",
+      "provider_builder_id",
+      "pushed_image_repository",
+      "immutable_sha256_digest"
+    ],
+    "content_integrity_required": true,
+    "raw_payload_persisted": false
+  },
+  "entity_resolution": {
+    "creates_entities": false,
+    "run_identity": "existing_tc1_github_workflow_run_identity",
+    "image_identity": "existing_tc1_container_image_digest_identity",
+    "repository_scope_required": true,
+    "run_attempt_match_required": true,
+    "unambiguous_endpoints_required": true
+  },
+  "temporal": {
+    "relationship_source_event": "github_workflow_run.updated_at",
+    "source_time_authoritative": true,
+    "source_time_quality": "exact",
+    "observation_time_separate": true,
+    "recording_time_separate": true,
+    "missing_build_time_fabricated": false
+  },
+  "reconciliation": {
+    "normalized_evidence_durable": true,
+    "bounded_lookup": true,
+    "evidence_first_supported": true,
+    "image_first_supported": true,
+    "background_worker_required": false,
+    "relationship_id_deterministic": true,
+    "historical_snapshots_rewritten": false,
+    "incident_pins_moved": false
+  },
+  "abstains_on": [
+    "mutable_tag_only",
+    "commit_only",
+    "time_proximity_only",
+    "workflow_name_only",
+    "wrong_repository",
+    "wrong_run_id",
+    "wrong_run_attempt",
+    "wrong_commit_sha",
+    "malformed_or_missing_digest",
+    "provider_content_hash_mismatch",
+    "ambiguous_entity_identity",
+    "provider_unavailable"
+  ],
+  "cardinality": {
+    "multiple_images_per_run": true,
+    "same_image_from_independently_proven_runs": true
+  },
+  "non_claims": [
+    "source_commit_caused_runtime_failure",
+    "statistical_generalization",
+    "tag_implies_digest",
+    "commit_implies_producing_run"
+  ]
+}
+

@@ -26,8 +26,8 @@ from app.repositories.snapshot_repository import (
 from app.services.github_graph import (
     augment_snapshot_with_github,
 )
-from app.services.github_actions_graph import (
-    augment_snapshot_with_github_actions,
+from app.services.github_actions_artifact_lineage import (
+    enrich_snapshot_with_github_actions_provider_evidence,
 )
 
 router = APIRouter(
@@ -244,16 +244,13 @@ def enrich_snapshot_with_actions(
     )
 
     try:
-        enriched_snapshot, stats = (
-            augment_snapshot_with_github_actions(
+        enriched_snapshot, stats, _lineage_stats = (
+            enrich_snapshot_with_github_actions_provider_evidence(
+                session=session,
                 snapshot=snapshot,
+                connector=connector,
+                repository=repository,
                 workflow_runs=workflow_runs,
-                repository_full_name=(
-                    repository_full_name
-                ),
-                api_url=(
-                    connector.settings.api_url
-                ),
             )
         )
 

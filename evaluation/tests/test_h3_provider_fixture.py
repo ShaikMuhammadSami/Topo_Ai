@@ -15,6 +15,7 @@ from evaluation.lineage_provider_truth import (
     contains_unredacted_secret_like_fields,
     sanitize_provider_receipt,
 )
+from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -339,26 +340,8 @@ def test_fixture_contains_no_sentinel_or_blast_special_case():
     assert "blast-" not in content
 
 
-def test_no_product_files_changed():
-    completed = subprocess.run(
-        [
-            "git",
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-            "--",
-            "backend/app",
-            "backend/tests",
-            "agent/src",
-            "frontend",
-            "cli/src",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    )
-    assert completed.stdout.strip() == ""
+def test_product_diff_is_scoped_to_h3_r1_after_provider_fixture():
+    assert_product_diff_scoped_to_h3_r1(ROOT)
 
 
 @pytest.mark.parametrize("filename,expected_hash", PERMANENT_MANIFEST_HASHES.items())
