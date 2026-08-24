@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topo-ai.local/schemas/eval-source-cause-match-v1.json",
+  "title": "Topo AI source-level causal match result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "expected_initiating_mutation",
+    "actual_top1",
+    "actual_top3",
+    "top1_source_match",
+    "top3_source_matches",
+    "exact_commit_image_partial",
+    "root_cause_semantic_level",
+    "abstained",
+    "evidence_audit",
+    "observation_matrix",
+    "verdict",
+    "first_internal_divergence",
+    "diagnostics"
+  ],
+  "properties": {
+    "schema_version": {"const": "eval-source-cause-match-v1"},
+    "run_id": {"type": "integer", "minimum": 1},
+    "expected_initiating_mutation": {"$ref": "#/$defs/sourceIdentity"},
+    "actual_top1": {
+      "oneOf": [
+        {"$ref": "#/$defs/cause"},
+        {"type": "null"}
+      ]
+    },
+    "actual_top3": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {"$ref": "#/$defs/cause"}
+    },
+    "top1_source_match": {"$ref": "#/$defs/match"},
+    "top3_source_matches": {
+      "type": "array",
+      "maxItems": 3,
+      "items": {"$ref": "#/$defs/match"}
+    },
+    "exact_commit_image_partial": {"type": "boolean"},
+    "root_cause_semantic_level": {"$ref": "#/$defs/level"},
+    "abstained": {"type": "boolean"},
+    "evidence_audit": {"type": "object"},
+    "observation_matrix": {
+      "type": "array",
+      "minItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["dimension", "independent_truth", "current_topo", "match"],
+        "properties": {
+          "dimension": {"type": "string", "minLength": 1},
+          "independent_truth": {},
+          "current_topo": {},
+          "match": {"type": "boolean"}
+        }
+      }
+    },
+    "verdict": {"enum": ["PROVEN", "PARTIAL", "MISSING", "WRONG", "INCONCLUSIVE"]},
+    "first_internal_divergence": {
+      "enum": [
+        "SOURCE_CHANGE_NOT_INGESTED",
+        "SOURCE_CHANGE_IDENTITY_WRONG",
+        "COMMIT_ENTITY_MISSING",
+        "COMMIT_ACTIONS_LINK_MISSING",
+        "ACTIONS_RUN_ENTITY_MISSING",
+        "RUN_IMAGE_LINK_MISSING",
+        "IMAGE_ENTITY_MISSING",
+        "IMAGE_DEPLOYMENT_LINK_MISSING",
+        "DEPLOYMENT_RS_LINK_MISSING",
+        "RS_POD_LINK_MISSING",
+        "POD_FAILURE_EVIDENCE_MISSING",
+        "INCIDENT_NOT_CREATED",
+        "INCIDENT_AFFECTED_ENTITY_WRONG",
+        "INCIDENT_PIN_INVALID",
+        "CAUSAL_CANDIDATE_MISSING",
+        "CAUSAL_RELEVANCE_PATH_MISSING",
+        "SUPPORTED_HYPOTHESIS_MISSING",
+        "ROOT_CAUSE_LOWER_SEMANTIC_LEVEL",
+        "ROOT_CAUSE_WRONG_MUTATION",
+        "EVIDENCE_CHAIN_INCOMPLETE",
+        "NO_DIVERGENCE"
+      ]
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "structured_fields_only",
+        "title_token_matching_used",
+        "fuzzy_matching_used",
+        "embeddings_used",
+        "llm_used",
+        "topo_used_to_construct_expected_truth"
+      ],
+      "properties": {
+        "structured_fields_only": {"const": true},
+        "title_token_matching_used": {"const": false},
+        "fuzzy_matching_used": {"const": false},
+        "embeddings_used": {"const": false},
+        "llm_used": {"const": false},
+        "topo_used_to_construct_expected_truth": {"const": false}
+      }
+    }
+  },
+  "$defs": {
+    "sourceIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "repository",
+        "parent_commit_sha",
+        "commit_sha",
+        "file_path",
+        "before_hash",
+        "after_hash",
+        "before_semantic_value",
+        "after_semantic_value"
+      ],
+      "properties": {
+        "repository": {"type": "string"},
+        "parent_commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "file_path": {"type": "string", "minLength": 1},
+        "before_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "after_hash": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "before_semantic_value": {"const": "healthy"},
+        "after_semantic_value": {"const": "fail"}
+      }
+    },
+    "level": {
+      "enum": [
+        "INITIATING_MUTATION",
+        "FAILURE_MECHANISM",
+        "RUNTIME_MANIFESTATION",
+        "OPERATIONAL_IMPACT",
+        "UNRELATED",
+        "ABSTAINED"
+      ]
+    },
+    "cause": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "semantic_level",
+        "supported",
+        "root_event_id",
+        "confidence",
+        "repository",
+        "parent_commit_sha",
+        "commit_sha",
+        "file_path",
+        "before_hash",
+        "after_hash",
+        "before_semantic_value",
+        "after_semantic_value",
+        "run_id",
+        "image_digest",
+        "evidence_chain_complete"
+      ],
+      "properties": {
+        "semantic_level": {"$ref": "#/$defs/level"},
+        "supported": {"type": "boolean"},
+        "root_event_id": {"type": ["string", "null"]},
+        "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "repository": {"type": ["string", "null"]},
+        "parent_commit_sha": {"type": ["string", "null"]},
+        "commit_sha": {"type": ["string", "null"]},
+        "file_path": {"type": ["string", "null"]},
+        "before_hash": {"type": ["string", "null"]},
+        "after_hash": {"type": ["string", "null"]},
+        "before_semantic_value": {"type": ["string", "null"]},
+        "after_semantic_value": {"type": ["string", "null"]},
+        "run_id": {"type": ["integer", "null"]},
+        "image_digest": {"type": ["string", "null"]},
+        "evidence_chain_complete": {"type": "boolean"}
+      }
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["exact", "comparisons", "matched_field_count", "required_field_count"],
+      "properties": {
+        "exact": {"type": "boolean"},
+        "comparisons": {"type": "object"},
+        "matched_field_count": {"type": "integer", "minimum": 0},
+        "required_field_count": {"const": 8}
+      }
+    }
+  }
+}
