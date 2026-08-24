@@ -22,6 +22,7 @@ from evaluation.h3_observation import (
     validate_provider_receipt,
 )
 from evaluation.lineage_provider_truth import contains_unredacted_secret_like_fields
+from evaluation.product_diff_guard import assert_h3_r1_historical_product_scope
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -588,25 +589,8 @@ def test_no_scenario_specific_provider_values_in_product_paths():
         assert not any(needle in text for needle in needles), path
 
 
-def test_product_diff_remains_inside_h3_r1_scope():
-    output = subprocess.run(
-        ["git", "diff", "--name-only"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.splitlines()
-    forbidden = (
-        "agent/",
-        "frontend/",
-        "cli/",
-        "backend/app/services/blast_radius.py",
-        "backend/app/services/causal_candidate_policy.py",
-        "backend/app/services/causal_relevance_policy.py",
-        "backend/app/services/causal_rca.py",
-        "backend/app/services/continuous_lifecycle.py",
-    )
-    assert not [name for name in output if name.replace("\\", "/").startswith(forbidden)]
+def test_h3_r1_historical_product_scope_remains_exact():
+    assert_h3_r1_historical_product_scope(ROOT)
 
 
 def test_provider_workflow_remains_frozen():

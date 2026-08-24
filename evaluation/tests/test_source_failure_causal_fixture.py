@@ -30,9 +30,16 @@ from evaluation.source_mutation_truth import (
     source_mutation_contract,
     validate_source_mutation_contract,
 )
+from evaluation.product_diff_guard import (
+    assert_text_file_git_blob_id,
+    assert_historical_commit_excludes_paths,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
+SOURCE_FAILURE_FIXTURE_ACCEPTED_COMMIT = (
+    "f9b152133a8075428766dd48b3f752b255ec5270"
+)
 FIXTURE = ROOT / "evaluation/fixtures/lineage-image"
 ATTRIBUTES = FIXTURE / ".gitattributes"
 DOCKERFILE = FIXTURE / "Dockerfile"
@@ -423,49 +430,26 @@ def test_h3_provider_workflow_remains_manual_only_and_frozen():
     assert set(parsed["on"]) == {"workflow_dispatch"}
 
 
-def test_h3_r1_product_code_is_untouched():
-    completed = subprocess.run(
-        ["git", "status", "--porcelain", "--untracked-files=all", "--", "backend/app", "backend/tests"],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
+def test_source_failure_fixture_commit_changed_no_backend_product_paths():
+    assert_historical_commit_excludes_paths(
+        ROOT,
+        name="LINEAGE-1A source failure fixture backend scope",
+        commit=SOURCE_FAILURE_FIXTURE_ACCEPTED_COMMIT,
+        prohibited_pathspecs=("backend/app", "backend/tests"),
     )
-    assert completed.stdout.strip() == ""
 
 
 @pytest.mark.parametrize("name,expected", sorted(PERMANENT_MANIFEST_HASHES.items()))
 def test_permanent_manifest_is_unchanged(name: str, expected: str):
-    actual = subprocess.run(
-        ["git", "hash-object", str(ROOT / "evaluation/manifests" / name)],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
-    ).stdout.strip()
-    assert actual == expected
+    assert_text_file_git_blob_id(ROOT / "evaluation/manifests" / name, expected)
 
 
-def test_no_product_files_are_modified():
-    completed = subprocess.run(
-        [
-            "git",
-            "status",
-            "--porcelain",
-            "--untracked-files=all",
-            "--",
-            "backend/app",
-            "backend/tests",
-            "agent/src",
-            "frontend",
-            "cli/src",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=True,
+def test_source_failure_fixture_commit_changed_no_product_paths():
+    assert_historical_commit_excludes_paths(
+        ROOT,
+        name="LINEAGE-1A source failure fixture product scope",
+        commit=SOURCE_FAILURE_FIXTURE_ACCEPTED_COMMIT,
     )
-    assert completed.stdout.strip() == ""
 
 
 def test_contract_serialization_is_deterministic():

@@ -15,7 +15,7 @@ from evaluation.lineage_provider_truth import (
     contains_unredacted_secret_like_fields,
     sanitize_provider_receipt,
 )
-from evaluation.product_diff_guard import assert_product_diff_scoped_to_h3_r1
+from evaluation.product_diff_guard import assert_h3_r1_historical_product_scope
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -344,8 +344,8 @@ def test_fixture_contains_no_sentinel_or_blast_special_case():
     assert "blast-" not in content
 
 
-def test_product_diff_is_scoped_to_h3_r1_after_provider_fixture():
-    assert_product_diff_scoped_to_h3_r1(ROOT)
+def test_h3_r1_historical_product_scope_remains_frozen_after_provider_fixture():
+    assert_h3_r1_historical_product_scope(ROOT)
 
 
 @pytest.mark.parametrize("filename,expected_hash", PERMANENT_MANIFEST_HASHES.items())
