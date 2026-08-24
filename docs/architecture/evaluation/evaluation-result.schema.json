@@ -5,6 +5,9 @@
   "properties": {
     "result_version": {"const": "eval-1.result.v1"},
     "harness_version": {"const": "eval-1.v1"},
+    "evidence_semantics_version": {
+      "enum": ["non-cause-evidence-v1", null]
+    },
     "run_id": {"minLength": 6, "type": "string"},
     "scenario_id": {"type": "string"},
     "topo_git_commit": {"minLength": 7, "type": "string"},

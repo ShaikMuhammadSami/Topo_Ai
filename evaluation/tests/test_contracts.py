@@ -284,19 +284,25 @@ def test_provider_failure_is_harness_error_and_missing_identity_is_inconclusive(
     assert failures[0]["category"] == "INCONCLUSIVE"
 
 
-def test_explicit_noncause_support_counts_unsupported_critical_claim():
+def test_explicit_noncause_causal_link_counts_unsupported_critical_claim():
     manifest_value = ScenarioManifest.load(manifest_path("sentinel-a")).ground_truth_copy()
     manifest_value["non_causes"] = ["root_service"]
     manifest_value["expected_evidence"]["forbidden_support"] = ["root_service"]
     manifest = ScenarioManifest(value=manifest_value)
     topo = observation()
     topo.causal_analysis["hypotheses"][0]["evidence_ledger"]["supporting"].append(
-        {"claim_type": "entity_linkage", "entity_ids": ["e-svc"], "relationship_ids": []}
+        {
+            "claim_type": "entity_linkage",
+            "entity_ids": ["e-svc", "e-pod"],
+            "change_event_ids": ["event-true"],
+            "relationship_ids": [],
+        }
     )
     status, metrics, _, _ = evaluate(manifest=manifest, topo=topo)
     assert status == EvaluationStatus.FAIL
     assert metrics["explicit_non_cause_supported_count"] == 1
     assert metrics["unsupported_critical_claim_count"] == 1
+    assert metrics["explicit_non_cause_false_causal_support_count"] == 1
 
 
 def test_abstention_and_false_certainty_are_bounded_by_manifest():
