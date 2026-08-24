@@ -1,0 +1,27 @@
+{
+  "built_at": null,
+  "commit_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "event_name": "workflow_dispatch",
+  "image_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "image_registry": "ghcr.io",
+  "image_repository": "ghcr.io/example/topo-ai-topo-lineage-eval",
+  "image_tag": "run-123456789-1",
+  "immutable_image_ref": "ghcr.io/example/topo-ai-topo-lineage-eval@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "provenance": {
+    "commit_source": "github_context",
+    "digest_source": "build_push_action_output",
+    "run_source": "github_context"
+  },
+  "provider": "github",
+  "receipt_created_at": "2026-08-24T12:00:00Z",
+  "repository": "Example/Topo-AI",
+  "repository_id": "1278498159",
+  "run_attempt": 1,
+  "run_id": 123456789,
+  "run_number": 42,
+  "schema_version": "eval-lineage-provider-receipt-v1",
+  "source_ref": "refs/heads/main",
+  "workflow_name": "Topo Lineage Provider Fixture",
+  "workflow_ref": "Example/Topo-AI/.github/workflows/topo-lineage-provider-fixture.yml@refs/heads/main",
+  "workflow_sha": "cccccccccccccccccccccccccccccccccccccccc"
+}

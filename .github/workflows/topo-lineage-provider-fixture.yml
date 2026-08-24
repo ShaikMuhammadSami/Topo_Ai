@@ -1,0 +1,176 @@
+name: Topo Lineage Provider Fixture
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type EVALUATION_ONLY to allow publishing the evaluation artifact.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  publish-evaluation-image:
+    name: Publish evaluation-only lineage image
+    if: ${{ inputs.confirm == 'EVALUATION_ONLY' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare evaluation image metadata
+        id: metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER}" | tr '[:upper:]' '[:lower:]')"
+          repository_name="${GITHUB_REPOSITORY#*/}"
+          repository_name="$(printf '%s' "${repository_name}" | tr '[:upper:]' '[:lower:]')"
+
+          if [[ ! "${owner}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "Repository owner cannot form a safe GHCR path." >&2
+            exit 1
+          fi
+          if [[ ! "${repository_name}" =~ ^[a-z0-9][a-z0-9._-]*$ ]]; then
+            echo "Repository name cannot form a safe GHCR path." >&2
+            exit 1
+          fi
+
+          image_repository="ghcr.io/${owner}/${repository_name}-topo-lineage-eval"
+          image_tag="run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+
+          {
+            echo "image_repository=${image_repository}"
+            echo "image_tag=${image_tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push evaluation image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: evaluation/fixtures/lineage-image
+          file: evaluation/fixtures/lineage-image/Dockerfile
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.metadata.outputs.image_repository }}:${{ steps.metadata.outputs.image_tag }}
+          build-args: |
+            SOURCE_REPOSITORY=${{ github.repository }}
+            SOURCE_REVISION=${{ github.sha }}
+            GITHUB_RUN_ID=${{ github.run_id }}
+            GITHUB_RUN_ATTEMPT=${{ github.run_attempt }}
+            GITHUB_WORKFLOW_REF=${{ github.workflow_ref }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            topo.eval.github.run_id=${{ github.run_id }}
+            topo.eval.github.run_attempt=${{ github.run_attempt }}
+            topo.eval.github.workflow_ref=${{ github.workflow_ref }}
+
+      - name: Create provider receipt and safe job summary
+        shell: bash
+        env:
+          RECEIPT_PATH: ${{ runner.temp }}/topo-lineage-provider-receipt.json
+          RECEIPT_REPOSITORY: ${{ github.repository }}
+          RECEIPT_REPOSITORY_ID: ${{ github.repository_id }}
+          RECEIPT_COMMIT_SHA: ${{ github.sha }}
+          RECEIPT_WORKFLOW_NAME: ${{ github.workflow }}
+          RECEIPT_WORKFLOW_REF: ${{ github.workflow_ref }}
+          RECEIPT_WORKFLOW_SHA: ${{ github.workflow_sha }}
+          RECEIPT_RUN_ID: ${{ github.run_id }}
+          RECEIPT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RECEIPT_RUN_NUMBER: ${{ github.run_number }}
+          RECEIPT_EVENT_NAME: ${{ github.event_name }}
+          RECEIPT_IMAGE_REPOSITORY: ${{ steps.metadata.outputs.image_repository }}
+          RECEIPT_IMAGE_TAG: ${{ steps.metadata.outputs.image_tag }}
+          RECEIPT_IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          RECEIPT_SOURCE_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          digest = os.environ["RECEIPT_IMAGE_DIGEST"].strip().lower()
+          if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+              raise SystemExit("Build action did not return an immutable sha256 digest.")
+
+          image_repository = os.environ["RECEIPT_IMAGE_REPOSITORY"]
+          image_tag = os.environ["RECEIPT_IMAGE_TAG"]
+          receipt = {
+              "schema_version": "eval-lineage-provider-receipt-v1",
+              "provider": "github",
+              "repository": os.environ["RECEIPT_REPOSITORY"],
+              "repository_id": os.environ.get("RECEIPT_REPOSITORY_ID") or None,
+              "commit_sha": os.environ["RECEIPT_COMMIT_SHA"].lower(),
+              "workflow_name": os.environ["RECEIPT_WORKFLOW_NAME"],
+              "workflow_ref": os.environ["RECEIPT_WORKFLOW_REF"],
+              "workflow_sha": os.environ.get("RECEIPT_WORKFLOW_SHA") or None,
+              "run_id": int(os.environ["RECEIPT_RUN_ID"]),
+              "run_attempt": int(os.environ["RECEIPT_RUN_ATTEMPT"]),
+              "run_number": int(os.environ["RECEIPT_RUN_NUMBER"]),
+              "event_name": os.environ["RECEIPT_EVENT_NAME"],
+              "image_registry": "ghcr.io",
+              "image_repository": image_repository,
+              "image_tag": image_tag,
+              "image_digest": digest,
+              "immutable_image_ref": f"{image_repository}@{digest}",
+              "built_at": None,
+              "receipt_created_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+              "source_ref": os.environ["RECEIPT_SOURCE_REF"],
+              "provenance": {
+                  "digest_source": "build_push_action_output",
+                  "commit_source": "github_context",
+                  "run_source": "github_context",
+              },
+          }
+
+          receipt_path = Path(os.environ["RECEIPT_PATH"])
+          receipt_path.write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          summary = Path(os.environ["GITHUB_STEP_SUMMARY"])
+          summary.write_text(
+              "\n".join(
+                  [
+                      "## Topo lineage provider fixture",
+                      "",
+                      f"- Repository: `{receipt['repository']}`",
+                      f"- Commit SHA: `{receipt['commit_sha']}`",
+                      f"- Workflow run: `{receipt['run_id']}` attempt `{receipt['run_attempt']}`",
+                      f"- Image repository: `{receipt['image_repository']}`",
+                      f"- Run-specific tag: `{receipt['image_tag']}`",
+                      f"- Immutable digest: `{receipt['image_digest']}`",
+                      f"- Immutable image: `{receipt['immutable_image_ref']}`",
+                      "",
+                  ]
+              ),
+              encoding="utf-8",
+          )
+          PY
+
+      - name: Upload provider receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: topo-lineage-receipt-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/topo-lineage-provider-receipt.json
+          if-no-files-found: error
+          retention-days: 30
