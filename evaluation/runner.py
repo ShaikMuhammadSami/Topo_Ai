@@ -21,6 +21,7 @@ from evaluation.contracts import (
     TopoObservation,
 )
 from evaluation.evaluator import IndependentEvaluator
+from evaluation.evidence_semantics import NON_CAUSE_EVIDENCE_SEMANTICS_VERSION
 from evaluation.kubernetes import Kubectl, utc_now
 from evaluation.scenarios import KubernetesSentinel, manifest_path, receipt_dict
 from evaluation.topo_client import HttpObservation, TopoClient, bounded_wait
@@ -403,6 +404,7 @@ def run_scenario(
         failures=failures,
         warnings=warnings,
         overall_status=status,
+        evidence_semantics_version=NON_CAUSE_EVIDENCE_SEMANTICS_VERSION,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     output_path = output_dir / f"{scenario_id}-{run_id}.json"

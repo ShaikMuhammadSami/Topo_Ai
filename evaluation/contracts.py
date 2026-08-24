@@ -225,6 +225,7 @@ class EvaluationResult:
     failures: list[dict[str, Any]]
     warnings: list[str]
     overall_status: EvaluationStatus
+    evidence_semantics_version: str | None = None
 
     def as_dict(self) -> dict[str, Any]:
         value = asdict(self)

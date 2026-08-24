@@ -10,15 +10,7 @@ from evaluation.contracts import (
     ScenarioManifest,
     TopoObservation,
 )
-
-
-CRITICAL_CLAIMS = {
-    "source_change",
-    "identity_resolution",
-    "entity_linkage",
-    "topology_path",
-    "relationship_provenance",
-}
+from evaluation.evidence_semantics import interpret_explicit_non_cause_evidence
 
 
 def _time(value: str | None) -> datetime | None:
@@ -228,20 +220,56 @@ class IndependentEvaluator:
             for alias in manifest.value["non_causes"]
             for entity_id in alias_entity_ids.get(alias, [])
         }
-        noncause_supported = 0
-        unsupported_claims = 0
-        for hypothesis in hypotheses:
-            ledger = hypothesis.get("evidence_ledger") or {}
-            for item in ledger.get("supporting", []):
-                claim = item.get("claim_type")
-                ids = set(item.get("entity_ids", []))
-                if ids & noncause_ids and claim in CRITICAL_CLAIMS:
-                    noncause_supported += 1
-                    unsupported_claims += 1
-        metrics["explicit_non_cause_supported_count"] = noncause_supported
-        metrics["unsupported_critical_claim_count"] = unsupported_claims
-        self._assert(assertions, failures, "noncause_support", noncause_supported == 0, "Explicit non-causes must not receive supporting critical evidence.")
-        self._assert(assertions, failures, "unsupported_claims", unsupported_claims == 0, "No critical claim may conflict with independent truth.")
+        accepted_affected_ids = {
+            entity_id
+            for alias in accepted_affected_aliases
+            for entity_id in alias_entity_ids.get(alias, [])
+        }
+        if affected_id:
+            accepted_affected_ids.add(str(affected_id))
+        noncause_evidence = interpret_explicit_non_cause_evidence(
+            analysis=analysis,
+            change_events=topo.change_events,
+            non_cause_entity_ids=noncause_ids,
+            affected_entity_ids=accepted_affected_ids,
+        )
+        metrics.update(noncause_evidence.metrics())
+        false_causal_support = noncause_evidence.false_causal_support_count
+        self._assert(
+            assertions,
+            failures,
+            "noncause_support",
+            false_causal_support == 0,
+            "Explicit non-causes must not receive supporting evidence that "
+            "connects the candidate to the incident effect.",
+        )
+        self._assert(
+            assertions,
+            failures,
+            "unsupported_claims",
+            false_causal_support == 0,
+            "No supporting causal-connectivity claim may conflict with "
+            "independent non-cause truth.",
+        )
+        if noncause_evidence.ambiguous_support_count:
+            detail = (
+                "Supporting evidence for an explicit non-cause could not be "
+                "classified from structured references."
+            )
+            assertions.append(
+                {
+                    "name": "noncause_evidence_classifiable",
+                    "passed": False,
+                    "detail": detail,
+                }
+            )
+            failures.append(
+                self._failure(
+                    "noncause_evidence_classifiable",
+                    "INCONCLUSIVE",
+                    detail,
+                )
+            )
 
         path = self._path_metrics(manifest, topo, alias_entity_ids)
         metrics.update(path)
@@ -309,7 +337,12 @@ class IndependentEvaluator:
         metrics["time_to_persisted_rca"] = _latency(event_time, topo.observed_times.get("causal_analysis"))
         metrics["time_to_useful_briefing"] = _latency(event_time, topo.observed_times.get("briefing"))
 
-        status = EvaluationStatus.FAIL if failures else EvaluationStatus.PASS
+        if any(item.get("category") == "PRODUCT" for item in failures):
+            status = EvaluationStatus.FAIL
+        elif failures:
+            status = EvaluationStatus.INCONCLUSIVE
+        else:
+            status = EvaluationStatus.PASS
         return status, metrics, assertions, failures
 
     @staticmethod
