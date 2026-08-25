@@ -65,6 +65,12 @@ from app.repositories.change_event_repository import ingest_change_event
 from app.repositories.signal_repository import save_signals
 from app.repositories.snapshot_repository import save_snapshot
 from app.services.causal_rca import analyze_causal_rca
+from app.services.container_image_graph import (
+    augment_snapshot_with_container_images,
+)
+from app.services.container_image_identity import (
+    normalize_regular_container_images,
+)
 from app.services.incident_change_analysis import analyze_incident_change_events
 from app.services.lineage_candidate_admission import (
     MAX_PROVIDER_PATHS_PER_ARTIFACT,
@@ -666,6 +672,60 @@ def test_broken_runtime_hops_fail_closed(snapshot, reason):
     result = _analysis(session)
     assert result.candidates == []
     assert result.lineage_admission_audit[0].admission_reason == reason
+
+
+def test_sc3_requested_identity_repairs_measured_shape_without_weakening_sc2():
+    snapshot = _snapshot()
+    snapshot.entities = [
+        item for item in snapshot.entities if item.kind != "ContainerImage"
+    ]
+    snapshot.relationships = [
+        item
+        for item in snapshot.relationships
+        if item.relationship_type != RelationshipType.USES
+    ]
+    deployment = next(
+        item for item in snapshot.entities if item.id == "deployment:app"
+    )
+    pod = next(item for item in snapshot.entities if item.id == "pod:app")
+    requested = f"ghcr.io/{REPOSITORY}@{DIGEST}"
+    deployment.properties["containers"] = normalize_regular_container_images(
+        spec_containers=[{"name": "app", "image": requested}],
+        spec_source_field=(
+            "deployment.spec.template.spec.containers[].image"
+        ),
+    )
+    pod.properties["containers"] = normalize_regular_container_images(
+        spec_containers=[{"name": "app", "image": requested}],
+        status_containers=[
+            {
+                "name": "app",
+                "image": OTHER_DIGEST,
+                "image_id": f"containerd://{OTHER_DIGEST}",
+            }
+        ],
+    )
+    snapshot = augment_snapshot_with_container_images(snapshot)
+
+    session, event_id = _world(snapshot=snapshot)
+    result = _analysis(session)
+
+    assert result.candidates[0].event.event_id == event_id
+    assert result.candidates[0].container_scope.image_digest == DIGEST
+    assert result.lineage_admission_audit[0].admission_reason == (
+        LineageAdmissionReason.EXACT_IMMUTABLE_LINEAGE
+    )
+    pod_use = next(
+        item
+        for item in snapshot.relationships
+        if item.source_entity_id == "pod:app"
+        and item.relationship_type == RelationshipType.USES
+    )
+    assert pod_use.properties["requested_image"] == requested
+    assert pod_use.properties["runtime_status_image"] == OTHER_DIGEST
+    assert pod_use.properties["runtime_image_id"] == (
+        f"containerd://{OTHER_DIGEST}"
+    )
 
 
 def test_latest_snapshot_never_substitutes_for_incident_pin():
