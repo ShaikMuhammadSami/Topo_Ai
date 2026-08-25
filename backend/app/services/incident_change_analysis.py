@@ -21,6 +21,7 @@ from app.models.change_events import (
     IncidentChangeAnalysisResponse,
     IncidentChangeCandidate,
 )
+from app.models.causal_candidates import CandidateAdmissionBasis
 from app.models.topology import (
     GraphSnapshot,
 )
@@ -35,6 +36,9 @@ from app.services.temporal_semantics import (
     change_event_temporal,
     incident_operational_time,
     safe_snapshot_record_at_or_before,
+)
+from app.services.lineage_candidate_admission import (
+    evaluate_lineage_candidate_admission,
 )
 
 
@@ -322,6 +326,90 @@ def _neighbors(
     return result - affected
 
 
+def _candidate_for_record(
+    session: Session,
+    *,
+    record: ChangeEventRecord,
+    incident_time: datetime,
+    affected: set[str],
+    neighbors: set[str],
+    incident_environment: str,
+    incident_cluster: str,
+    incident_namespace: str,
+    minimum_score: float,
+) -> IncidentChangeCandidate | None:
+    """Apply the unchanged incident-change score to one admitted record."""
+
+    change_time = change_event_temporal(record).effective_at
+    minutes_before = (incident_time - change_time).total_seconds() / 60
+
+    if minutes_before >= 0:
+        time_score = 40 * math.exp(-minutes_before / 60)
+    else:
+        time_score = max(0, 5 - abs(minutes_before))
+
+    links = list(
+        session.scalars(
+            select(ChangeEntityLinkRecord).where(
+                ChangeEntityLinkRecord.event_id == record.event_id
+            )
+        ).all()
+    )
+    linked_ids = {link.entity_id for link in links}
+    direct = sorted(linked_ids & affected)
+    neighboring = sorted(linked_ids & neighbors)
+    entity_score = 0.0
+    reasons: list[str] = []
+    if direct:
+        entity_score = 35
+        reasons.append(
+            "Change event is directly linked to an affected incident entity."
+        )
+    elif neighboring:
+        entity_score = 20
+        reasons.append(
+            "Change event is linked to a one-hop dependency of an affected entity."
+        )
+
+    scope_score = 0.0
+    if (
+        incident_environment
+        and str(record.environment or "").lower() == incident_environment
+    ):
+        scope_score += 4
+        reasons.append("Same environment.")
+    if incident_cluster and str(record.cluster_name or "").lower() == incident_cluster:
+        scope_score += 4
+        reasons.append("Same cluster.")
+    if (
+        incident_namespace
+        and str(record.namespace or "").lower() == incident_namespace
+    ):
+        scope_score += 4
+        reasons.append("Same namespace.")
+
+    risk_score = record.risk_score * 0.09
+    total = min(100, time_score + entity_score + scope_score + risk_score)
+    if total < minimum_score:
+        return None
+    if minutes_before >= 0:
+        reasons.append(
+            f"Change occurred {minutes_before:.1f} minutes before the incident."
+        )
+    else:
+        reasons.append(
+            f"Change occurred {abs(minutes_before):.1f} minutes after incident start."
+        )
+    return IncidentChangeCandidate(
+        event=change_event_view(session, record=record),
+        score=round(total, 2),
+        reasons=reasons,
+        direct_entity_matches=direct,
+        neighboring_entity_matches=neighboring,
+        minutes_before_incident=round(minutes_before, 2),
+    )
+
+
 def analyze_incident_change_events(
     session: Session,
     *,
@@ -444,187 +532,24 @@ def analyze_incident_change_events(
         or ""
     ).lower()
 
-    candidates = []
-
-    for record in records:
-        change_time = change_event_temporal(record).effective_at
-
-        minutes_before = (
-            incident_time
-            - change_time
-        ).total_seconds() / 60
-
-        # 40 points:
-        # strongest near incident.
-        if minutes_before >= 0:
-            time_score = (
-                40
-                * math.exp(
-                    -minutes_before
-                    / 60
-                )
-            )
-
-        else:
-            # Post-incident changes should
-            # score very little.
-            time_score = max(
-                0,
-                5
-                - abs(
-                    minutes_before
-                ),
-            )
-
-        links = list(
-            session.scalars(
-                select(
-                    ChangeEntityLinkRecord
-                ).where(
-                    ChangeEntityLinkRecord
-                    .event_id
-                    == record.event_id
-                )
-            ).all()
-        )
-
-        linked_ids = {
-            link.entity_id
-            for link in links
-        }
-
-        direct = sorted(
-            linked_ids & affected
-        )
-
-        neighboring = sorted(
-            linked_ids & neighbors
-        )
-
-        entity_score = 0.0
-
-        reasons = []
-
-        if direct:
-            entity_score = 35
-
-            reasons.append(
-                "Change event is directly "
-                "linked to an affected "
-                "incident entity."
-            )
-
-        elif neighboring:
-            entity_score = 20
-
-            reasons.append(
-                "Change event is linked "
-                "to a one-hop dependency "
-                "of an affected entity."
-            )
-
-        scope_score = 0.0
-
+    candidates = [
+        candidate
+        for record in records
         if (
-            incident_environment
-            and str(
-                record.environment or ""
-            ).lower()
-            == incident_environment
-        ):
-            scope_score += 4
-
-            reasons.append(
-                "Same environment."
-            )
-
-        if (
-            incident_cluster
-            and str(
-                record.cluster_name or ""
-            ).lower()
-            == incident_cluster
-        ):
-            scope_score += 4
-
-            reasons.append(
-                "Same cluster."
-            )
-
-        if (
-            incident_namespace
-            and str(
-                record.namespace or ""
-            ).lower()
-            == incident_namespace
-        ):
-            scope_score += 4
-
-            reasons.append(
-                "Same namespace."
-            )
-
-        risk_score = (
-            record.risk_score
-            * 0.09
-        )
-
-        total = min(
-            100,
-            time_score
-            + entity_score
-            + scope_score
-            + risk_score,
-        )
-
-        if total < minimum_score:
-            continue
-
-        if minutes_before >= 0:
-            reasons.append(
-                (
-                    f"Change occurred "
-                    f"{minutes_before:.1f} "
-                    "minutes before the "
-                    "incident."
-                )
-            )
-
-        else:
-            reasons.append(
-                (
-                    "Change occurred "
-                    f"{abs(minutes_before):.1f} "
-                    "minutes after incident "
-                    "start."
-                )
-            )
-
-        candidates.append(
-            IncidentChangeCandidate(
-                event=change_event_view(
-                    session,
-                    record=record,
-                ),
-                score=round(
-                    total,
-                    2,
-                ),
-                reasons=reasons,
-                direct_entity_matches=(
-                    direct
-                ),
-                neighboring_entity_matches=(
-                    neighboring
-                ),
-                minutes_before_incident=(
-                    round(
-                        minutes_before,
-                        2,
-                    )
-                ),
+            candidate := _candidate_for_record(
+                session,
+                record=record,
+                incident_time=incident_time,
+                affected=affected,
+                neighbors=neighbors,
+                incident_environment=incident_environment,
+                incident_cluster=incident_cluster,
+                incident_namespace=incident_namespace,
+                minimum_score=minimum_score,
             )
         )
+        is not None
+    ]
 
     candidates.sort(
         key=lambda item: (
@@ -638,6 +563,60 @@ def analyze_incident_change_events(
     candidates = candidates[
         :limit
     ]
+
+    lineage = evaluate_lineage_candidate_admission(
+        session,
+        incident=incident,
+        incident_time=incident_time,
+    )
+    candidate_by_event_id = {
+        candidate.event.event_id: candidate for candidate in candidates
+    }
+    for admitted in lineage.admitted:
+        audit = admitted.audit
+        existing = candidate_by_event_id.get(admitted.record.event_id)
+        if existing is None:
+            existing = _candidate_for_record(
+                session,
+                record=admitted.record,
+                incident_time=incident_time,
+                affected=affected,
+                neighbors=neighbors,
+                incident_environment=incident_environment,
+                incident_cluster=incident_cluster,
+                incident_namespace=incident_namespace,
+                minimum_score=minimum_score,
+            )
+            if existing is None:
+                continue
+            existing = existing.model_copy(update={"admission_basis": []})
+            candidates.append(existing)
+            candidate_by_event_id[admitted.record.event_id] = existing
+        bases = list(existing.admission_basis)
+        if CandidateAdmissionBasis.EXACT_IMMUTABLE_LINEAGE not in bases:
+            bases.append(CandidateAdmissionBasis.EXACT_IMMUTABLE_LINEAGE)
+        updated = existing.model_copy(
+            update={
+                "admission_basis": bases,
+                "admission_evidence_refs": audit.admission_evidence_refs,
+                "lineage_paths": audit.lineage_paths,
+                "container_scope": audit.container_scope,
+                "lineage_admission_state": audit.admission_state,
+                "lineage_admission_reason": audit.admission_reason,
+                "mutation_set": audit.mutation_set,
+                "mutation_completeness": audit.mutation_completeness,
+            }
+        )
+        candidate_by_event_id[admitted.record.event_id] = updated
+    candidates = list(candidate_by_event_id.values())
+    candidates.sort(
+        key=lambda item: (
+            item.score,
+            item.event.risk_score,
+            item.event.occurred_at,
+        ),
+        reverse=True,
+    )
 
     return (
         IncidentChangeAnalysisResponse(
@@ -658,5 +637,6 @@ def analyze_incident_change_events(
                 candidates
             ),
             candidates=candidates,
+            lineage_admission_audit=list(lineage.audit),
         )
     )

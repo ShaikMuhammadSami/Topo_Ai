@@ -31,7 +31,10 @@ from app.models.causal_rca import (
     CausalNode,
     CausalNodeType,
 )
-from app.models.causal_candidates import CAUSAL_CANDIDATE_POLICY_VERSION
+from app.models.causal_candidates import (
+    CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION,
+    CAUSAL_CANDIDATE_POLICY_VERSION,
+)
 from app.models.causal_relevance import (
     CAUSAL_RELEVANCE_POLICY_VERSION,
     CandidateCausalRelevanceAudit,
@@ -2178,6 +2181,8 @@ def analyze_causal_rca(
             ALGORITHM_VERSION,
         "candidate_policy":
             CAUSAL_CANDIDATE_POLICY_VERSION,
+        "candidate_admission_policy":
+            CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION,
         "causal_relevance_policy":
             CAUSAL_RELEVANCE_POLICY_VERSION,
         "evidence_ledger":
@@ -2220,6 +2225,12 @@ def analyze_causal_rca(
             ),
             candidate_policy_version=(
                 CAUSAL_CANDIDATE_POLICY_VERSION
+            ),
+            candidate_admission_policy_version=(
+                CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION
+            ),
+            lineage_admission_audit=list(
+                change_analysis.lineage_admission_audit
             ),
             candidate_selection_audit=list(
                 candidate_selection.audit

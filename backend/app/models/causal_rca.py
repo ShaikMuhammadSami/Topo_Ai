@@ -13,7 +13,10 @@ from pydantic import (
 from app.models.canonical_identity import (
     CanonicalIdentityResolution,
 )
-from app.models.causal_candidates import CausalCandidateSelectionAudit
+from app.models.causal_candidates import (
+    CausalCandidateSelectionAudit,
+    LineageCandidateAdmissionAudit,
+)
 from app.models.causal_relevance import CandidateCausalRelevanceAudit
 from app.models.confidence_semantics import CausalConfidenceSemantics
 from app.models.temporal import TemporalMetadata
@@ -494,6 +497,22 @@ class CausalAnalysisResponse(BaseModel):
         description=(
             "Candidate-selection policy used for this immutable analysis "
             "generation. Historical payloads load with null."
+        ),
+    )
+
+    candidate_admission_policy_version: str | None = Field(
+        default=None,
+        description=(
+            "Candidate-admission policy used for this immutable analysis "
+            "generation. Historical payloads load with null."
+        ),
+    )
+
+    lineage_admission_audit: list[LineageCandidateAdmissionAudit] = Field(
+        default_factory=list,
+        description=(
+            "Incident-pinned immutable-lineage admission results, including "
+            "explicit fail-closed reasons."
         ),
     )
 
