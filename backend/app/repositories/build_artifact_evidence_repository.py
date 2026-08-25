@@ -140,3 +140,34 @@ def list_build_artifact_evidence(
     ).limit(max(1, min(limit, 1000)))
     return [_view(record) for record in session.scalars(statement).all()]
 
+
+def list_build_artifact_evidence_for_image_digest(
+    session: Session,
+    *,
+    image_digest: str,
+    limit: int = 33,
+) -> list[BuildArtifactEvidence]:
+    """Return a bounded exact-digest provider lineage lookup.
+
+    This is deliberately artifact-first. It never scans source revisions or
+    applies repository/name similarity to discover candidate history.
+    """
+
+    statement = (
+        select(BuildArtifactEvidenceRecord)
+        .where(
+            BuildArtifactEvidenceRecord.image_digest
+            == image_digest.strip().lower()
+        )
+        .order_by(
+            BuildArtifactEvidenceRecord.repository_id,
+            BuildArtifactEvidenceRecord.commit_sha,
+            BuildArtifactEvidenceRecord.workflow_run_id,
+            BuildArtifactEvidenceRecord.run_attempt,
+            BuildArtifactEvidenceRecord.provider_evidence_id,
+            BuildArtifactEvidenceRecord.evidence_id,
+        )
+        .limit(max(1, min(limit, 1000)))
+    )
+    return [_view(record) for record in session.scalars(statement).all()]
+

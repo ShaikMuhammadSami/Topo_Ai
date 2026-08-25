@@ -516,6 +516,17 @@ def select_causal_candidates(
                 classification_reason=decision.reason,
                 exclusion_reason=exclusion_reason,
                 classification_inputs=decision.classification_inputs,
+                candidate_admission_policy_version=(
+                    candidate.candidate_admission_policy_version
+                ),
+                admission_basis=candidate.admission_basis,
+                admission_evidence_refs=candidate.admission_evidence_refs,
+                lineage_paths=candidate.lineage_paths,
+                container_scope=candidate.container_scope,
+                lineage_admission_state=candidate.lineage_admission_state,
+                lineage_admission_reason=candidate.lineage_admission_reason,
+                mutation_set=candidate.mutation_set,
+                mutation_completeness=candidate.mutation_completeness,
             )
         )
 

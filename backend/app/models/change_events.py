@@ -10,6 +10,16 @@ from pydantic import (
 )
 
 from app.models.temporal import TemporalMetadata
+from app.models.causal_candidates import (
+    CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION,
+    CandidateAdmissionBasis,
+    CandidateAdmissionEvidenceReference,
+    LineageAdmissionReason,
+    LineageAdmissionState,
+    LineageCandidateAdmissionAudit,
+    LineageContainerScope,
+    LineagePathAudit,
+)
 
 
 class ChangeEventSource(str, Enum):
@@ -314,6 +324,28 @@ class IncidentChangeCandidate(BaseModel):
         float | None
     ) = None
 
+    candidate_admission_policy_version: str = (
+        CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION
+    )
+
+    admission_basis: list[CandidateAdmissionBasis] = Field(
+        default_factory=lambda: [CandidateAdmissionBasis.TEMPORAL]
+    )
+
+    admission_evidence_refs: list[
+        CandidateAdmissionEvidenceReference
+    ] = Field(default_factory=list)
+
+    lineage_paths: list[LineagePathAudit] = Field(default_factory=list)
+
+    container_scope: LineageContainerScope | None = None
+
+    lineage_admission_state: LineageAdmissionState | None = None
+    lineage_admission_reason: LineageAdmissionReason | None = None
+
+    mutation_set: list[dict[str, Any]] = Field(default_factory=list)
+    mutation_completeness: str | None = None
+
 
 class IncidentChangeAnalysisResponse(
     BaseModel
@@ -336,6 +368,14 @@ class IncidentChangeAnalysisResponse(
     candidates: list[
         IncidentChangeCandidate
     ]
+
+    candidate_admission_policy_version: str = (
+        CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION
+    )
+
+    lineage_admission_audit: list[
+        LineageCandidateAdmissionAudit
+    ] = Field(default_factory=list)
 
 class AgentChangeEventBatch(BaseModel):
     model_config = ConfigDict(
