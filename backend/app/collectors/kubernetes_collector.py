@@ -13,6 +13,9 @@ from kubernetes.config.config_exception import ConfigException
 from app.services.container_image_graph import (
     augment_snapshot_with_container_images,
 )
+from app.services.container_image_identity import (
+    normalize_regular_container_images,
+)
 from app.services.canonical_identity import (
     canonical_kubernetes_identity,
 )
@@ -500,16 +503,15 @@ class KubernetesCollector:
                     str(deployment.metadata.uid)
                 ] = deployment_id
 
-            containers = [
-                {
-                    "name": container.name,
-                    "image": container.image,
-                }
-                for container in (
+            containers = normalize_regular_container_images(
+                spec_containers=(
                     deployment.spec.template.spec.containers
                     or []
-                )
-            ]
+                ),
+                spec_source_field=(
+                    "deployment.spec.template.spec.containers[].image"
+                ),
+            )
 
             match_labels = {}
 
@@ -688,24 +690,12 @@ class KubernetesCollector:
             )
             pod_id = pod_identity.canonical_id
 
-            container_statuses = []
-
-            for status in (
-                pod.status.container_statuses
-                or []
-            ):
-                container_statuses.append(
-                    {
-                        "name": status.name,
-                        "image": status.image,
-                        "image_id": status.image_id,
-                        "container_id": status.container_id,
-                        "ready": status.ready,
-                        "restart_count": (
-                            status.restart_count
-                        ),
-                    }
-                )
+            container_statuses = normalize_regular_container_images(
+                spec_containers=(pod.spec.containers or []),
+                status_containers=(
+                    pod.status.container_statuses or []
+                ),
+            )
 
             pod_entity = Entity(
                 id=pod_id,

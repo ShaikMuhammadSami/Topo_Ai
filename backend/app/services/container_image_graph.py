@@ -5,6 +5,12 @@ from dataclasses import dataclass
 from hashlib import sha256
 from uuid import uuid4
 
+from pydantic import ValidationError
+
+from app.models.container_image_identity import (
+    KUBERNETES_CONTAINER_IMAGE_IDENTITY_VERSION,
+    KubernetesContainerImageObservation,
+)
 from app.models.topology import (
     Entity,
     EntityType,
@@ -170,12 +176,16 @@ def _image_entity_id(
 def _relationship_id(
     source_entity_id: str,
     target_entity_id: str,
+    *,
+    container_name: str | None = None,
 ) -> str:
     relationship_value = (
         f"{source_entity_id}|"
         f"{RelationshipType.USES.value}|"
         f"{target_entity_id}"
     )
+    if container_name:
+        relationship_value = f"{relationship_value}|container:{container_name}"
 
     digest = sha256(
         relationship_value.encode("utf-8")
@@ -211,6 +221,11 @@ def _runtime_digests_by_reference(
             continue
 
         for container in _container_list(entity):
+            if isinstance(container.get("image_identity"), dict):
+                # SC-3 never promotes runtime diagnostic digests into a
+                # requested artifact identity. This propagation remains only
+                # for unversioned legacy observations.
+                continue
             image = container.get("image")
 
             if not isinstance(image, str):
@@ -241,6 +256,24 @@ def _runtime_digests_by_reference(
             ).add(digest)
 
     return result
+
+
+def _sc3_observation(
+    container: dict,
+) -> KubernetesContainerImageObservation | None:
+    value = container.get("image_identity")
+    if not isinstance(value, dict):
+        return None
+    try:
+        observation = KubernetesContainerImageObservation.model_validate(value)
+    except ValidationError:
+        return None
+    if (
+        observation.contract_version
+        != KUBERNETES_CONTAINER_IMAGE_IDENTITY_VERSION
+    ):
+        return None
+    return observation
 
 
 def augment_snapshot_with_container_images(
@@ -282,8 +315,19 @@ def augment_snapshot_with_container_images(
         for container in _container_list(
             source_entity
         ):
-            requested_image = container.get(
-                "image"
+            sc3 = _sc3_observation(container)
+            if (
+                isinstance(container.get("image_identity"), dict)
+                and sc3 is None
+            ):
+                # A malformed or unknown versioned observation is not legacy
+                # truth. Fail closed instead of reinterpreting its compatibility
+                # field as an authoritative requested image.
+                continue
+            requested_image = (
+                sc3.requested_image.raw_value
+                if sc3 is not None
+                else container.get("image")
             )
 
             if not isinstance(
@@ -297,19 +341,35 @@ def augment_snapshot_with_container_images(
             )
 
             runtime_image_id = (
-                container.get("image_id")
-                if isinstance(
-                    container.get("image_id"),
-                    str,
+                sc3.runtime_image_id.raw_value
+                if sc3 is not None
+                else (
+                    container.get("image_id")
+                    if isinstance(container.get("image_id"), str)
+                    else None
                 )
+            )
+
+            runtime_status_image = (
+                sc3.runtime_status_image.raw_value
+                if sc3 is not None
                 else None
             )
 
             direct_digest = (
-                _extract_digest(
-                    runtime_image_id
+                sc3.resolved_artifact_identity.digest
+                if (
+                    sc3 is not None
+                    and sc3.resolved_artifact_identity is not None
                 )
-                or parsed.digest
+                else (
+                    None
+                    if sc3 is not None
+                    else (
+                        _extract_digest(runtime_image_id)
+                        or parsed.digest
+                    )
+                )
             )
 
             candidate_digests: set[
@@ -322,8 +382,8 @@ def augment_snapshot_with_container_images(
                 }
 
             elif (
-                source_entity.kind
-                == "KubernetesDeployment"
+                sc3 is None
+                and source_entity.kind == "KubernetesDeployment"
                 and runtime_digests.get(
                     parsed.normalized_reference
                 )
@@ -489,20 +549,82 @@ def augment_snapshot_with_container_images(
                         target_entity_id=(
                             artifact_id
                         ),
+                        container_name=(
+                            str(container.get("name") or "")
+                            if sc3 is not None
+                            else None
+                        ),
                     )
                 )
 
                 resolution_method = (
-                    "runtime_digest"
-                    if direct_digest
+                    "requested_immutable_reference"
+                    if sc3 is not None and direct_digest
                     else (
-                        "observed_pod_digest"
-                        if candidate_digest
+                        "requested_reference"
+                        if sc3 is not None
                         else (
-                            "requested_reference"
+                            "runtime_digest"
+                            if direct_digest
+                            else (
+                                "observed_pod_digest"
+                                if candidate_digest
+                                else "requested_reference"
+                            )
                         )
                     )
                 )
+
+                semantic_references = []
+                if sc3 is not None:
+                    semantic_references = [
+                        source_reference(
+                            reference_type=(
+                                "kubernetes_requested_image_reference"
+                            ),
+                            reference=sc3.requested_image.raw_value,
+                            source_system="kubernetes",
+                            attributes={
+                                "container_name": sc3.container_name,
+                                "semantic_role": (
+                                    sc3.requested_image.semantic_role.value
+                                ),
+                                "source_field": (
+                                    sc3.requested_image.source_field
+                                ),
+                            },
+                        ),
+                        source_reference(
+                            reference_type=(
+                                "kubernetes_runtime_status_image"
+                            ),
+                            reference=sc3.runtime_status_image.raw_value,
+                            source_system="kubernetes",
+                            attributes={
+                                "container_name": sc3.container_name,
+                                "semantic_role": (
+                                    sc3.runtime_status_image.semantic_role.value
+                                ),
+                                "source_field": (
+                                    sc3.runtime_status_image.source_field
+                                ),
+                            },
+                        ),
+                        source_reference(
+                            reference_type="kubernetes_runtime_image_id",
+                            reference=sc3.runtime_image_id.raw_value,
+                            source_system="kubernetes",
+                            attributes={
+                                "container_name": sc3.container_name,
+                                "semantic_role": (
+                                    sc3.runtime_image_id.semantic_role.value
+                                ),
+                                "source_field": (
+                                    sc3.runtime_image_id.source_field
+                                ),
+                            },
+                        ),
+                    ]
 
                 image_relationships[
                     relationship_id
@@ -554,8 +676,13 @@ def augment_snapshot_with_container_images(
                                     "resolution_method": resolution_method,
                                 },
                             ),
+                            *semantic_references,
                         ],
-                        linker_version="container-image-linker:v1",
+                        linker_version=(
+                            KUBERNETES_CONTAINER_IMAGE_IDENTITY_VERSION
+                            if sc3 is not None
+                            else "container-image-linker:v1"
+                        ),
                     ),
                     properties={
                         "container_name": (
@@ -569,8 +696,24 @@ def augment_snapshot_with_container_images(
                         "runtime_image_id": (
                             runtime_image_id
                         ),
+                        "runtime_status_image": (
+                            runtime_status_image
+                        ),
                         "resolution_method": (
                             resolution_method
+                        ),
+                        **(
+                            {
+                                "image_identity": sc3.model_dump(mode="json"),
+                                "image_identity_contract_version": (
+                                    sc3.contract_version
+                                ),
+                                "resolved_artifact_basis": (
+                                    sc3.resolved_artifact_basis
+                                ),
+                            }
+                            if sc3 is not None
+                            else {}
                         ),
                     },
                 )
