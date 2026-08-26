@@ -86,6 +86,20 @@ class LineagePathAudit(BaseModel):
     relationship_ids: list[str] = Field(default_factory=list)
     provider_evidence_ids: list[str] = Field(default_factory=list)
     container_name: str
+    image_entity_id: str | None = Field(
+        default=None,
+        description=(
+            "Exact incident-scoped immutable artifact entity used by this "
+            "persisted lineage path. Historical SC-2 payloads load with null."
+        ),
+    )
+    image_entity_kind: str | None = Field(
+        default=None,
+        description=(
+            "Kind recorded for image_entity_id. Historical SC-2 payloads "
+            "load with null."
+        ),
+    )
     image_digest: str = Field(pattern="^sha256:[0-9a-f]{64}$")
     repository_id: str
     repository: str

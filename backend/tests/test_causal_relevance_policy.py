@@ -18,6 +18,7 @@ from app.models.causal_candidates import CAUSAL_CANDIDATE_POLICY_VERSION
 from app.models.causal_rca import CausalAnalysisRequest
 from app.models.causal_relevance import (
     CAUSAL_RELEVANCE_POLICY_VERSION,
+    CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION,
     CausalPathSemantic,
     CausalRelevanceStatus,
     CausalTraversalDirection,
@@ -185,13 +186,13 @@ def test_every_active_tc2_predicate_has_explicit_policy(
     assert policy.support.value == support
     assert policy.traversal_direction.value == direction
     assert policy.semantic_class.value == semantic
-    assert policy.policy_version == CAUSAL_RELEVANCE_POLICY_VERSION
+    assert policy.policy_version == CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION
 
 
 def test_machine_contract_matches_executable_registry() -> None:
     contract = json.loads(POLICY_CONTRACT.read_text(encoding="utf-8"))
     tc2 = json.loads(TC2_CONTRACT.read_text(encoding="utf-8"))
-    assert contract["policy_version"] == CAUSAL_RELEVANCE_POLICY_VERSION
+    assert contract["policy_version"] == CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION
     entries = {item["predicate"]: item for item in contract["predicates"]}
     assert set(entries) == relevance_policy.ACTIVE_TC2_PREDICATES
     assert set(entries) == {item["predicate"] for item in tc2["active_predicates"]}

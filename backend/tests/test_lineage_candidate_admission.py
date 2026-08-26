@@ -1065,6 +1065,9 @@ def test_lineage_path_respects_existing_relationship_directions():
         ]
     )
     assert path.entity_ids[0] == "pod:app"
+    assert path.image_entity_id == "image:app"
+    assert path.image_entity_kind == "ContainerImage"
+    assert path.image_digest == DIGEST
 
 
 def test_admitted_audit_has_bounded_explicit_state_and_reason():

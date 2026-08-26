@@ -4,14 +4,27 @@ import heapq
 from dataclasses import dataclass
 from typing import Iterable
 
+from app.models.causal_candidates import (
+    CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION,
+    CandidateAdmissionBasis,
+    CandidateAdmissionEvidenceReference,
+    LineageAdmissionReason,
+    LineageAdmissionState,
+    LineagePathAudit,
+)
 from app.models.causal_relevance import (
     CAUSAL_RELEVANCE_POLICY_VERSION,
+    CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION,
     CandidateCausalRelevanceAudit,
     CausalPathHop,
     CausalPathSemantic,
     CausalPredicateSupport,
+    CausalRelevanceResolutionBasis,
     CausalRelevanceStatus,
+    CausalTopologyPathState,
     CausalTraversalDirection,
+    LineageRelevanceAnchorAudit,
+    LineageRelevanceBridgeState,
 )
 from app.models.topology import GraphSnapshot, Relationship
 
@@ -26,7 +39,7 @@ class CausalRelationshipPolicy:
     reason: str
     allowed_source_kinds: tuple[str, ...] = ()
     allowed_effect_kinds: tuple[str, ...] = ()
-    policy_version: str = CAUSAL_RELEVANCE_POLICY_VERSION
+    policy_version: str = CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION
 
 
 # This is intentionally an allow-list. A TC-2 predicate that is absent here,
@@ -233,63 +246,43 @@ def _hop(relationship: Relationship) -> CausalPathHop | None:
     )
 
 
-def _audit(
-    *,
-    candidate_event_id: str,
-    candidate_entity_id: str | None,
-    affected_entity_id: str | None,
-    status: CausalRelevanceStatus,
-    semantic: CausalPathSemantic,
-    entity_ids: Iterable[str] = (),
-    hops: Iterable[CausalPathHop] = (),
-    reason: str,
-) -> CandidateCausalRelevanceAudit:
-    selected_hops = list(hops)
-    return CandidateCausalRelevanceAudit(
-        candidate_event_id=candidate_event_id,
-        candidate_entity_id=candidate_entity_id,
-        affected_entity_id=affected_entity_id,
-        relevance_status=status,
-        path_semantic=semantic,
-        path_entity_ids=list(entity_ids),
-        path_relationship_ids=[item.relationship_id for item in selected_hops],
-        path_predicates=[item.predicate for item in selected_hops],
-        path_traversal_directions=[
-            item.traversal_direction for item in selected_hops
-        ],
-        path_relationship_origins=[
-            item.relationship_origin for item in selected_hops
-        ],
-        path_relationship_source_systems=[
-            item.relationship_source_system for item in selected_hops
-        ],
-        path_hops=len(selected_hops),
-        topology_component=topology_component_for_hops(
-            len(selected_hops)
-            if status in {CausalRelevanceStatus.DIRECT, CausalRelevanceStatus.SEMANTIC_PATH}
-            else None
-        ),
-        hops=selected_hops,
-        reason=reason,
+@dataclass(frozen=True)
+class TopologyPathEvaluation:
+    """Policy-neutral output from the one accepted topology path engine."""
+
+    source_entity_id: str | None
+    affected_entity_id: str | None
+    status: CausalRelevanceStatus
+    semantic: CausalPathSemantic
+    entity_ids: tuple[str, ...] = ()
+    hops: tuple[CausalPathHop, ...] = ()
+    reason: str = ""
+
+
+def _topology_result_order(result: TopologyPathEvaluation) -> tuple:
+    return (
+        _SEMANTIC_PRIORITY[result.semantic],
+        len(result.hops),
+        tuple(item.relationship_id for item in result.hops),
+        result.entity_ids,
+        result.source_entity_id or "",
     )
 
 
-def evaluate_causal_relevance(
+def evaluate_topology_path(
     snapshot: GraphSnapshot | None,
     *,
-    candidate_event_id: str,
-    candidate_entity_ids: Iterable[str],
+    source_entity_ids: Iterable[str],
     affected_entity_ids: Iterable[str],
     max_hops: int,
-) -> CandidateCausalRelevanceAudit:
-    """Find the best bounded semantic path in canonical source→effect order."""
+) -> TopologyPathEvaluation:
+    """Evaluate one bounded path with the unchanged v1 topology semantics."""
 
-    candidate_ids = sorted(set(candidate_entity_ids))
+    source_ids = sorted(set(source_entity_ids))
     affected_ids = sorted(set(affected_entity_ids))
     if snapshot is None:
-        return _audit(
-            candidate_event_id=candidate_event_id,
-            candidate_entity_id=candidate_ids[0] if candidate_ids else None,
+        return TopologyPathEvaluation(
+            source_entity_id=source_ids[0] if source_ids else None,
             affected_entity_id=affected_ids[0] if affected_ids else None,
             status=CausalRelevanceStatus.IDENTITY_UNRESOLVED,
             semantic=CausalPathSemantic.UNSUPPORTED_UNKNOWN,
@@ -297,13 +290,18 @@ def evaluate_causal_relevance(
         )
 
     snapshot_entity_ids = {entity.id for entity in snapshot.entities}
-    starts = sorted(set(candidate_ids) & snapshot_entity_ids)
+    starts = sorted(set(source_ids) & snapshot_entity_ids)
     targets = sorted(set(affected_ids) & snapshot_entity_ids)
     if not starts or not targets:
-        return _audit(
-            candidate_event_id=candidate_event_id,
-            candidate_entity_id=starts[0] if starts else (candidate_ids[0] if candidate_ids else None),
-            affected_entity_id=targets[0] if targets else (affected_ids[0] if affected_ids else None),
+        return TopologyPathEvaluation(
+            source_entity_id=(
+                starts[0] if starts else (source_ids[0] if source_ids else None)
+            ),
+            affected_entity_id=(
+                targets[0]
+                if targets
+                else (affected_ids[0] if affected_ids else None)
+            ),
             status=CausalRelevanceStatus.IDENTITY_UNRESOLVED,
             semantic=CausalPathSemantic.UNSUPPORTED_UNKNOWN,
             reason=(
@@ -315,13 +313,12 @@ def evaluate_causal_relevance(
     direct = sorted(set(starts) & set(targets))
     if direct:
         entity_id = direct[0]
-        return _audit(
-            candidate_event_id=candidate_event_id,
-            candidate_entity_id=entity_id,
+        return TopologyPathEvaluation(
+            source_entity_id=entity_id,
             affected_entity_id=entity_id,
             status=CausalRelevanceStatus.DIRECT,
             semantic=CausalPathSemantic.DIRECT_ENTITY,
-            entity_ids=[entity_id],
+            entity_ids=(entity_id,),
             reason="The candidate directly applies to the incident affected entity.",
         )
 
@@ -355,9 +352,8 @@ def evaluate_causal_relevance(
             semantic = _path_semantic(
                 CausalPathSemantic(value) for value in class_values
             )
-            return _audit(
-                candidate_event_id=candidate_event_id,
-                candidate_entity_id=entity_path[0],
+            return TopologyPathEvaluation(
+                source_entity_id=entity_path[0],
                 affected_entity_id=node,
                 status=CausalRelevanceStatus.SEMANTIC_PATH,
                 semantic=semantic,
@@ -399,9 +395,8 @@ def evaluate_causal_relevance(
                 ),
             )
 
-    return _audit(
-        candidate_event_id=candidate_event_id,
-        candidate_entity_id=starts[0],
+    return TopologyPathEvaluation(
+        source_entity_id=starts[0],
         affected_entity_id=targets[0],
         status=CausalRelevanceStatus.NO_SUPPORTED_PATH,
         semantic=CausalPathSemantic.UNSUPPORTED_UNKNOWN,
@@ -410,4 +405,566 @@ def evaluate_causal_relevance(
             "entity in the incident-pinned topology. This is missing support, "
             "not contradiction."
         ),
+    )
+
+
+def _audit(
+    *,
+    candidate_event_id: str,
+    candidate_entity_id: str | None,
+    result: TopologyPathEvaluation,
+    policy_version: str,
+    resolution_basis: CausalRelevanceResolutionBasis,
+    relevance_anchor_entity_id: str | None = None,
+    relevance_anchor_kind: str | None = None,
+    bridge_state: LineageRelevanceBridgeState = (
+        LineageRelevanceBridgeState.NOT_APPLICABLE
+    ),
+    bridge_reason: str | None = None,
+    bridge_path_ids: Iterable[str] = (),
+    bridge_evidence_refs: Iterable[CandidateAdmissionEvidenceReference] = (),
+    bridge_source_change_id: str | None = None,
+    bridge_revision: str | None = None,
+    bridge_run_ids: Iterable[str] = (),
+    bridge_image_digest: str | None = None,
+    bridge_score: float | None = None,
+    topology_path_state: CausalTopologyPathState | None = None,
+    anchor_audits: Iterable[LineageRelevanceAnchorAudit] = (),
+    reason: str | None = None,
+) -> CandidateCausalRelevanceAudit:
+    selected_hops = list(result.hops)
+    if topology_path_state is None:
+        topology_path_state = (
+            CausalTopologyPathState.SUPPORTED
+            if result.status
+            in {CausalRelevanceStatus.DIRECT, CausalRelevanceStatus.SEMANTIC_PATH}
+            else (
+                CausalTopologyPathState.NOT_EVALUATED
+                if result.status == CausalRelevanceStatus.IDENTITY_UNRESOLVED
+                else CausalTopologyPathState.UNSUPPORTED
+            )
+        )
+    return CandidateCausalRelevanceAudit(
+        candidate_event_id=candidate_event_id,
+        candidate_entity_id=candidate_entity_id,
+        affected_entity_id=result.affected_entity_id,
+        relevance_policy_version=policy_version,
+        resolution_basis=resolution_basis,
+        relevance_anchor_entity_id=relevance_anchor_entity_id,
+        relevance_anchor_kind=relevance_anchor_kind,
+        bridge_state=bridge_state,
+        bridge_reason=bridge_reason,
+        bridge_path_ids=list(bridge_path_ids),
+        bridge_evidence_refs=list(bridge_evidence_refs),
+        bridge_source_change_id=bridge_source_change_id,
+        bridge_revision=bridge_revision,
+        bridge_run_ids=list(bridge_run_ids),
+        bridge_image_digest=bridge_image_digest,
+        bridge_score=bridge_score,
+        topology_path_state=topology_path_state,
+        anchor_audits=list(anchor_audits),
+        relevance_status=result.status,
+        path_semantic=result.semantic,
+        path_entity_ids=list(result.entity_ids),
+        path_relationship_ids=[item.relationship_id for item in selected_hops],
+        path_predicates=[item.predicate for item in selected_hops],
+        path_traversal_directions=[
+            item.traversal_direction for item in selected_hops
+        ],
+        path_relationship_origins=[
+            item.relationship_origin for item in selected_hops
+        ],
+        path_relationship_source_systems=[
+            item.relationship_source_system for item in selected_hops
+        ],
+        path_hops=len(selected_hops),
+        topology_component=topology_component_for_hops(
+            len(selected_hops)
+            if result.status
+            in {CausalRelevanceStatus.DIRECT, CausalRelevanceStatus.SEMANTIC_PATH}
+            else None
+        ),
+        hops=selected_hops,
+        reason=reason or result.reason,
+    )
+
+
+def _value(value: object | None) -> str | None:
+    if value is None:
+        return None
+    raw = getattr(value, "value", value)
+    return str(raw)
+
+
+def _deduplicated_references(
+    values: Iterable[CandidateAdmissionEvidenceReference],
+) -> list[CandidateAdmissionEvidenceReference]:
+    result: dict[tuple[str, str, str], CandidateAdmissionEvidenceReference] = {}
+    for item in values:
+        key = (item.reference_type, item.reference, item.source_system)
+        result[key] = item
+    return [result[key] for key in sorted(result)]
+
+
+_RUNTIME_TOPOLOGY_REFERENCE_TYPES = frozenset(
+    {
+        "container_image_reference",
+        "graph_entity_id",
+        "kubernetes_owner_reference_uid",
+        "kubernetes_requested_image_reference",
+        "kubernetes_runtime_image_id",
+        "kubernetes_runtime_status_image",
+        "topology_relationship",
+    }
+)
+
+
+def _bridge_references(
+    values: Iterable[CandidateAdmissionEvidenceReference],
+) -> list[CandidateAdmissionEvidenceReference]:
+    """Keep SC-2 provider provenance separate from topology observations."""
+
+    return _deduplicated_references(
+        item
+        for item in values
+        if item.reference_type not in _RUNTIME_TOPOLOGY_REFERENCE_TYPES
+        and item.source_system.casefold() != "kubernetes"
+    )
+
+
+def _unresolved_result(
+    *,
+    affected_entity_ids: Iterable[str],
+    reason: str,
+) -> TopologyPathEvaluation:
+    affected_ids = sorted(set(affected_entity_ids))
+    return TopologyPathEvaluation(
+        source_entity_id=None,
+        affected_entity_id=affected_ids[0] if affected_ids else None,
+        status=CausalRelevanceStatus.IDENTITY_UNRESOLVED,
+        semantic=CausalPathSemantic.UNSUPPORTED_UNKNOWN,
+        reason=reason,
+    )
+
+
+def _anchor_audit(
+    *,
+    anchor_entity_id: str,
+    anchor_kind: str,
+    image_digest: str,
+    paths: list[LineagePathAudit],
+    evidence_refs: list[CandidateAdmissionEvidenceReference],
+    result: TopologyPathEvaluation,
+    bridge_state: LineageRelevanceBridgeState,
+    bridge_reason: str,
+) -> LineageRelevanceAnchorAudit:
+    supported = result.status in {
+        CausalRelevanceStatus.DIRECT,
+        CausalRelevanceStatus.SEMANTIC_PATH,
+    }
+    return LineageRelevanceAnchorAudit(
+        anchor_entity_id=anchor_entity_id,
+        anchor_kind=anchor_kind,
+        image_digest=image_digest,
+        bridge_state=bridge_state,
+        bridge_reason=bridge_reason,
+        bridge_path_ids=sorted({item.path_id for item in paths}),
+        bridge_evidence_refs=evidence_refs,
+        source_change_id=paths[0].canonical_change_id,
+        revision=paths[0].revision,
+        run_ids=sorted({item.run_id for item in paths}),
+        provider_evidence_ids=sorted(
+            {
+                evidence_id
+                for item in paths
+                for evidence_id in item.provider_evidence_ids
+            }
+        ),
+        topology_path_state=(
+            CausalTopologyPathState.SUPPORTED
+            if supported
+            else (
+                CausalTopologyPathState.NOT_EVALUATED
+                if result.status == CausalRelevanceStatus.IDENTITY_UNRESOLVED
+                else CausalTopologyPathState.UNSUPPORTED
+            )
+        ),
+        topology_path_semantic=result.semantic,
+        topology_path_entity_ids=list(result.entity_ids),
+        topology_path_relationship_ids=[
+            item.relationship_id for item in result.hops
+        ],
+        topology_hops=len(result.hops),
+        topology_component=topology_component_for_hops(
+            len(result.hops) if supported else None
+        ),
+        reason=result.reason,
+    )
+
+
+def evaluate_causal_relevance(
+    snapshot: GraphSnapshot | None,
+    *,
+    candidate_event_id: str,
+    candidate_entity_ids: Iterable[str],
+    affected_entity_ids: Iterable[str],
+    max_hops: int,
+    relevance_policy_version: str = CAUSAL_RELEVANCE_POLICY_VERSION,
+    candidate_admission_policy_version: str | None = None,
+    admission_basis: Iterable[CandidateAdmissionBasis | str] = (),
+    lineage_admission_state: LineageAdmissionState | str | None = None,
+    lineage_admission_reason: LineageAdmissionReason | str | None = None,
+    lineage_paths: Iterable[LineagePathAudit] = (),
+    admission_evidence_refs: Iterable[
+        CandidateAdmissionEvidenceReference
+    ] = (),
+) -> CandidateCausalRelevanceAudit:
+    """Resolve topology-native or exact-lineage-anchored causal relevance.
+
+    V2 consumes only persisted SC-2 admission context. It performs no provider,
+    registry, current-topology, or fuzzy identity lookup. Both modes call the
+    same v1 topology path evaluator, and the provenance bridge adds no score.
+    """
+
+    candidate_ids = sorted(set(candidate_entity_ids))
+    affected_ids = sorted(set(affected_entity_ids))
+    if relevance_policy_version not in {
+        CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION,
+        CAUSAL_RELEVANCE_POLICY_VERSION,
+    }:
+        result = _unresolved_result(
+            affected_entity_ids=affected_ids,
+            reason=(
+                "unsupported_policy_version: causal relevance policy "
+                f"'{relevance_policy_version}' is not recognized."
+            ),
+        )
+        return _audit(
+            candidate_event_id=candidate_event_id,
+            candidate_entity_id=None,
+            result=result,
+            policy_version=relevance_policy_version,
+            resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+            bridge_state=LineageRelevanceBridgeState.INELIGIBLE,
+            bridge_reason="unsupported_policy_version",
+        )
+
+    # V1 and topology-native V2 use the same engine and exact candidate IDs.
+    snapshot_ids = (
+        {entity.id for entity in snapshot.entities} if snapshot is not None else set()
+    )
+    native_starts = sorted(set(candidate_ids) & snapshot_ids)
+    if (
+        relevance_policy_version == CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION
+        or native_starts
+        or (snapshot is None and candidate_ids)
+    ):
+        result = evaluate_topology_path(
+            snapshot,
+            source_entity_ids=candidate_ids,
+            affected_entity_ids=affected_ids,
+            max_hops=max_hops,
+        )
+        return _audit(
+            candidate_event_id=candidate_event_id,
+            candidate_entity_id=result.source_entity_id,
+            result=result,
+            policy_version=relevance_policy_version,
+            resolution_basis=(
+                CausalRelevanceResolutionBasis.TOPOLOGY_ENTITY
+                if native_starts
+                else CausalRelevanceResolutionBasis.UNRESOLVED
+            ),
+        )
+
+    if snapshot is None:
+        result = _unresolved_result(
+            affected_entity_ids=affected_ids,
+            reason=(
+                "pinned_topology_missing: incident-pinned topology is "
+                "unavailable; no latest-topology fallback was used."
+            ),
+        )
+        return _audit(
+            candidate_event_id=candidate_event_id,
+            candidate_entity_id=None,
+            result=result,
+            policy_version=relevance_policy_version,
+            resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+            bridge_state=LineageRelevanceBridgeState.INCOMPLETE,
+            bridge_reason="pinned_topology_missing",
+        )
+
+    target_ids = sorted(set(affected_ids) & snapshot_ids)
+    if not target_ids:
+        result = _unresolved_result(
+            affected_entity_ids=affected_ids,
+            reason=(
+                "candidate_identity_unresolved: affected identity is not "
+                "present in incident-pinned topology."
+            ),
+        )
+        return _audit(
+            candidate_event_id=candidate_event_id,
+            candidate_entity_id=None,
+            result=result,
+            policy_version=relevance_policy_version,
+            resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+            bridge_state=LineageRelevanceBridgeState.INCOMPLETE,
+            bridge_reason="candidate_identity_unresolved",
+        )
+
+    basis_values = {_value(item) for item in admission_basis}
+    state = _value(lineage_admission_state)
+    admission_reason = _value(lineage_admission_reason)
+    eligibility_reason: str | None = None
+    if (
+        candidate_admission_policy_version
+        != CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION
+    ):
+        eligibility_reason = "lineage_admission_policy_not_eligible"
+    elif state != LineageAdmissionState.ADMITTED.value:
+        eligibility_reason = "lineage_admission_not_eligible"
+    elif admission_reason != LineageAdmissionReason.EXACT_IMMUTABLE_LINEAGE.value:
+        eligibility_reason = "lineage_admission_not_eligible"
+    elif CandidateAdmissionBasis.EXACT_IMMUTABLE_LINEAGE.value not in basis_values:
+        eligibility_reason = "lineage_admission_not_eligible"
+
+    paths = sorted(
+        list(lineage_paths),
+        key=lambda item: (
+            item.image_entity_id or "",
+            item.image_digest,
+            item.path_id,
+        ),
+    )
+    evidence_refs = _deduplicated_references(admission_evidence_refs)
+    bridge_evidence_refs = _bridge_references(evidence_refs)
+    if eligibility_reason is None and not paths:
+        eligibility_reason = "lineage_bridge_missing"
+    if eligibility_reason is None and not bridge_evidence_refs:
+        eligibility_reason = "lineage_bridge_evidence_missing"
+
+    if eligibility_reason is not None:
+        result = _unresolved_result(
+            affected_entity_ids=target_ids,
+            reason=(
+                f"{eligibility_reason}: the source candidate has no usable "
+                "exact immutable-lineage relevance anchor."
+            ),
+        )
+        return _audit(
+            candidate_event_id=candidate_event_id,
+            candidate_entity_id=None,
+            result=result,
+            policy_version=relevance_policy_version,
+            resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+            bridge_state=LineageRelevanceBridgeState.INELIGIBLE,
+            bridge_reason=eligibility_reason,
+        )
+
+    for path in paths:
+        if path.canonical_change_id != candidate_event_id:
+            reason = "lineage_candidate_mismatch"
+            result = _unresolved_result(
+                affected_entity_ids=target_ids,
+                reason=f"{reason}: persisted lineage belongs to another candidate.",
+            )
+            return _audit(
+                candidate_event_id=candidate_event_id,
+                candidate_entity_id=None,
+                result=result,
+                policy_version=relevance_policy_version,
+                resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+                bridge_state=LineageRelevanceBridgeState.CONFLICT,
+                bridge_reason=reason,
+            )
+        if (
+            not path.image_entity_id
+            or not path.image_entity_kind
+            or not path.provider_evidence_ids
+            or path.image_entity_id not in path.entity_ids
+            or path.affected_entity_id not in target_ids
+        ):
+            reason = "lineage_bridge_incomplete"
+            result = _unresolved_result(
+                affected_entity_ids=target_ids,
+                reason=(
+                    f"{reason}: persisted lineage lacks an explicit exact "
+                    "artifact anchor or required evidence."
+                ),
+            )
+            return _audit(
+                candidate_event_id=candidate_event_id,
+                candidate_entity_id=None,
+                result=result,
+                policy_version=relevance_policy_version,
+                resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+                bridge_state=LineageRelevanceBridgeState.INCOMPLETE,
+                bridge_reason=reason,
+            )
+
+    revisions = {item.revision for item in paths}
+    if len(revisions) != 1:
+        reason = "lineage_anchor_identity_conflict"
+        result = _unresolved_result(
+            affected_entity_ids=target_ids,
+            reason=f"{reason}: admitted paths disagree on source revision.",
+        )
+        return _audit(
+            candidate_event_id=candidate_event_id,
+            candidate_entity_id=None,
+            result=result,
+            policy_version=relevance_policy_version,
+            resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+            bridge_state=LineageRelevanceBridgeState.CONFLICT,
+            bridge_reason=reason,
+        )
+
+    grouped: dict[tuple[str, str, str], list[LineagePathAudit]] = {}
+    identity_by_entity: dict[str, set[tuple[str, str]]] = {}
+    for path in paths:
+        assert path.image_entity_id is not None
+        assert path.image_entity_kind is not None
+        identity_by_entity.setdefault(path.image_entity_id, set()).add(
+            (path.image_entity_kind, path.image_digest)
+        )
+        grouped.setdefault(
+            (path.image_entity_id, path.image_entity_kind, path.image_digest), []
+        ).append(path)
+    if any(len(values) != 1 for values in identity_by_entity.values()):
+        reason = "lineage_anchor_identity_conflict"
+        result = _unresolved_result(
+            affected_entity_ids=target_ids,
+            reason=(
+                f"{reason}: one anchor entity has conflicting immutable "
+                "identity claims."
+            ),
+        )
+        return _audit(
+            candidate_event_id=candidate_event_id,
+            candidate_entity_id=None,
+            result=result,
+            policy_version=relevance_policy_version,
+            resolution_basis=CausalRelevanceResolutionBasis.UNRESOLVED,
+            bridge_state=LineageRelevanceBridgeState.CONFLICT,
+            bridge_reason=reason,
+        )
+
+    entity_by_id = {entity.id: entity for entity in snapshot.entities}
+    evaluated: list[
+        tuple[
+            tuple[str, str, str],
+            list[LineagePathAudit],
+            TopologyPathEvaluation,
+            LineageRelevanceAnchorAudit,
+        ]
+    ] = []
+    for anchor_key in sorted(grouped):
+        anchor_id, anchor_kind, digest = anchor_key
+        anchor_paths = grouped[anchor_key]
+        entity = entity_by_id.get(anchor_id)
+        rejection: str | None = None
+        if entity is None:
+            rejection = "lineage_anchor_not_in_pinned_topology"
+        elif anchor_kind != "ContainerImage" or entity.kind != anchor_kind:
+            rejection = "lineage_anchor_identity_conflict"
+        elif (
+            entity.properties.get("immutable") is not True
+            or str(entity.properties.get("digest") or "").lower() != digest
+            or str(entity.external_id or "").lower() != digest
+        ):
+            rejection = "lineage_anchor_identity_conflict"
+
+        if rejection is not None:
+            anchor_result = _unresolved_result(
+                affected_entity_ids=target_ids,
+                reason=(
+                    f"{rejection}: exact admitted anchor '{anchor_id}' is not "
+                    "usable in incident-pinned topology."
+                ),
+            )
+            anchor_audit = _anchor_audit(
+                anchor_entity_id=anchor_id,
+                anchor_kind=anchor_kind,
+                image_digest=digest,
+                paths=anchor_paths,
+                evidence_refs=bridge_evidence_refs,
+                result=anchor_result,
+                bridge_state=(
+                    LineageRelevanceBridgeState.CONFLICT
+                    if rejection == "lineage_anchor_identity_conflict"
+                    else LineageRelevanceBridgeState.INCOMPLETE
+                ),
+                bridge_reason=rejection,
+            )
+        else:
+            anchor_result = evaluate_topology_path(
+                snapshot,
+                source_entity_ids=[anchor_id],
+                affected_entity_ids=target_ids,
+                max_hops=max_hops,
+            )
+            anchor_audit = _anchor_audit(
+                anchor_entity_id=anchor_id,
+                anchor_kind=anchor_kind,
+                image_digest=digest,
+                paths=anchor_paths,
+                evidence_refs=bridge_evidence_refs,
+                result=anchor_result,
+                bridge_state=LineageRelevanceBridgeState.VALID,
+                bridge_reason="exact_immutable_lineage_anchor",
+            )
+        evaluated.append((anchor_key, anchor_paths, anchor_result, anchor_audit))
+
+    supported = [
+        item
+        for item in evaluated
+        if item[2].status
+        in {CausalRelevanceStatus.DIRECT, CausalRelevanceStatus.SEMANTIC_PATH}
+    ]
+    selected_pool = supported or evaluated
+    selected_key, selected_paths, selected_result, selected_audit = min(
+        selected_pool,
+        key=lambda item: (_topology_result_order(item[2]), item[0]),
+    )
+    anchor_id, anchor_kind, digest = selected_key
+    all_anchor_audits = [item[3] for item in evaluated]
+    selected_supported = bool(supported)
+    final_reason = (
+        "supported: an admitted exact immutable-lineage anchor reaches an "
+        "affected entity through the existing incident-pinned topology path policy."
+        if selected_supported
+        else (
+            selected_result.reason
+            if selected_result.status == CausalRelevanceStatus.IDENTITY_UNRESOLVED
+            else (
+                "lineage_topology_path_missing: the exact lineage bridge is valid, "
+                "but no supported incident-pinned topology path reaches the "
+                "affected entity."
+            )
+        )
+    )
+    return _audit(
+        candidate_event_id=candidate_event_id,
+        candidate_entity_id=None,
+        result=selected_result,
+        policy_version=relevance_policy_version,
+        resolution_basis=(
+            CausalRelevanceResolutionBasis.EXACT_IMMUTABLE_LINEAGE_ANCHOR
+        ),
+        relevance_anchor_entity_id=anchor_id,
+        relevance_anchor_kind=anchor_kind,
+        bridge_state=selected_audit.bridge_state,
+        bridge_reason=selected_audit.bridge_reason,
+        bridge_path_ids=selected_audit.bridge_path_ids,
+        bridge_evidence_refs=bridge_evidence_refs,
+        bridge_source_change_id=candidate_event_id,
+        bridge_revision=selected_paths[0].revision,
+        bridge_run_ids=selected_audit.run_ids,
+        bridge_image_digest=digest,
+        bridge_score=0.0,
+        topology_path_state=selected_audit.topology_path_state,
+        anchor_audits=all_anchor_audits,
+        reason=final_reason,
     )
