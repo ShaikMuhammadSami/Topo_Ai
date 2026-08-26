@@ -1275,6 +1275,14 @@ def analyze_causal_rca(
             candidate_entity_ids=linked_ids,
             affected_entity_ids=affected_entity_ids,
             max_hops=request.max_topology_hops,
+            candidate_admission_policy_version=(
+                candidate.candidate_admission_policy_version
+            ),
+            admission_basis=candidate.admission_basis,
+            lineage_admission_state=candidate.lineage_admission_state,
+            lineage_admission_reason=candidate.lineage_admission_reason,
+            lineage_paths=candidate.lineage_paths,
+            admission_evidence_refs=candidate.admission_evidence_refs,
         )
         relevance_by_event[event_id] = relevance
         best_path = (
@@ -1427,7 +1435,7 @@ def analyze_causal_rca(
                     reasons=[
                         (
                             "The selected TC-2 edge is allowed by "
-                            "causal-relevance-v1 in canonical "
+                            f"{relevance.relevance_policy_version} in canonical "
                             "source-to-effect direction."
                         )
                     ],

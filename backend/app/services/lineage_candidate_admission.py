@@ -647,6 +647,8 @@ def evaluate_lineage_candidate_admission(
                 relationship_ids=relationship_ids,
                 provider_evidence_ids=[item.evidence_id],
                 container_name=container_name,
+                image_entity_id=image.id,
+                image_entity_kind=image.kind,
                 image_digest=digest,
                 repository_id=repository_id,
                 repository=repository,

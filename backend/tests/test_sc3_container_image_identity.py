@@ -557,7 +557,7 @@ def test_frozen_candidate_and_downstream_contracts_remain_unchanged():
         "causal-candidate-admission-v2"
     )
     assert CausalAnalysisRequest().lookback_minutes == 180
-    assert CAUSAL_RELEVANCE_POLICY_VERSION == "causal-relevance-v1"
+    assert CAUSAL_RELEVANCE_POLICY_VERSION == "causal-relevance-v2"
     source = inspect.getsource(analyze_incident_change_events)
     assert "score +=" not in source
 
