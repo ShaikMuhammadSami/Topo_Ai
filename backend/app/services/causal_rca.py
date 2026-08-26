@@ -40,6 +40,9 @@ from app.models.causal_relevance import (
     CAUSAL_RELEVANCE_POLICY_VERSION,
     CandidateCausalRelevanceAudit,
 )
+from app.models.causal_projection import (
+    CAUSAL_HYPOTHESIS_PROJECTION_POLICY_VERSION,
+)
 from app.models.causal_support import (
     CAUSAL_SUPPORT_GATE_POLICY_VERSION,
 )
@@ -63,6 +66,7 @@ from app.services.causal_evaluation_budget import (
 )
 from app.services.causal_relevance_policy import evaluate_causal_relevance
 from app.services.causal_support_gate import classify_causal_support
+from app.services.causal_hypothesis_projection import project_causal_hypotheses
 from app.services.confidence_semantics import (
     ensure_analysis_confidence_semantics,
 )
@@ -2170,25 +2174,23 @@ def analyze_causal_rca(
                 hypothesis.root_event_id
             ] = hypothesis
 
-    hypotheses = list(
+    evaluated_hypotheses = list(
         best_by_root.values()
     )
 
-    hypotheses.sort(
-        key=lambda item:
-            item.score,
-        reverse=True,
+    hypothesis_projection = project_causal_hypotheses(
+        evaluated_hypotheses,
+        diagnostic_limit=request.max_hypotheses,
+        supported_limit=request.max_hypotheses,
     )
-
-    hypotheses = hypotheses[
-        :request.max_hypotheses
+    hypotheses = list(hypothesis_projection.evaluated_hypotheses)
+    hypotheses_by_id = {
+        hypothesis.hypothesis_id: hypothesis for hypothesis in hypotheses
+    }
+    diagnostic_hypotheses = [
+        hypotheses_by_id[hypothesis_id]
+        for hypothesis_id in hypothesis_projection.diagnostic_hypothesis_ids
     ]
-
-    for index, hypothesis in enumerate(
-        hypotheses,
-        start=1,
-    ):
-        hypothesis.rank = index
 
     analysis_fingerprint = {
         "incident_id":
@@ -2224,6 +2226,8 @@ def analyze_causal_rca(
             CONFIDENCE_SEMANTICS_VERSION,
         "causal_support_gate":
             CAUSAL_SUPPORT_GATE_POLICY_VERSION,
+        "causal_hypothesis_projection":
+            CAUSAL_HYPOTHESIS_PROJECTION_POLICY_VERSION,
     }
 
     analysis_id = _stable_id(
@@ -2285,6 +2289,21 @@ def analyze_causal_rca(
             support_policy_version=(
                 CAUSAL_SUPPORT_GATE_POLICY_VERSION
             ),
+            projection_policy_version=(
+                CAUSAL_HYPOTHESIS_PROJECTION_POLICY_VERSION
+            ),
+            diagnostic_hypothesis_ids=list(
+                hypothesis_projection.diagnostic_hypothesis_ids
+            ),
+            supported_hypothesis_ids=list(
+                hypothesis_projection.supported_hypothesis_ids
+            ),
+            hypothesis_projection_audit=list(
+                hypothesis_projection.audit
+            ),
+            hypothesis_projection_summary=(
+                hypothesis_projection.summary
+            ),
             candidate_relevance_audit=[
                 relevance_by_event[candidate.event.event_id]
                 for candidate in candidates
@@ -2309,8 +2328,8 @@ def analyze_causal_rca(
                 len(hypotheses)
             ),
             top_hypothesis=(
-                hypotheses[0]
-                if hypotheses
+                diagnostic_hypotheses[0]
+                if diagnostic_hypotheses
                 else None
             ),
             hypotheses=hypotheses,
