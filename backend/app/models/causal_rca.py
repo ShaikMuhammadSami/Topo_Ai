@@ -14,7 +14,9 @@ from app.models.canonical_identity import (
     CanonicalIdentityResolution,
 )
 from app.models.causal_candidates import (
+    CausalCandidateEvaluationAudit,
     CausalCandidateSelectionAudit,
+    CausalEvaluationBudgetAudit,
     LineageCandidateAdmissionAudit,
 )
 from app.models.causal_relevance import CandidateCausalRelevanceAudit
@@ -524,6 +526,30 @@ class CausalAnalysisResponse(BaseModel):
         ),
     )
 
+    evaluation_policy_version: str | None = Field(
+        default=None,
+        description=(
+            "Candidate evaluation-frontier policy used for this immutable "
+            "analysis generation. Historical payloads load with null."
+        ),
+    )
+
+    candidate_evaluation_audit: list[CausalCandidateEvaluationAudit] = Field(
+        default_factory=list,
+        description=(
+            "Deterministic evaluation membership and selection bases for "
+            "each raw candidate. Historical payloads load empty."
+        ),
+    )
+
+    evaluation_budget_audit: CausalEvaluationBudgetAudit | None = Field(
+        default=None,
+        description=(
+            "Bounded ordinary-plus-evidence-preserved frontier summary. "
+            "Historical payloads load with null."
+        ),
+    )
+
     causal_relevance_policy_version: str | None = Field(
         default=None,
         description=(
@@ -535,8 +561,8 @@ class CausalAnalysisResponse(BaseModel):
     candidate_relevance_audit: list[CandidateCausalRelevanceAudit] = Field(
         default_factory=list,
         description=(
-            "Pinned-topology semantic relevance result for every selected "
-            "primary causal candidate."
+            "Pinned-topology semantic relevance result for every member of "
+            "the causal evaluation frontier."
         ),
     )
 
