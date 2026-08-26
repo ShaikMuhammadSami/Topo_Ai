@@ -36,6 +36,9 @@ class CausalEvidenceCompleteness(str, Enum):
 
 class CausalEvidenceState(str, Enum):
     SUPPORTED_UNDER_CURRENT_MODEL = "supported_under_current_model"
+    INSUFFICIENT_CANDIDATE_SPECIFIC_EVIDENCE = (
+        "insufficient_candidate_specific_evidence"
+    )
     CONTESTED = "contested"
     INCOMPLETE = "incomplete"
     CONTESTED_WITH_GAPS = "contested_with_gaps"

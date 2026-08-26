@@ -27,6 +27,8 @@ from app.models.causal_rca import (
     CausalEvidenceSourceCategory,
     CausalEvidenceStance,
 )
+from app.models.causal_support import CAUSAL_SUPPORT_GATE_POLICY_VERSION
+from app.models.confidence_semantics import CausalEvidenceState
 from app.models.change_events import (
     ChangeEventCreate,
     ChangeEventEntityReference,
@@ -744,6 +746,66 @@ def test_new_ledger_persists_and_reloads_exactly() -> None:
     assert reloaded.model_dump_json() == analysis.model_dump_json()
     assert latest.top_hypothesis.evidence_ledger.model_dump_json() == (
         analysis.top_hypothesis.evidence_ledger.model_dump_json()
+    )
+
+
+def test_ar2_support_gate_persists_and_reloads_exactly() -> None:
+    session, _, analysis = _analysis_fixture(
+        event=_event(kind=ChangeEventKind.CONFIGURATION),
+        persist=True,
+    )
+    reloaded = load_causal_analysis(session, analysis_id=analysis.analysis_id)
+    assert reloaded is not None
+    assert analysis.support_policy_version == CAUSAL_SUPPORT_GATE_POLICY_VERSION
+    assert analysis.top_hypothesis.support_gate is not None
+    assert analysis.top_hypothesis.support_gate.support_state == (
+        CausalEvidenceState.SUPPORTED_UNDER_CURRENT_MODEL
+    )
+    assert reloaded.top_hypothesis.support_gate.model_dump_json() == (
+        analysis.top_hypothesis.support_gate.model_dump_json()
+    )
+
+
+def test_legacy_persisted_support_result_is_not_reclassified_on_readback() -> None:
+    session, _, analysis = _analysis_fixture(
+        event=_event(kind=ChangeEventKind.CONFIGURATION),
+        persist=False,
+    )
+    payload = analysis.model_dump(mode="json")
+    payload["analysis_id"] = "causal-analysis:legacy-pre-ar2"
+    payload.pop("support_policy_version", None)
+    payload["top_hypothesis"].pop("support_gate", None)
+    for hypothesis in payload["hypotheses"]:
+        hypothesis.pop("support_gate", None)
+    persisted_state = payload["top_hypothesis"]["confidence_semantics"][
+        "evidence_state"
+    ]
+    session.add(
+        CausalAnalysisRecord(
+            analysis_id=payload["analysis_id"],
+            incident_id=payload["incident_id"],
+            generated_at=payload["generated_at"],
+            algorithm_version=payload["algorithm_version"],
+            candidate_count=payload["candidate_count"],
+            hypothesis_count=payload["hypothesis_count"],
+            top_hypothesis_score=payload["top_hypothesis"]["score"],
+            top_root_event_id=payload["top_hypothesis"]["root_event_id"],
+            payload_json=json.dumps(payload),
+            created_at=RECEIVED_AT.isoformat(),
+            updated_at=RECEIVED_AT.isoformat(),
+        )
+    )
+    session.commit()
+
+    loaded = load_causal_analysis(
+        session,
+        analysis_id="causal-analysis:legacy-pre-ar2",
+    )
+    assert loaded is not None
+    assert loaded.support_policy_version is None
+    assert loaded.top_hypothesis.support_gate is None
+    assert loaded.top_hypothesis.confidence_semantics.evidence_state.value == (
+        persisted_state
     )
 
 

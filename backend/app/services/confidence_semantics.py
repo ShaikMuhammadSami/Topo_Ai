@@ -11,6 +11,7 @@ from app.models.confidence_semantics import (
     CausalEvidenceSummary,
     CausalRankingStrength,
 )
+from app.models.causal_support import CAUSAL_SUPPORT_GATE_POLICY_VERSION
 
 
 def _evidence_counts(
@@ -33,8 +34,17 @@ def causal_confidence_semantics(
 ) -> CausalConfidenceSemantics:
     supporting, contradicting, missing = _evidence_counts(hypothesis)
     ledger_available = hypothesis.evidence_ledger is not None
+    support_gate = hypothesis.support_gate
 
-    if not ledger_available:
+    if support_gate is not None:
+        if support_gate.policy_version != CAUSAL_SUPPORT_GATE_POLICY_VERSION:
+            raise ValueError(
+                "unsupported_causal_support_gate_policy: "
+                f"'{support_gate.policy_version}' is not recognized"
+            )
+        completeness = support_gate.evidence_completeness
+        evidence_state = support_gate.support_state
+    elif not ledger_available:
         completeness = CausalEvidenceCompleteness.UNKNOWN
         evidence_state = CausalEvidenceState.LEGACY_UNKNOWN
     elif contradicting and missing:
