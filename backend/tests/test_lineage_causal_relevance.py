@@ -32,6 +32,14 @@ from app.models.causal_relevance import (
     CausalTraversalDirection,
     LineageRelevanceBridgeState,
 )
+from app.models.causal_support import CAUSAL_SUPPORT_GATE_POLICY_VERSION
+from app.models.confidence_semantics import CausalEvidenceState
+from app.models.temporal import (
+    TemporalMetadata,
+    TemporalStatus,
+    TimeOrigin,
+    TimeQuality,
+)
 from app.models.change_events import (
     ChangeEntityLinkType,
     ChangeEntityLinkView,
@@ -617,6 +625,7 @@ def test_legacy_v1_audit_payload_loads_without_v2_backfill() -> None:
 
 def _source_candidate(*, score: float = 10.0) -> IncidentChangeCandidate:
     occurred = "2026-08-25T06:00:00+00:00"
+    effective_at = datetime.fromisoformat(occurred)
     event = ChangeEventView(
         event_id=EVENT,
         event_fingerprint="fingerprint:source-a",
@@ -650,6 +659,16 @@ def _source_candidate(*, score: float = 10.0) -> IncidentChangeCandidate:
         links=[],
         created_at=NOW.isoformat(),
         updated_at=NOW.isoformat(),
+        temporal=TemporalMetadata(
+            effective_at=effective_at,
+            source_event_at=effective_at,
+            observed_at=NOW,
+            time_origin=TimeOrigin.SOURCE_REPORTED,
+            time_quality=TimeQuality.EXACT,
+            source_field="fixture.occurred_at",
+            source_time_authoritative=True,
+            status=TemporalStatus.COMPLETE,
+        ),
     )
     return IncidentChangeCandidate(
         event=event,
@@ -716,6 +735,43 @@ def _topology_candidate(*, score: float = 90.0) -> IncidentChangeCandidate:
         event=event,
         score=score,
         minutes_before_incident=2.0,
+    )
+
+
+def _temporal_candidate(index: int = 0, *, score: float = 90.0):
+    candidate = _topology_candidate(score=score)
+    event_id = f"event:temporal-control:{index}"
+    effective_at = NOW.replace(hour=11, minute=55)
+    return candidate.model_copy(
+        update={
+            "event": candidate.event.model_copy(
+                update={
+                    "event_id": event_id,
+                    "event_fingerprint": f"fingerprint:temporal-control:{index}",
+                    "source": ChangeEventSource.GITHUB,
+                    "kind": ChangeEventKind.CODE,
+                    "external_id": f"provider:temporal-control:{index}",
+                    "origin_change_id": None,
+                    "title": f"Unlinked temporal control {index}",
+                    "repository": f"example/unrelated-{index}",
+                    "commit_sha": f"{index + 1:040x}",
+                    "links": [],
+                    "metadata": {},
+                    "temporal": TemporalMetadata(
+                        effective_at=effective_at,
+                        source_event_at=effective_at,
+                        observed_at=NOW,
+                        time_origin=TimeOrigin.SOURCE_REPORTED,
+                        time_quality=TimeQuality.EXACT,
+                        source_field="fixture.occurred_at",
+                        source_time_authoritative=True,
+                        status=TemporalStatus.COMPLETE,
+                    ),
+                }
+            ),
+            "direct_entity_matches": [],
+            "neighboring_entity_matches": [],
+        }
     )
 
 
@@ -810,6 +866,100 @@ def test_lineage_relevance_persists_and_loads_in_fresh_session(monkeypatch) -> N
     assert source_node.occurred_at == candidate.event.occurred_at
     assert "activation" not in source_node.attributes
     assert session.query(CausalAnalysisRecord).count() == 1
+    assert loaded.support_policy_version == CAUSAL_SUPPORT_GATE_POLICY_VERSION
+    assert loaded.top_hypothesis.support_gate is not None
+    assert loaded.top_hypothesis.support_gate.support_state == (
+        CausalEvidenceState.SUPPORTED_UNDER_CURRENT_MODEL
+    )
+    assert loaded.top_hypothesis.affected_entity_id == POD
+    assert loaded.top_hypothesis.support_gate.candidate_linkage_claim_types == [
+        "relationship_provenance",
+        "topology_path",
+    ]
+
+
+def test_ar2_mixed_temporal_distractor_and_lineage_cause_separates_surfaces(
+    monkeypatch,
+) -> None:
+    session = _session(_snapshot())
+    distractor = _temporal_candidate(score=99.0)
+    golden = _source_candidate(score=10.0)
+    monkeypatch.setattr(
+        causal_service,
+        "analyze_incident_change_events",
+        lambda *args, **kwargs: _change_analysis([distractor, golden]),
+    )
+    analysis = causal_service.analyze_causal_rca(
+        session,
+        incident_id="incident:sc4",
+        request=CausalAnalysisRequest(),
+        persist=False,
+    )
+
+    by_target = {item.target_event_id: item for item in analysis.hypotheses}
+    control = by_target[distractor.event.event_id]
+    cause = by_target[EVENT]
+    supported = [
+        item
+        for item in analysis.hypotheses
+        if item.confidence_semantics.evidence_state
+        == CausalEvidenceState.SUPPORTED_UNDER_CURRENT_MODEL
+    ]
+
+    assert control.rank == 1
+    assert cause.rank == 2
+    assert control.score > cause.score
+    assert control.support_gate.support_state == (
+        CausalEvidenceState.INSUFFICIENT_CANDIDATE_SPECIFIC_EVIDENCE
+    )
+    assert control.support_gate.candidate_linkage_claim_ids == []
+    assert cause.support_gate.support_state == (
+        CausalEvidenceState.SUPPORTED_UNDER_CURRENT_MODEL
+    )
+    assert cause.affected_entity_id == POD
+    assert cause.support_gate.relevance_gate_reason == (
+        "supported_exact_immutable_lineage_anchor"
+    )
+    assert [item.target_event_id for item in supported] == [EVENT]
+    assert analysis.top_hypothesis.target_event_id == distractor.event.event_id
+
+
+def test_ar2_count_fifty_shape_preserves_ar1_frontier_and_final_cap(
+    monkeypatch,
+) -> None:
+    session = _session(_snapshot())
+    controls = [
+        _temporal_candidate(index, score=99.0 - index / 100)
+        for index in range(50)
+    ]
+    golden = _source_candidate(score=10.0)
+    monkeypatch.setattr(
+        causal_service,
+        "analyze_incident_change_events",
+        lambda *args, **kwargs: _change_analysis([*controls, golden]),
+    )
+    analysis = causal_service.analyze_causal_rca(
+        session,
+        incident_id="incident:sc4",
+        request=CausalAnalysisRequest(),
+        persist=False,
+    )
+
+    assert analysis.candidate_count == 51
+    assert analysis.evaluation_budget_audit.evaluation_frontier_size == 6
+    assert len(analysis.candidate_relevance_audit) == 6
+    assert analysis.candidate_selection_audit[-1].event_id == EVENT
+    assert analysis.candidate_selection_audit[-1].raw_rank == 51
+    assert len(analysis.hypotheses) == CausalAnalysisRequest().max_hypotheses == 5
+    assert all(
+        item.support_gate.support_state
+        == CausalEvidenceState.INSUFFICIENT_CANDIDATE_SPECIFIC_EVIDENCE
+        for item in analysis.hypotheses
+    )
+    assert EVENT in {
+        item.candidate_event_id for item in analysis.candidate_relevance_audit
+    }
+    assert EVENT not in {item.target_event_id for item in analysis.hypotheses}
 
 
 def test_lineage_anchor_and_path_present_only_in_latest_snapshot_are_ignored(

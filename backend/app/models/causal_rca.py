@@ -20,6 +20,7 @@ from app.models.causal_candidates import (
     LineageCandidateAdmissionAudit,
 )
 from app.models.causal_relevance import CandidateCausalRelevanceAudit
+from app.models.causal_support import CausalSupportGateAudit
 from app.models.confidence_semantics import CausalConfidenceSemantics
 from app.models.temporal import TemporalMetadata
 from app.models.topology import (
@@ -468,6 +469,15 @@ class CausalHypothesis(BaseModel):
         ),
     )
 
+    support_gate: CausalSupportGateAudit | None = Field(
+        default=None,
+        description=(
+            "Versioned evidence-sufficiency classification. Historical "
+            "analyses load with this field absent/null and retain their "
+            "persisted support semantics."
+        ),
+    )
+
     chain: list[
         CausalChainStep
     ] = Field(
@@ -554,6 +564,14 @@ class CausalAnalysisResponse(BaseModel):
         default=None,
         description=(
             "Semantic source-to-effect path policy used for this immutable "
+            "analysis generation. Historical payloads load with null."
+        ),
+    )
+
+    support_policy_version: str | None = Field(
+        default=None,
+        description=(
+            "Categorical causal-support policy used for this immutable "
             "analysis generation. Historical payloads load with null."
         ),
     )

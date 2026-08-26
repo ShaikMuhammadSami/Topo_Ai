@@ -40,6 +40,9 @@ from app.models.causal_relevance import (
     CAUSAL_RELEVANCE_POLICY_VERSION,
     CandidateCausalRelevanceAudit,
 )
+from app.models.causal_support import (
+    CAUSAL_SUPPORT_GATE_POLICY_VERSION,
+)
 from app.models.confidence_semantics import CONFIDENCE_SEMANTICS_VERSION
 from app.models.change_events import (
     IncidentChangeCandidate,
@@ -59,6 +62,7 @@ from app.services.causal_evaluation_budget import (
     build_causal_candidate_evaluation_frontier,
 )
 from app.services.causal_relevance_policy import evaluate_causal_relevance
+from app.services.causal_support_gate import classify_causal_support
 from app.services.confidence_semantics import (
     ensure_analysis_confidence_semantics,
 )
@@ -2069,6 +2073,26 @@ def analyze_causal_rca(
             affected_entity_id,
         )
 
+        evidence_ledger = build_hypothesis_evidence_ledger(
+            hypothesis_id=hypothesis_id,
+            candidate=candidate,
+            candidate_by_event=candidate_by_event,
+            event_chain=event_chain,
+            entity_path=entity_path,
+            incident=incident,
+            incident_time=incident_time,
+            snapshot=snapshot,
+            primary_signal=primary_signal,
+            path_relationship_ids=(
+                relevance.path_relationship_ids
+            ),
+        )
+        support_gate = classify_causal_support(
+            candidate_event_id=event_id,
+            relevance=relevance,
+            ledger=evidence_ledger,
+        )
+
         raw_hypotheses.append(
             CausalHypothesis(
                 hypothesis_id=(
@@ -2122,20 +2146,8 @@ def analyze_causal_rca(
                         supporting_evidence_ids
                     )
                 ),
-                evidence_ledger=build_hypothesis_evidence_ledger(
-                    hypothesis_id=hypothesis_id,
-                    candidate=candidate,
-                    candidate_by_event=candidate_by_event,
-                    event_chain=event_chain,
-                    entity_path=entity_path,
-                    incident=incident,
-                    incident_time=incident_time,
-                    snapshot=snapshot,
-                    primary_signal=primary_signal,
-                    path_relationship_ids=(
-                        relevance.path_relationship_ids
-                    ),
-                ),
+                evidence_ledger=evidence_ledger,
+                support_gate=support_gate,
                 chain=chain_steps,
             )
         )
@@ -2210,6 +2222,8 @@ def analyze_causal_rca(
             CAUSAL_EVIDENCE_LEDGER_VERSION,
         "confidence_semantics":
             CONFIDENCE_SEMANTICS_VERSION,
+        "causal_support_gate":
+            CAUSAL_SUPPORT_GATE_POLICY_VERSION,
     }
 
     analysis_id = _stable_id(
@@ -2267,6 +2281,9 @@ def analyze_causal_rca(
             ),
             causal_relevance_policy_version=(
                 CAUSAL_RELEVANCE_POLICY_VERSION
+            ),
+            support_policy_version=(
+                CAUSAL_SUPPORT_GATE_POLICY_VERSION
             ),
             candidate_relevance_audit=[
                 relevance_by_event[candidate.event.event_id]
