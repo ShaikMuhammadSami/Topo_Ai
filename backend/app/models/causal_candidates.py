@@ -10,6 +10,9 @@ CAUSAL_CANDIDATE_POLICY_VERSION = "causal-candidate-v1"
 CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION = (
     "causal-candidate-admission-v2"
 )
+CAUSAL_EVALUATION_BUDGET_POLICY_VERSION = (
+    "causal-evaluation-budget-v1"
+)
 
 
 class CandidateAdmissionBasis(str, Enum):
@@ -184,3 +187,53 @@ class CausalCandidateSelectionAudit(BaseModel):
     lineage_admission_reason: LineageAdmissionReason | None = None
     mutation_set: list[dict[str, Any]] = Field(default_factory=list)
     mutation_completeness: str | None = None
+
+
+class CausalEvaluationSelectionBasis(str, Enum):
+    ORDINARY_RAW_TOP_K = "ordinary_raw_top_k"
+    EVIDENCE_PRESERVED_EXACT_IMMUTABLE_LINEAGE = (
+        "evidence_preserved_exact_immutable_lineage"
+    )
+
+
+class CausalCandidateEvaluationAudit(BaseModel):
+    """Why a raw candidate did or did not enter causal evaluation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    event_id: str
+    raw_rank: int = Field(ge=1)
+    raw_score: float = Field(ge=0, le=100)
+    selected_for_evaluation: bool
+    evaluation_selection_bases: list[CausalEvaluationSelectionBasis] = Field(
+        default_factory=list
+    )
+    ordinary_shortlist_member: bool
+    evidence_preserved_member: bool
+    evaluation_frontier_position: int | None = Field(default=None, ge=1)
+    exclusion_reason: str | None = None
+    policy_version: str = CAUSAL_EVALUATION_BUDGET_POLICY_VERSION
+
+
+class CausalEvaluationBudgetState(str, Enum):
+    BOUNDED = "bounded"
+
+
+class CausalEvaluationBudgetReason(str, Enum):
+    ORDINARY_UNION_EXACT_SC2_LINEAGE = (
+        "ordinary_raw_top_k_union_exact_sc2_lineage"
+    )
+
+
+class CausalEvaluationBudgetAudit(BaseModel):
+    """Bounded evaluation-frontier summary for one immutable analysis."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    policy_version: str = CAUSAL_EVALUATION_BUDGET_POLICY_VERSION
+    ordinary_shortlist_limit: int = Field(ge=1)
+    ordinary_shortlist_count: int = Field(ge=0)
+    evidence_preserved_candidate_count: int = Field(ge=0)
+    evaluation_frontier_size: int = Field(ge=0)
+    evaluation_budget_state: CausalEvaluationBudgetState
+    evaluation_budget_reason: CausalEvaluationBudgetReason

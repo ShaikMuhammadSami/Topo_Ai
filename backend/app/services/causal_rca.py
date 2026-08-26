@@ -34,6 +34,7 @@ from app.models.causal_rca import (
 from app.models.causal_candidates import (
     CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION,
     CAUSAL_CANDIDATE_POLICY_VERSION,
+    CAUSAL_EVALUATION_BUDGET_POLICY_VERSION,
 )
 from app.models.causal_relevance import (
     CAUSAL_RELEVANCE_POLICY_VERSION,
@@ -54,6 +55,9 @@ from app.services.causal_evidence_ledger import (
     build_hypothesis_evidence_ledger,
 )
 from app.services.causal_candidate_policy import select_causal_candidates
+from app.services.causal_evaluation_budget import (
+    build_causal_candidate_evaluation_frontier,
+)
 from app.services.causal_relevance_policy import evaluate_causal_relevance
 from app.services.confidence_semantics import (
     ensure_analysis_confidence_semantics,
@@ -704,7 +708,14 @@ def analyze_causal_rca(
             for entity_id, entity in entity_by_id.items()
         },
     )
-    candidates = list(candidate_selection.selected_candidates)
+    candidate_evaluation = build_causal_candidate_evaluation_frontier(
+        all_candidates,
+        ordinary_candidates=candidate_selection.selected_candidates,
+        ordinary_selection_audit=candidate_selection.audit,
+        ordinary_shortlist_limit=request.max_hypotheses,
+        policy_version=CAUSAL_EVALUATION_BUDGET_POLICY_VERSION,
+    )
+    candidates = list(candidate_evaluation.candidates)
 
     affected_entity_ids = set(
         change_analysis
@@ -2191,6 +2202,8 @@ def analyze_causal_rca(
             CAUSAL_CANDIDATE_POLICY_VERSION,
         "candidate_admission_policy":
             CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION,
+        "causal_evaluation_budget_policy":
+            CAUSAL_EVALUATION_BUDGET_POLICY_VERSION,
         "causal_relevance_policy":
             CAUSAL_RELEVANCE_POLICY_VERSION,
         "evidence_ledger":
@@ -2242,6 +2255,15 @@ def analyze_causal_rca(
             ),
             candidate_selection_audit=list(
                 candidate_selection.audit
+            ),
+            evaluation_policy_version=(
+                CAUSAL_EVALUATION_BUDGET_POLICY_VERSION
+            ),
+            candidate_evaluation_audit=list(
+                candidate_evaluation.audit
+            ),
+            evaluation_budget_audit=(
+                candidate_evaluation.budget
             ),
             causal_relevance_policy_version=(
                 CAUSAL_RELEVANCE_POLICY_VERSION
