@@ -16,11 +16,15 @@ from app.models.causal_candidates import (
     CAUSAL_CANDIDATE_ADMISSION_POLICY_VERSION,
     CandidateAdmissionBasis,
     CandidateAdmissionEvidenceReference,
+    CausalEvaluationSelectionBasis,
     LineageAdmissionReason,
     LineageAdmissionState,
     LineagePathAudit,
 )
 from app.models.causal_rca import CausalAnalysisRequest
+from app.models.causal_projection import (
+    CAUSAL_HYPOTHESIS_PROJECTION_POLICY_VERSION,
+)
 from app.models.causal_relevance import (
     CAUSAL_RELEVANCE_POLICY_VERSION,
     CAUSAL_RELEVANCE_TOPOLOGY_POLICY_VERSION,
@@ -924,7 +928,7 @@ def test_ar2_mixed_temporal_distractor_and_lineage_cause_separates_surfaces(
     assert analysis.top_hypothesis.target_event_id == distractor.event.event_id
 
 
-def test_ar2_count_fifty_shape_preserves_ar1_frontier_and_final_cap(
+def test_ar3_count_fifty_shape_preserves_supported_cause_beyond_diagnostic_cap(
     monkeypatch,
 ) -> None:
     session = _session(_snapshot())
@@ -942,24 +946,64 @@ def test_ar2_count_fifty_shape_preserves_ar1_frontier_and_final_cap(
         session,
         incident_id="incident:sc4",
         request=CausalAnalysisRequest(),
-        persist=False,
     )
+    session.expunge_all()
+    loaded = latest_causal_analysis(session, incident_id="incident:sc4")
 
+    assert loaded is not None
+    assert loaded.model_dump_json() == analysis.model_dump_json()
+    analysis = loaded
     assert analysis.candidate_count == 51
     assert analysis.evaluation_budget_audit.evaluation_frontier_size == 6
     assert len(analysis.candidate_relevance_audit) == 6
     assert analysis.candidate_selection_audit[-1].event_id == EVENT
     assert analysis.candidate_selection_audit[-1].raw_rank == 51
-    assert len(analysis.hypotheses) == CausalAnalysisRequest().max_hypotheses == 5
+    assert analysis.candidate_evaluation_audit[-1].evaluation_selection_bases == [
+        CausalEvaluationSelectionBasis.EVIDENCE_PRESERVED_EXACT_IMMUTABLE_LINEAGE
+    ]
+    assert len(analysis.hypotheses) == 6
+    assert len(analysis.diagnostic_hypothesis_ids) == (
+        CausalAnalysisRequest().max_hypotheses
+    ) == 5
+    diagnostic = {
+        item.hypothesis_id: item for item in analysis.hypotheses
+    }
     assert all(
-        item.support_gate.support_state
+        diagnostic[hypothesis_id].support_gate.support_state
         == CausalEvidenceState.INSUFFICIENT_CANDIDATE_SPECIFIC_EVIDENCE
-        for item in analysis.hypotheses
+        for hypothesis_id in analysis.diagnostic_hypothesis_ids
     )
     assert EVENT in {
         item.candidate_event_id for item in analysis.candidate_relevance_audit
     }
-    assert EVENT not in {item.target_event_id for item in analysis.hypotheses}
+    golden = next(
+        item for item in analysis.hypotheses if item.target_event_id == EVENT
+    )
+    assert golden.hypothesis_id not in analysis.diagnostic_hypothesis_ids
+    assert analysis.supported_hypothesis_ids == [golden.hypothesis_id]
+    assert golden.support_gate.support_state == (
+        CausalEvidenceState.SUPPORTED_UNDER_CURRENT_MODEL
+    )
+    golden_relevance = next(
+        item
+        for item in analysis.candidate_relevance_audit
+        if item.candidate_event_id == EVENT
+    )
+    assert golden_relevance.topology_component == 0.45
+    assert golden.rank == 6
+    assert analysis.top_hypothesis.target_event_id != EVENT
+    assert analysis.hypothesis_projection_summary.evaluated_hypothesis_count == 6
+    assert analysis.hypothesis_projection_summary.projection_dropped_supported_count == 0
+    assert analysis.projection_policy_version == (
+        CAUSAL_HYPOTHESIS_PROJECTION_POLICY_VERSION
+    )
+    golden_audit = next(
+        item
+        for item in analysis.hypothesis_projection_audit
+        if item.hypothesis_id == golden.hypothesis_id
+    )
+    assert golden_audit.diagnostic_projection_rank is None
+    assert golden_audit.supported_projection_rank == 1
 
 
 def test_lineage_anchor_and_path_present_only_in_latest_snapshot_are_ignored(

@@ -20,6 +20,11 @@ from app.models.causal_candidates import (
     LineageCandidateAdmissionAudit,
 )
 from app.models.causal_relevance import CandidateCausalRelevanceAudit
+from app.models.causal_projection import (
+    CAUSAL_HYPOTHESIS_PROJECTION_POLICY_VERSION,
+    CausalHypothesisProjectionAudit,
+    CausalHypothesisProjectionSummary,
+)
 from app.models.causal_support import CausalSupportGateAudit
 from app.models.confidence_semantics import CausalConfidenceSemantics
 from app.models.temporal import TemporalMetadata
@@ -576,6 +581,47 @@ class CausalAnalysisResponse(BaseModel):
         ),
     )
 
+    projection_policy_version: str | None = Field(
+        default=None,
+        description=(
+            "Final hypothesis projection policy used by this immutable "
+            "analysis generation. Historical payloads load with null."
+        ),
+    )
+
+    diagnostic_hypothesis_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Ordered diagnostic projection references into hypotheses. "
+            "Historical payloads load empty and are not reconstructed."
+        ),
+    )
+
+    supported_hypothesis_ids: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Ordered AR-2-qualified projection references into hypotheses. "
+            "Historical payloads load empty and are not reconstructed."
+        ),
+    )
+
+    hypothesis_projection_audit: list[CausalHypothesisProjectionAudit] = Field(
+        default_factory=list,
+        description=(
+            "Per-hypothesis diagnostic and supported projection decisions."
+        ),
+    )
+
+    hypothesis_projection_summary: CausalHypothesisProjectionSummary | None = (
+        Field(
+            default=None,
+            description=(
+                "Bounded projection totals and the no-unsupported-slot-eviction "
+                "invariant. Historical payloads load with null."
+            ),
+        )
+    )
+
     candidate_relevance_audit: list[CandidateCausalRelevanceAudit] = Field(
         default_factory=list,
         description=(
@@ -611,7 +657,11 @@ class CausalAnalysisResponse(BaseModel):
     hypotheses: list[
         CausalHypothesis
     ] = Field(
-        default_factory=list
+        default_factory=list,
+        description=(
+            "Canonical bounded hypotheses fully evaluated for relevance, "
+            "evidence, and support. Projection fields reference these IDs."
+        ),
     )
 
     nodes: list[
@@ -631,3 +681,77 @@ class CausalAnalysisResponse(BaseModel):
     ] = Field(
         default_factory=list
     )
+
+    @model_validator(mode="after")
+    def validate_hypothesis_projection(self) -> "CausalAnalysisResponse":
+        if self.projection_policy_version is None:
+            return self
+        if (
+            self.projection_policy_version
+            != CAUSAL_HYPOTHESIS_PROJECTION_POLICY_VERSION
+        ):
+            raise ValueError("Unsupported causal hypothesis projection policy.")
+        summary = self.hypothesis_projection_summary
+        if summary is None or summary.policy_version != self.projection_policy_version:
+            raise ValueError("Projection summary must match the analysis policy.")
+
+        canonical_ids = [item.hypothesis_id for item in self.hypotheses]
+        if len(canonical_ids) != len(set(canonical_ids)):
+            raise ValueError("Canonical evaluated hypothesis IDs must be unique.")
+        if self.hypothesis_count != len(canonical_ids):
+            raise ValueError("Hypothesis count must match the canonical collection.")
+        if summary.evaluated_hypothesis_count != len(canonical_ids):
+            raise ValueError("Projection summary must cover the canonical collection.")
+
+        canonical_id_set = set(canonical_ids)
+        diagnostic_ids = self.diagnostic_hypothesis_ids
+        supported_ids = self.supported_hypothesis_ids
+        if len(diagnostic_ids) != len(set(diagnostic_ids)) or not set(
+            diagnostic_ids
+        ).issubset(canonical_id_set):
+            raise ValueError("Diagnostic projection must uniquely reference hypotheses.")
+        if len(supported_ids) != len(set(supported_ids)) or not set(
+            supported_ids
+        ).issubset(canonical_id_set):
+            raise ValueError("Supported projection must uniquely reference hypotheses.")
+
+        audit_by_id = {
+            item.hypothesis_id: item for item in self.hypothesis_projection_audit
+        }
+        if len(audit_by_id) != len(self.hypothesis_projection_audit) or set(
+            audit_by_id
+        ) != canonical_id_set:
+            raise ValueError("Projection audit must cover each canonical hypothesis once.")
+
+        audited_diagnostic_ids = [
+            item.hypothesis_id
+            for item in sorted(
+                self.hypothesis_projection_audit,
+                key=lambda item: item.diagnostic_projection_rank or float("inf"),
+            )
+            if item.diagnostic_projection_included
+        ]
+        audited_supported_ids = [
+            item.hypothesis_id
+            for item in sorted(
+                self.hypothesis_projection_audit,
+                key=lambda item: item.supported_projection_rank or float("inf"),
+            )
+            if item.supported_projection_included
+        ]
+        if audited_diagnostic_ids != diagnostic_ids:
+            raise ValueError("Diagnostic projection IDs and audit ranks must agree.")
+        if audited_supported_ids != supported_ids:
+            raise ValueError("Supported projection IDs and audit ranks must agree.")
+        if summary.diagnostic_projection_count != len(diagnostic_ids):
+            raise ValueError("Diagnostic projection count is inconsistent.")
+        if summary.supported_projection_count != len(supported_ids):
+            raise ValueError("Supported projection count is inconsistent.")
+
+        expected_top_id = diagnostic_ids[0] if diagnostic_ids else None
+        actual_top_id = (
+            self.top_hypothesis.hypothesis_id if self.top_hypothesis else None
+        )
+        if actual_top_id != expected_top_id:
+            raise ValueError("Top hypothesis must remain diagnostic projection Top1.")
+        return self

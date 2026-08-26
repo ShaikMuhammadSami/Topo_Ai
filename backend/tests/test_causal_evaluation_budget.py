@@ -430,8 +430,16 @@ def test_ar1_frontier_reaches_relevance_once_and_persists_round_trip(
         if item.candidate_event_id == GOLDEN_ID
     )
     assert golden_relevance.relevance_status.value == "identity_unresolved"
-    assert all(item.target_event_id != GOLDEN_ID for item in loaded.hypotheses)
-    assert len(loaded.hypotheses) == 5
+    assert any(item.target_event_id == GOLDEN_ID for item in loaded.hypotheses)
+    assert len(loaded.hypotheses) == 6
+    assert len(loaded.diagnostic_hypothesis_ids) == 5
+    golden_hypothesis_id = next(
+        item.hypothesis_id
+        for item in loaded.hypotheses
+        if item.target_event_id == GOLDEN_ID
+    )
+    assert golden_hypothesis_id not in loaded.diagnostic_hypothesis_ids
+    assert loaded.supported_hypothesis_ids == []
 
 
 def test_dual_basis_produces_one_relevance_row_and_one_hypothesis_ledger(
@@ -521,7 +529,9 @@ def test_ar1_changes_only_evaluation_membership_not_frozen_semantics() -> None:
     assert "temporal_component * 15" in rca_source
     assert "lineage_component * 10" in rca_source
     assert '"causal_evaluation_budget_policy"' in rca_source
-    assert "hypotheses = hypotheses[" in rca_source
+    assert "project_causal_hypotheses(" in rca_source
+    assert "diagnostic_limit=request.max_hypotheses" in rca_source
+    assert "supported_limit=request.max_hypotheses" in rca_source
     assert "list_build_artifact_evidence" not in budget_source
     assert "http" not in budget_source
     assert "embedding" not in budget_source

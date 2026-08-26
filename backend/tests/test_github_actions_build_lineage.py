@@ -78,7 +78,7 @@ PROTECTED_PRODUCT_HASHES = {
     "backend/app/models/temporal.py": "b6c367e631553f08bd6886bc8e22d104f6fd964f",
     "backend/app/services/causal_candidate_policy.py": "38c53385efb9472937aba5834cb24a6d957731a5",
     "backend/app/services/causal_relevance_policy.py": "a43052d476d0127fabbb1c584ef23c04620907ec",
-    "backend/app/services/causal_rca.py": "b87eeb335b0288e9af625a50714dcb6bf73e648c",
+    "backend/app/services/causal_rca.py": "cf477bc8bb116af0c5ed6e675cc266be476aff36",
     "backend/app/services/blast_impact_policy.py": "36be80fba0165edfb98a911775e2e925fb672c4e",
 }
 TRUTH_CONTRACT_HASHES = {

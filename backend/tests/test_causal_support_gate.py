@@ -731,7 +731,7 @@ def test_support_gate_has_no_score_provider_llm_or_evaluator_dependency() -> Non
     assert all(value not in source for value in forbidden)
 
 
-def test_ranking_frontier_and_final_cap_sources_remain_frozen() -> None:
+def test_ranking_frontier_and_independent_projection_caps_remain_frozen() -> None:
     causal = (ROOT / "backend/app/services/causal_rca.py").read_text(
         encoding="utf-8"
     )
@@ -742,8 +742,9 @@ def test_ranking_frontier_and_final_cap_sources_remain_frozen() -> None:
     assert "+ topology_component * 25" in causal
     assert "+ temporal_component * 15" in causal
     assert "+ lineage_component * 10" in causal
-    assert "hypotheses = hypotheses[" in causal
-    assert ":request.max_hypotheses" in causal
+    assert "project_causal_hypotheses(" in causal
+    assert "diagnostic_limit=request.max_hypotheses" in causal
+    assert "supported_limit=request.max_hypotheses" in causal
     assert "CausalEvaluationSelectionBasis.ORDINARY_RAW_TOP_K" in budget
     assert "ordinary_shortlist_limit" in budget
 
