@@ -36,3 +36,20 @@ evaluation seeds are not migration targets.
 
 `alembic downgrade base` drops every Topo domain table. It is only for
 disposable migration tests and must never be used as a customer-data rollback.
+
+## Disposable PostgreSQL compatibility suite
+
+The ordinary test suite remains SQLite-compatible and skips the PostgreSQL
+runtime acceptance module. To run that module, point it at a disposable
+loopback PostgreSQL 16 database whose test-only role may create and drop
+temporary databases:
+
+```powershell
+$env:TOPO_TEST_POSTGRES_URL = "postgresql://topo_test:<password>@127.0.0.1:<port>/topo_test"
+python -m pytest tests/test_postgres_runtime_compatibility.py -q
+```
+
+The suite upgrades only disposable databases, verifies the accepted Alembic
+head and ORM parity, exercises real repository/transaction behavior, and
+cleans up the temporary databases it creates. Never point it at a customer or
+production database.

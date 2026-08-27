@@ -57,7 +57,8 @@ def list_incident_outcome_records(
         .order_by(
             IncidentOutcomeRecord
             .resolved_at
-            .desc(),
+            .desc()
+            .nulls_last(),
             IncidentOutcomeRecord
             .updated_at
             .desc(),
