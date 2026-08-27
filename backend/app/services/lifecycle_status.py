@@ -48,7 +48,7 @@ def _latest(
 
     return session.scalar(
         statement.order_by(
-            order_by.desc()
+            order_by.desc().nulls_last()
         ).limit(1)
     )
 
