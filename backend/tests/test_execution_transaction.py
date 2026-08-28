@@ -1128,12 +1128,9 @@ def test_secret_shaped_cancellation_reason_is_redacted(
 
 
 def test_new_execution_intent_routes_require_authentication(
-    monkeypatch,
+    required_auth_app,
 ) -> None:
-    from app.main import app
-
-    monkeypatch.setenv("TOPO_AUTH_ENABLED", "true")
-    client = TestClient(app)
+    client = TestClient(required_auth_app)
     response = client.post(
         (
             "/api/v1/incidents/incident%3A1/"
@@ -1146,11 +1143,8 @@ def test_new_execution_intent_routes_require_authentication(
 
 
 def test_execution_intent_list_limit_is_enforced_by_api(
-    monkeypatch,
 ) -> None:
     from app.main import app
-
-    monkeypatch.setenv("TOPO_AUTH_ENABLED", "false")
     client = TestClient(app)
     response = client.get(
         (

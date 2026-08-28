@@ -853,18 +853,9 @@ def test_automatic_lifecycle_has_no_llm_or_execution_dependency(
 
 
 def test_automation_status_endpoint_uses_standard_authentication(
-    monkeypatch,
+    required_auth_app,
 ) -> None:
-    monkeypatch.setenv(
-        "TOPO_AUTH_ENABLED",
-        "true",
-    )
-    monkeypatch.setenv(
-        "TOPO_API_TOKEN_HASHES_JSON",
-        "{}",
-    )
-
-    with TestClient(app) as client:
+    with TestClient(required_auth_app) as client:
         automation_response = client.get(
             "/api/v1/automation/status"
         )

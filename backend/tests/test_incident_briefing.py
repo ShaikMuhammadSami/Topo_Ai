@@ -1694,13 +1694,9 @@ def test_authentication_and_route_are_registered() -> None:
 
 
 def test_briefing_route_requires_authentication(
-    monkeypatch,
+    required_auth_app,
 ) -> None:
-    monkeypatch.setenv(
-        "TOPO_AUTH_ENABLED",
-        "true",
-    )
-    client = TestClient(app)
+    client = TestClient(required_auth_app)
     response = client.get(
         "/api/v1/incidents/incident%3A1/briefing"
     )
