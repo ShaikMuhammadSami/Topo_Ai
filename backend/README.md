@@ -13,6 +13,24 @@ python -m alembic -c alembic.ini current
 python -m app.db.schema_admin verify
 ```
 
+## Local secrets
+
+Copy `.env.example` to the ignored local `.env` file and replace only the
+placeholders required by your environment. Never commit raw credentials or
+place real credentials in example/template files; use an approved secret
+source for deployed environments. Rotate or revoke any credential that is
+accidentally committed.
+
+From the repository root, check the current Git-tracked tree before opening a
+pull request:
+
+```powershell
+python scripts/security/check_tracked_secrets.py
+```
+
+The check reports only a path, line number, and credential category. It does
+not print the matching value and does not inspect ignored local `.env` files.
+
 Application startup never upgrades or stamps PostgreSQL. It fails closed
 unless the database is already at the application's single Alembic head.
 `schema_admin verify` is the required deployment preflight: it additionally

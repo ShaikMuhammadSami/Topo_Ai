@@ -14,14 +14,27 @@ __v0_jsx-dev-runtime.ts
 .v0-trash/
 .vercel/
 
-# Environment variables
-.env*.local
+# Local environment variables (templates remain trackable)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local credential and private-key material
+credentials.json
+*-credentials.json
+service-account*.json
+!*.example.json
+!*.sample.json
+*.key
+*.private.pem
+private-key*.pem
+id_rsa
+id_ed25519
 
 # Common ignores
 node_modules
 .next/
 .DS_Store
 
-.env.local
-.env.example
 *.db
