@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +25,28 @@ class SchemaAuthorityError(RuntimeError):
     """The database does not satisfy Topo's migration authority contract."""
 
 
+class MultipleMigrationHeadsError(SchemaAuthorityError):
+    """The reviewed migration source contains more than one active head."""
+
+    def __init__(self, head_count: int) -> None:
+        self.head_count = head_count
+        super().__init__(
+            "Topo requires exactly one Alembic head; "
+            f"found {head_count}."
+        )
+
+
+class SchemaAuthorityState(StrEnum):
+    """Stable operational result of strict schema-authority verification."""
+
+    CURRENT = "CURRENT"
+    REVISION_MISSING = "REVISION_MISSING"
+    REVISION_BEHIND = "REVISION_BEHIND"
+    REVISION_AHEAD_OR_UNKNOWN = "REVISION_AHEAD_OR_UNKNOWN"
+    MULTIPLE_HEADS = "MULTIPLE_HEADS"
+    SCHEMA_DRIFT = "SCHEMA_DRIFT"
+
+
 @dataclass(frozen=True, order=True)
 class SchemaDifference:
     kind: str
@@ -44,6 +67,8 @@ class SchemaVerification:
     expected_head: str
     current_revisions: tuple[str, ...]
     differences: tuple[SchemaDifference, ...]
+    known_revisions: tuple[str, ...] = ()
+    migration_head_count: int = 1
 
     @property
     def revision_matches(self) -> bool:
@@ -55,7 +80,21 @@ class SchemaVerification:
 
     @property
     def ok(self) -> bool:
-        return self.revision_matches and self.schema_matches
+        return self.state is SchemaAuthorityState.CURRENT
+
+    @property
+    def state(self) -> SchemaAuthorityState:
+        if self.migration_head_count != 1 or len(self.current_revisions) > 1:
+            return SchemaAuthorityState.MULTIPLE_HEADS
+        if not self.current_revisions:
+            return SchemaAuthorityState.REVISION_MISSING
+        if not self.revision_matches:
+            if self.current_revisions[0] in self.known_revisions:
+                return SchemaAuthorityState.REVISION_BEHIND
+            return SchemaAuthorityState.REVISION_AHEAD_OR_UNKNOWN
+        if not self.schema_matches:
+            return SchemaAuthorityState.SCHEMA_DRIFT
+        return SchemaAuthorityState.CURRENT
 
 
 def alembic_config(
@@ -79,10 +118,7 @@ def script_directory() -> ScriptDirectory:
 def expected_head() -> str:
     heads = tuple(script_directory().get_heads())
     if len(heads) != 1:
-        raise SchemaAuthorityError(
-            "Topo requires exactly one Alembic head; "
-            f"found {len(heads)}."
-        )
+        raise MultipleMigrationHeadsError(len(heads))
     return heads[0]
 
 
@@ -223,10 +259,18 @@ def schema_differences(
 
 
 def inspect_schema_authority(connection: Connection) -> SchemaVerification:
+    scripts = script_directory()
+    heads = tuple(scripts.get_heads())
+    if len(heads) != 1:
+        raise MultipleMigrationHeadsError(len(heads))
     return SchemaVerification(
-        expected_head=expected_head(),
+        expected_head=heads[0],
         current_revisions=current_revisions(connection),
         differences=schema_differences(connection),
+        known_revisions=tuple(
+            sorted(revision.revision for revision in scripts.walk_revisions())
+        ),
+        migration_head_count=len(heads),
     )
 
 
