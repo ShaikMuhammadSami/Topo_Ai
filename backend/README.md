@@ -41,6 +41,34 @@ digests and whose values provide a stable `subject`, optional string
 bootstrap authority; raw bearer credentials must not be stored in repository
 configuration or logs.
 
+Human browsers exchange one valid transitional bearer for an opaque,
+server-side session through `POST /api/v1/auth/session`. The backend persists
+only SHA-256 digests for the session and CSRF secrets. It sets `topo_session`
+as `Secure`, `HttpOnly`, `SameSite=Lax`, `Path=/` and sets the readable,
+non-authenticating `topo_csrf` cookie with the same Secure/SameSite/Path
+boundary. Unsafe cookie-authenticated human requests must echo that CSRF value
+in `X-Topo-CSRF`. `GET /api/v1/auth/session` restores browser identity and
+`DELETE /api/v1/auth/session` revokes the session before clearing both cookies.
+
+Session lifetimes default to an eight-hour absolute bound and a one-hour idle
+bound. They may be narrowed with positive bounded integer values in
+`TOPO_SESSION_ABSOLUTE_TTL_MINUTES` and
+`TOPO_SESSION_IDLE_TTL_MINUTES`; idle may not exceed absolute. Every session
+use revalidates the source digest and metadata against the transitional token
+registry, so removing or changing that source mapping invalidates its sessions
+on their next request. A fresh exchange always creates a new independent
+session and replaces the browser cookies; any older server-side session keeps
+its original expiry/revocation lifecycle and is not silently extended.
+
+Browser origins are an exact, fail-closed JSON list in
+`TOPO_BROWSER_ALLOWED_ORIGINS_JSON`, for example
+`["https://topo.example.com"]`. Wildcards, suffix matches, URLs with paths,
+and implicit origin defaults are rejected. Bearer clients without an `Origin`
+header remain supported. Production frontend traffic should use the relative
+same-origin `/api` boundary; configure the private Next.js server variable
+`TOPO_BACKEND_URL` as the backend rewrite destination. Never put a bearer or
+session value in `NEXT_PUBLIC_*`, browser storage, or a query string.
+
 Local SQLite development may explicitly set:
 
 ```text
@@ -52,11 +80,11 @@ must never be used in production. `TOPO_AUTH_ENABLED=false` no longer disables
 authentication; remove the legacy variable and select the new mode explicitly.
 
 Swagger, ReDoc, and OpenAPI endpoints are unavailable in required mode and
-remain available only in explicit SQLite development mode. The production
-browser does not yet have a credential transport; its server-side session
-boundary is intentionally deferred to PH-2C. The isolated evaluation harness
-also uses explicit SQLite development mode temporarily until PH-2E moves it to
-an ephemeral required-auth credential.
+remain available only in explicit SQLite development mode. Explicit SQLite
+development mode continues to expose its synthetic principal through session
+introspection without creating persistent browser sessions. The isolated
+evaluation harness also uses explicit SQLite development mode temporarily
+until PH-2E moves it to an ephemeral required-auth credential.
 
 Application startup never upgrades or stamps PostgreSQL. It fails closed
 unless the database is already at the application's single Alembic head.

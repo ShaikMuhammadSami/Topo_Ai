@@ -86,11 +86,6 @@ export function IncidentPostIncidentReport({
     useState<string | null>(null)
 
 
-  const backendBaseUrl =
-    process.env.NEXT_PUBLIC_TOPO_API_URL
-    ?? "http://127.0.0.1:8000"
-
-
   useEffect(() => {
     if (!incidentId) {
       setReports([])
@@ -394,8 +389,7 @@ export function IncidentPostIncidentReport({
     }
 
     return (
-      `${backendBaseUrl}`
-      + `/api/v1/incidents/${encodeURIComponent(
+      `/api/v1/incidents/${encodeURIComponent(
         incidentId,
       )}/reports/${encodeURIComponent(
         report.report_id,

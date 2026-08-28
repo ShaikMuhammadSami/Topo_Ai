@@ -4374,3 +4374,69 @@ class ExecutionIntentEventRecord(Base):
         nullable=False,
         index=True,
     )
+
+
+class AuthSessionRecord(Base):
+    """Digest-only, server-side authority for a human browser session."""
+
+    __tablename__ = "auth_sessions"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "session_secret_digest",
+            name="uq_auth_sessions_secret_digest",
+        ),
+    )
+
+    session_id: Mapped[str] = mapped_column(
+        String(255),
+        primary_key=True,
+    )
+    session_secret_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    csrf_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    subject: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+    display_name: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+    )
+    roles_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+    source_authentication_type: Mapped[str] = mapped_column(
+        String(100),
+        nullable=False,
+    )
+    source_credential_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    issued_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    absolute_expires_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    idle_expires_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    last_seen_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+    )
+    revoked_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+    )

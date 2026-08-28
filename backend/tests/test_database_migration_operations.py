@@ -65,7 +65,8 @@ FROZEN_DB = (
     / "topo-product-32695735269.db"
 )
 DEVELOPER_DB_SHA256 = (
-    "c3a2ab62dc6b8b8c68dedfd26b858ebb3bb7199323217be96b7764aef7821baf"
+    # Controlled custody baseline V2; see the PH-2C custody recovery note.
+    "0982d5c6a14bf323e173a5727529940f5c1a040a3f821e42d818423ffab18d3e"
 )
 FROZEN_DB_SHA256 = (
     "9f3918a027c6d9a7bbd679495c48b387c9a1ac8c86141f85cf8b4495cd00b69f"

@@ -1,17 +1,20 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
 from app.api.action_approvals import router as action_approvals_router
 from app.api.agents import admin_router as agents_router
 from app.api.agents import agent_router as agent_runtime_router
 from app.api.automation import router as automation_router
+from app.api.auth import router as auth_router
 from app.api.blast_radius import router as blast_radius_router
 from app.api.causal_rca import incident_router as causal_incident_router
 from app.api.causal_rca import router as causal_analysis_router
@@ -49,7 +52,7 @@ from app.api.snapshots import router as snapshots_router
 from app.api.system import router as system_router
 from app.api.topology import router as topology_router
 from app.api.webhooks import router as webhooks_router
-from app.db.database import DATABASE_URL, init_db
+from app.db.database import DATABASE_URL, SessionLocal, init_db
 from app.security.api_tokens import ApiTokenAuthMiddleware
 from app.security.auth_config import AuthConfiguration, AuthMode, load_auth_configuration
 
@@ -63,7 +66,7 @@ load_dotenv()
 @asynccontextmanager
 async def lifespan(application: FastAPI):
     application.state.ready = False
-    init_db()
+    application.state.database_initializer()
     application.state.ready = True
     try:
         yield
@@ -74,6 +77,8 @@ async def lifespan(application: FastAPI):
 def create_app(
     *,
     auth_configuration: AuthConfiguration | None = None,
+    session_factory: Callable[[], Session] = SessionLocal,
+    database_initializer: Callable[[], None] | None = None,
 ) -> FastAPI:
     configuration = auth_configuration or load_auth_configuration(
         database_url=DATABASE_URL
@@ -92,24 +97,26 @@ def create_app(
         redoc_url="/redoc" if development_docs else None,
     )
     application.state.auth_configuration = configuration
+    application.state.session_factory = session_factory
+    application.state.database_initializer = database_initializer or init_db
     application.state.ready = False
 
     application.add_middleware(
         ApiTokenAuthMiddleware,
         configuration=configuration,
+        session_factory=session_factory,
     )
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost:3000",
-            "http://127.0.0.1:3000",
-            "http://localhost:5173",
-            "http://127.0.0.1:5173",
-            "https://topo-ai-hxhm.vercel.app",
-        ],
+        allow_origins=list(configuration.browser_allowed_origins),
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "HEAD", "OPTIONS", "POST", "PUT", "PATCH", "DELETE"],
+        allow_headers=[
+            "Accept",
+            "Authorization",
+            "Content-Type",
+            "X-Topo-CSRF",
+        ],
     )
 
     application.include_router(topology_router)
@@ -133,6 +140,7 @@ def create_app(
     application.include_router(incident_copilot_router)
     application.include_router(investigation_plans_router)
     application.include_router(post_incident_reports_router)
+    application.include_router(auth_router)
     application.include_router(system_router)
     application.include_router(agents_router)
     application.include_router(agent_runtime_router)
