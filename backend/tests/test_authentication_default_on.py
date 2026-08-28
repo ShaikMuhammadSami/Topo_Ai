@@ -54,7 +54,7 @@ def _required_app(
         "TOPO_API_TOKEN_HASHES_JSON",
         _registry(token, roles=roles),
     )
-    return create_app(), token
+    return create_app(database_initializer=lambda: None), token
 
 
 def _clear_auth_environment(monkeypatch) -> None:

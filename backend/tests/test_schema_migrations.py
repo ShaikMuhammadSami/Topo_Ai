@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -24,9 +25,13 @@ from app.db.schema_management import (
 )
 
 
-DOMAIN_TABLE_COUNT = 38
-DOMAIN_COLUMN_COUNT = 687
-EXPECTED_HEAD = "0001_current_schema"
+DOMAIN_TABLE_COUNT = 39
+DOMAIN_COLUMN_COUNT = 700
+EXPECTED_HEAD = "0002_auth_sessions"
+BASELINE_REVISION = "0001_current_schema"
+BASELINE_SHA256 = (
+    "b02368d0d15445417a5ede9445a267f34da9d50dddb181870d972bd23124b8a6"
+)
 LEGACY_TABLES = {
     "change_dead_letters",
     "integration_deliveries",
@@ -140,10 +145,72 @@ def test_revision_is_static_and_does_not_import_application_models() -> None:
     )
     source = revision_path.read_text(encoding="utf-8")
 
+    assert hashlib.sha256(revision_path.read_bytes()).hexdigest() == BASELINE_SHA256
     assert "from app" not in source
     assert "Base.metadata" not in source
     assert 'revision: str = "0001_current_schema"' in source
     assert "down_revision: str | Sequence[str] | None = None" in source
+
+
+def test_auth_session_revision_is_one_narrow_static_addition() -> None:
+    revision_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0002_auth_sessions.py"
+    )
+    source = revision_path.read_text(encoding="utf-8")
+
+    assert "from app" not in source
+    assert "Base.metadata" not in source
+    assert 'revision: str = "0002_auth_sessions"' in source
+    assert (
+        'down_revision: str | Sequence[str] | None = "0001_current_schema"'
+        in source
+    )
+    assert source.count("op.create_table(") == 1
+    assert '"auth_sessions"' in source
+    for forbidden in (
+        "tenant_id",
+        "auth_api_credentials",
+        "users",
+        "passwords",
+        "oidc",
+    ):
+        assert forbidden not in source.lower()
+
+
+def test_sqlite_upgrade_from_0001_adds_only_auth_sessions(
+    migration_engine: Engine,
+) -> None:
+    _upgrade(migration_engine, BASELINE_REVISION)
+    baseline_tables = _domain_tables(migration_engine)
+    assert baseline_tables == set(Base.metadata.tables) - {"auth_sessions"}
+    assert len(baseline_tables) == 38
+    baseline_columns = sum(
+        len(inspect(migration_engine).get_columns(table))
+        for table in baseline_tables
+    )
+    assert baseline_columns == 687
+
+    _upgrade(migration_engine)
+    assert _domain_tables(migration_engine) == set(Base.metadata.tables)
+    with migration_engine.connect() as connection:
+        assert current_revisions(connection) == (EXPECTED_HEAD,)
+        assert schema_differences(connection) == ()
+
+
+def test_disposable_0002_downgrade_preserves_0001_domain_schema(
+    migration_engine: Engine,
+) -> None:
+    _upgrade(migration_engine)
+    _downgrade(migration_engine, BASELINE_REVISION)
+
+    assert _domain_tables(migration_engine) == set(Base.metadata.tables) - {
+        "auth_sessions"
+    }
+    with migration_engine.connect() as connection:
+        assert current_revisions(connection) == (BASELINE_REVISION,)
 
 
 def test_disposable_downgrade_and_reupgrade(

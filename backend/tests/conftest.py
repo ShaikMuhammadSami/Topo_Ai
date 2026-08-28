@@ -10,6 +10,14 @@ import pytest
 os.environ["TOPO_AUTH_MODE"] = "development-disabled"
 os.environ.pop("TOPO_AUTH_ENABLED", None)
 os.environ.pop("TOPO_API_TOKEN_HASHES_JSON", None)
+os.environ["TOPO_BROWSER_ALLOWED_ORIGINS_JSON"] = json.dumps(
+    [
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+    ]
+)
 
 
 from app.db.database import SessionLocal  # noqa: E402
@@ -41,4 +49,4 @@ def required_auth_app(monkeypatch):
     monkeypatch.setenv("TOPO_AUTH_MODE", "required")
     monkeypatch.delenv("TOPO_AUTH_ENABLED", raising=False)
     monkeypatch.setenv("TOPO_API_TOKEN_HASHES_JSON", json.dumps(registry))
-    return create_app()
+    return create_app(database_initializer=lambda: None)

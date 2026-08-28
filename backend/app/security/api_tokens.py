@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-from dataclasses import dataclass
+from collections.abc import Callable
 from typing import Mapping
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -18,18 +20,23 @@ from app.security.auth_config import (
     load_token_registry,
 )
 from app.security.auth_routing import RouteAuthDomain, classify_route
+from app.security.principals import AuthPrincipal
+from app.security.session_auth import (
+    CSRF_HEADER_NAME,
+    SESSION_COOKIE_NAME,
+    UNSAFE_HTTP_METHODS,
+    clear_auth_session_cookies,
+)
+from app.services.auth_session_service import (
+    AuthSessionPersistenceError,
+    csrf_secret_matches,
+    resolve_auth_session,
+    touch_auth_session,
+)
 
 
 AUTH_ENABLED_ENV = "TOPO_AUTH_ENABLED"
 TOKEN_REGISTRY_ENV = "TOPO_API_TOKEN_HASHES_JSON"
-
-
-@dataclass(frozen=True)
-class AuthPrincipal:
-    subject: str
-    display_name: str
-    roles: tuple[str, ...]
-    authentication_type: str
 
 
 def authentication_enabled() -> bool:
@@ -75,11 +82,29 @@ def development_principal() -> AuthPrincipal:
     )
 
 
-def _unauthorized(detail: str) -> JSONResponse:
-    return JSONResponse(
+def _unauthorized(
+    detail: str,
+    *,
+    clear_session: bool = False,
+) -> JSONResponse:
+    response = JSONResponse(
         status_code=401,
         content={"detail": detail},
         headers={"WWW-Authenticate": "Bearer"},
+    )
+    if clear_session:
+        clear_auth_session_cookies(response)
+    return response
+
+
+def _forbidden(detail: str) -> JSONResponse:
+    return JSONResponse(status_code=403, content={"detail": detail})
+
+
+def _authentication_unavailable() -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Authentication service is unavailable."},
     )
 
 
@@ -91,9 +116,11 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
         app,
         *,
         configuration: AuthConfiguration,
+        session_factory: Callable[[], Session],
     ) -> None:
         super().__init__(app)
         self.configuration = configuration
+        self.session_factory = session_factory
 
     async def dispatch(
         self,
@@ -126,17 +153,64 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
             request.state.principal = development_principal()
             return await call_next(request)
 
-        authorization = request.headers.get("Authorization", "")
-        scheme, separator, token = authorization.partition(" ")
-        if not separator or scheme.lower() != "bearer" or not token.strip():
-            return _unauthorized("A Bearer API token is required.")
+        authorization = request.headers.get("Authorization")
+        if authorization is not None:
+            scheme, separator, token = authorization.partition(" ")
+            if not separator or scheme.lower() != "bearer" or not token.strip():
+                return _unauthorized("A valid Bearer API token is required.")
 
-        principal = resolve_principal(
-            token.strip(),
-            registry=self.configuration.token_registry,
-        )
-        if principal is None:
-            return _unauthorized("The supplied API token is invalid.")
+            raw_token = token.strip()
+            principal = resolve_principal(
+                raw_token,
+                registry=self.configuration.token_registry,
+            )
+            if principal is None:
+                return _unauthorized("The supplied API token is invalid.")
 
-        request.state.principal = principal
+            request.state.principal = principal
+            request.state.source_credential_digest = token_digest(raw_token)
+            request.state.authentication_mechanism = "bearer"
+            return await call_next(request)
+
+        raw_session_secret = request.cookies.get(SESSION_COOKIE_NAME)
+        if not raw_session_secret:
+            return _unauthorized(
+                "A Bearer API token or browser session is required."
+            )
+
+        try:
+            with self.session_factory() as database_session:
+                resolved = resolve_auth_session(
+                    database_session,
+                    configuration=self.configuration,
+                    raw_session_secret=raw_session_secret,
+                )
+                if resolved is None:
+                    return _unauthorized(
+                        "The browser session is invalid or expired.",
+                        clear_session=True,
+                    )
+
+                if request.method.upper() in UNSAFE_HTTP_METHODS:
+                    csrf_secret = request.headers.get(CSRF_HEADER_NAME, "")
+                    if not csrf_secret or not csrf_secret_matches(
+                        resolved.record,
+                        csrf_secret,
+                    ):
+                        return _forbidden("CSRF validation failed.")
+
+                touch_auth_session(
+                    database_session,
+                    configuration=self.configuration,
+                    record=resolved.record,
+                )
+                request.state.principal = resolved.principal
+                request.state.authentication_mechanism = "session"
+                request.state.auth_session_id = resolved.record.session_id
+                request.state.auth_session_absolute_expires_at = (
+                    resolved.record.absolute_expires_at
+                )
+        except (SQLAlchemyError, AuthSessionPersistenceError):
+            return _authentication_unavailable()
+
         return await call_next(request)

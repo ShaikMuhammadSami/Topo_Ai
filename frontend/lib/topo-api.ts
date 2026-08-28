@@ -57,63 +57,201 @@ import type {
 } from "@/lib/topo-types"
 
 
-const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_TOPO_API_URL ??
-  "http://127.0.0.1:8000"
-).replace(/\/$/, "")
+export type BrowserSession = {
+  subject: string
+  display_name: string
+  roles: string[]
+  authentication_type: "session" | "development"
+  absolute_expires_at: string | null
+}
 
-async function apiRequest<T>(
+export type ApiFailureKind =
+  | "unauthenticated"
+  | "forbidden"
+  | "backend-unavailable"
+  | "http"
+
+export type AuthTransportEvent =
+  | { kind: "unauthenticated" }
+  | { kind: "forbidden" }
+  | { kind: "backend-unavailable" }
+
+type AuthTransportListener = (
+  event: AuthTransportEvent,
+) => void
+
+const authTransportListeners =
+  new Set<AuthTransportListener>()
+
+export class TopoApiError extends Error {
+  readonly status: number | null
+  readonly kind: ApiFailureKind
+
+  constructor(
+    message: string,
+    options: {
+      status: number | null
+      kind: ApiFailureKind
+    },
+  ) {
+    super(message)
+    this.name = "TopoApiError"
+    this.status = options.status
+    this.kind = options.kind
+  }
+}
+
+export function subscribeAuthTransport(
+  listener: AuthTransportListener,
+): () => void {
+  authTransportListeners.add(listener)
+  return () => {
+    authTransportListeners.delete(listener)
+  }
+}
+
+function publishAuthTransport(
+  event: AuthTransportEvent,
+) {
+  for (const listener of authTransportListeners) {
+    listener(event)
+  }
+}
+
+export function csrfCookieValue(
+  cookieHeader?: string,
+): string | null {
+  const source = cookieHeader ?? (
+    typeof document === "undefined"
+      ? ""
+      : document.cookie
+  )
+  for (const item of source.split(";")) {
+    const [name, ...valueParts] = item.trim().split("=")
+    if (name === "topo_csrf") {
+      const value = valueParts.join("=")
+      return value ? decodeURIComponent(value) : null
+    }
+  }
+  return null
+}
+
+function isUnsafeMethod(method?: string): boolean {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(
+    (method ?? "GET").toUpperCase(),
+  )
+}
+
+export async function apiRequest<T>(
   path: string,
   options?: RequestInit,
 ): Promise<T> {
-  const response = await fetch(
-    `${API_BASE_URL}${path}`,
-    {
-      ...options,
-      headers: {
-        Accept: "application/json",
-        ...options?.headers,
-      },
-      cache: "no-store",
-    },
-  )
-
-if (!response.ok) {
-  let message =
-    `${response.status} ${response.statusText}`
-
-  try {
-    const payload: unknown =
-      await response.json()
-
-    if (
-      typeof payload === "object" &&
-      payload !== null &&
-      "detail" in payload
-    ) {
-      const detail = (
-        payload as {
-          detail: unknown
-        }
-      ).detail
-
-      message =
-        typeof detail === "string"
-          ? detail
-          : JSON.stringify(
-              detail,
-              null,
-              2,
-            )
-    }
-  } catch {
-    // Keep the default HTTP message.
+  if (!path.startsWith("/api/")) {
+    throw new TopoApiError(
+      "Topo API requests must use the same-origin API boundary.",
+      { status: null, kind: "http" },
+    )
   }
 
-  throw new Error(message)
+  const headers = new Headers(options?.headers)
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json")
+  }
+  if (isUnsafeMethod(options?.method)) {
+    const csrf = csrfCookieValue()
+    if (csrf) {
+      headers.set("X-Topo-CSRF", csrf)
+    }
+  }
+
+  let response: Response
+  try {
+    response = await fetch(path, {
+      ...options,
+      headers,
+      cache: "no-store",
+      credentials: "same-origin",
+    })
+  } catch {
+    publishAuthTransport({ kind: "backend-unavailable" })
+    throw new TopoApiError(
+      "Topo backend is unavailable.",
+      { status: null, kind: "backend-unavailable" },
+    )
+  }
+
+  if (!response.ok) {
+    let message =
+      `${response.status} ${response.statusText}`
+
+    try {
+      const payload: unknown =
+        await response.json()
+
+      if (
+        typeof payload === "object" &&
+        payload !== null &&
+        "detail" in payload
+      ) {
+        const detail = (
+          payload as {
+            detail: unknown
+          }
+        ).detail
+
+        message =
+          typeof detail === "string"
+            ? detail
+            : JSON.stringify(
+                detail,
+                null,
+                2,
+              )
+      }
+    } catch {
+      // Keep the default HTTP message.
+    }
+
+    const kind: ApiFailureKind =
+      response.status === 401
+        ? "unauthenticated"
+        : response.status === 403
+          ? "forbidden"
+          : "http"
+    if (kind === "unauthenticated" || kind === "forbidden") {
+      publishAuthTransport({ kind })
+    }
+    throw new TopoApiError(message, {
+      status: response.status,
+      kind,
+    })
+  }
+
+  if (response.status === 204) {
+    return undefined as T
+  }
+  return await response.json() as T
 }
 
-  return await response.json() as T
+export function getBrowserSession(): Promise<BrowserSession> {
+  return apiRequest<BrowserSession>("/api/v1/auth/session")
+}
+
+export function createBrowserSession(
+  credential: string,
+): Promise<BrowserSession> {
+  return apiRequest<BrowserSession>("/api/v1/auth/session", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${credential}`,
+    },
+  })
+}
+
+export function deleteBrowserSession(): Promise<void> {
+  return apiRequest<void>("/api/v1/auth/session", {
+    method: "DELETE",
+  })
 }
 
 export function listSnapshots(
