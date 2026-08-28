@@ -1249,15 +1249,9 @@ def test_audit_events_are_append_only_across_transitions(
 
 
 def test_new_approval_routes_are_authenticated(
-    monkeypatch,
+    required_auth_app,
 ) -> None:
-    from app.main import app
-
-    monkeypatch.setenv(
-        "TOPO_AUTH_ENABLED",
-        "true",
-    )
-    client = TestClient(app)
+    client = TestClient(required_auth_app)
     response = client.post(
         "/api/v1/incidents/incident%3A1/approvals",
         json={"action_id": "action:rollback"},
@@ -1267,14 +1261,8 @@ def test_new_approval_routes_are_authenticated(
 
 
 def test_approval_list_limit_is_enforced_by_api(
-    monkeypatch,
 ) -> None:
     from app.main import app
-
-    monkeypatch.setenv(
-        "TOPO_AUTH_ENABLED",
-        "false",
-    )
     client = TestClient(app)
     response = client.get(
         "/api/v1/incidents/incident%3A1/approvals?limit=101"

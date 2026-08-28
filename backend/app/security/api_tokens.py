@@ -2,25 +2,26 @@ from __future__ import annotations
 
 import hashlib
 import hmac
-import json
-import os
 from dataclasses import dataclass
-from typing import Any
+from typing import Mapping
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from starlette.middleware.base import (
-    BaseHTTPMiddleware,
-    RequestResponseEndpoint,
-)
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.responses import Response
+
+from app.security.auth_config import (
+    AuthConfiguration,
+    AuthMode,
+    TokenIdentity,
+    load_auth_configuration,
+    load_token_registry,
+)
+from app.security.auth_routing import RouteAuthDomain, classify_route
 
 
 AUTH_ENABLED_ENV = "TOPO_AUTH_ENABLED"
-
-TOKEN_REGISTRY_ENV = (
-    "TOPO_API_TOKEN_HASHES_JSON"
-)
+TOKEN_REGISTRY_ENV = "TOPO_API_TOKEN_HASHES_JSON"
 
 
 @dataclass(frozen=True)
@@ -32,283 +33,110 @@ class AuthPrincipal:
 
 
 def authentication_enabled() -> bool:
-    value = os.getenv(
-        AUTH_ENABLED_ENV,
-        "false",
-    ).strip().lower()
-
-    return value in {
-        "1",
-        "true",
-        "yes",
-        "on",
-    }
+    """Compatibility helper backed by the validated fail-closed contract."""
+    return load_auth_configuration().mode is AuthMode.REQUIRED
 
 
-def _load_registry() -> dict[
-    str,
-    dict[str, Any],
-]:
-    raw_value = os.getenv(
-        TOKEN_REGISTRY_ENV,
-        "{}",
-    )
-
-    try:
-        value = json.loads(raw_value)
-
-    except json.JSONDecodeError as exc:
-        raise RuntimeError(
-            f"{TOKEN_REGISTRY_ENV} must "
-            "contain valid JSON."
-        ) from exc
-
-    if not isinstance(value, dict):
-        raise RuntimeError(
-            f"{TOKEN_REGISTRY_ENV} must "
-            "contain a JSON object."
-        )
-
-    registry: dict[
-        str,
-        dict[str, Any],
-    ] = {}
-
-    for token_hash, metadata in (
-        value.items()
-    ):
-        if not isinstance(
-            metadata,
-            dict,
-        ):
-            continue
-
-        registry[
-            str(token_hash).lower()
-        ] = metadata
-
-    return registry
-
-
-def token_digest(
-    token: str,
-) -> str:
-    return hashlib.sha256(
-        token.encode("utf-8")
-    ).hexdigest()
+def token_digest(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
 
 def resolve_principal(
     token: str,
+    *,
+    registry: Mapping[str, TokenIdentity] | None = None,
 ) -> AuthPrincipal | None:
-    candidate_hash = token_digest(
-        token
-    )
+    candidate_hash = token_digest(token)
+    configured_registry = registry if registry is not None else load_token_registry()
 
-    registry = _load_registry()
-
-    matched_metadata: (
-        dict[str, Any] | None
-    ) = None
-
-    for known_hash, metadata in (
-        registry.items()
-    ):
-        if hmac.compare_digest(
-            candidate_hash,
-            known_hash,
-        ):
-            matched_metadata = metadata
+    matched_identity: TokenIdentity | None = None
+    for known_hash, identity in configured_registry.items():
+        if hmac.compare_digest(candidate_hash, known_hash):
+            matched_identity = identity
             break
 
-    if matched_metadata is None:
+    if matched_identity is None:
         return None
 
-    subject = str(
-        matched_metadata.get(
-            "subject",
-            "unknown",
-        )
-    )
-
-    display_name = str(
-        matched_metadata.get(
-            "display_name",
-            subject,
-        )
-    )
-
-    raw_roles = matched_metadata.get(
-        "roles",
-        [],
-    )
-
-    roles = (
-        tuple(
-            str(role)
-            for role in raw_roles
-        )
-        if isinstance(raw_roles, list)
-        else ()
-    )
-
     return AuthPrincipal(
-        subject=subject,
-        display_name=display_name,
-        roles=roles,
+        subject=matched_identity.subject,
+        display_name=matched_identity.display_name,
+        roles=matched_identity.roles,
         authentication_type="api_token",
     )
 
 
-def development_principal(
-) -> AuthPrincipal:
+def development_principal() -> AuthPrincipal:
     return AuthPrincipal(
         subject="local-development",
-        display_name=(
-            "Local Development User"
-        ),
-        roles=(
-            "admin",
-            "operator",
-        ),
-        authentication_type=(
-            "development"
-        ),
+        display_name="Local Development User",
+        roles=("admin", "operator"),
+        authentication_type="development",
     )
 
 
-def _unauthorized(
-    detail: str,
-) -> JSONResponse:
+def _unauthorized(detail: str) -> JSONResponse:
     return JSONResponse(
         status_code=401,
-        content={
-            "detail": detail,
-        },
-        headers={
-            "WWW-Authenticate": "Bearer",
-        },
+        content={"detail": detail},
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 
-class ApiTokenAuthMiddleware(
-    BaseHTTPMiddleware
-):
-    """
-    Protect all /api routes when authentication
-    is enabled.
+class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
+    """Dispatch inbound requests to their explicit authentication domain."""
 
-    Health, documentation and browser preflight
-    requests remain public.
-    """
-
-    PUBLIC_EXACT_PATHS = {
-        "/",
-        "/health",
-        "/openapi.json",
-    }
-
-    PUBLIC_PREFIXES = (
-        "/docs",
-        "/redoc",
-    )
-
-    AGENT_EXACT_PATHS = {
-       "/api/v1/agents/enroll",
-    }
-
-    AGENT_PREFIXES = (
-       "/api/v1/agent/",
-    )
-
-    CHANGE_SOURCE_WEBHOOK_PREFIXES = (
-     "/api/v1/change-source-webhooks/",
-    )
+    def __init__(
+        self,
+        app,
+        *,
+        configuration: AuthConfiguration,
+    ) -> None:
+        super().__init__(app)
+        self.configuration = configuration
 
     async def dispatch(
         self,
         request: Request,
-        call_next:
-            RequestResponseEndpoint,
+        call_next: RequestResponseEndpoint,
     ) -> Response:
-        path = request.url.path
+        domain = classify_route(request.method, request.url.path)
 
-        is_public = (
-            request.method == "OPTIONS"
-            or path
-            in self.PUBLIC_EXACT_PATHS
-            or path 
-            in self.AGENT_EXACT_PATHS
-            or any(
-                path.startswith(prefix)
-                for prefix
-                in self.PUBLIC_PREFIXES
-            )
-            or any(
-                path.startswith(prefix)
-                for prefix
-                in self.AGENT_PREFIXES
-            )            
-            or any(
-               path.startswith(prefix)
-               for prefix
-               in self.CHANGE_SOURCE_WEBHOOK_PREFIXES
-            )
-            or not path.startswith(
-                "/api/"
-            )
-        )
+        if domain in {
+            RouteAuthDomain.PUBLIC_LIVENESS,
+            RouteAuthDomain.PUBLIC_READINESS_MINIMAL,
+            RouteAuthDomain.PUBLIC_CORS_PREFLIGHT,
+            RouteAuthDomain.AGENT_AUTHENTICATED,
+            RouteAuthDomain.PROVIDER_CALLBACK_AUTHENTICATED,
+        }:
+            return await call_next(request)
 
-        if is_public:
-            return await call_next(
-                request
-            )
+        if domain is RouteAuthDomain.DISABLED_PRODUCTION:
+            if self.configuration.mode is AuthMode.DEVELOPMENT_DISABLED:
+                return await call_next(request)
+            return JSONResponse(status_code=404, content={"detail": "Not Found"})
 
-        if not authentication_enabled():
-            request.state.principal = (
-                development_principal()
-            )
+        if domain is None:
+            return await call_next(request)
 
-            return await call_next(
-                request
-            )
+        if domain is not RouteAuthDomain.USER_AUTHENTICATED:
+            return _unauthorized("Authentication is required.")
 
-        authorization = (
-            request.headers.get(
-                "Authorization",
-                "",
-            )
-        )
+        if self.configuration.mode is AuthMode.DEVELOPMENT_DISABLED:
+            request.state.principal = development_principal()
+            return await call_next(request)
 
-        scheme, separator, token = (
-            authorization.partition(" ")
-        )
-
-        if (
-            not separator
-            or scheme.lower()
-            != "bearer"
-            or not token.strip()
-        ):
-            return _unauthorized(
-                "A Bearer API token is "
-                "required."
-            )
+        authorization = request.headers.get("Authorization", "")
+        scheme, separator, token = authorization.partition(" ")
+        if not separator or scheme.lower() != "bearer" or not token.strip():
+            return _unauthorized("A Bearer API token is required.")
 
         principal = resolve_principal(
-            token.strip()
+            token.strip(),
+            registry=self.configuration.token_registry,
         )
-
         if principal is None:
-            return _unauthorized(
-                "The supplied API token "
-                "is invalid."
-            )
+            return _unauthorized("The supplied API token is invalid.")
 
-        request.state.principal = (
-            principal
-        )
-
-        return await call_next(
-            request
-        )
+        request.state.principal = principal
+        return await call_next(request)

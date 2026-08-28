@@ -1,6 +1,18 @@
-# tests/conftest.py
+import os
+import json
+
 import pytest
-from app.db.database import SessionLocal  # Update this import to match your database setup
+
+
+# The product default remains required. Existing SQLite API tests opt into the
+# explicit local-development mode until their individual callers are migrated
+# to authenticated fixtures.
+os.environ["TOPO_AUTH_MODE"] = "development-disabled"
+os.environ.pop("TOPO_AUTH_ENABLED", None)
+os.environ.pop("TOPO_API_TOKEN_HASHES_JSON", None)
+
+
+from app.db.database import SessionLocal  # noqa: E402
 
 
 @pytest.fixture
@@ -11,3 +23,22 @@ def db_session():
         yield session
     finally:
         session.close()
+
+
+@pytest.fixture
+def required_auth_app(monkeypatch):
+    from app.main import create_app
+    from app.security.api_tokens import token_digest
+
+    token = "ph2b-test-human-bearer-" + ("x" * 32)
+    registry = {
+        token_digest(token): {
+            "subject": "test:admin",
+            "display_name": "Test Admin",
+            "roles": ["admin", "operator"],
+        }
+    }
+    monkeypatch.setenv("TOPO_AUTH_MODE", "required")
+    monkeypatch.delenv("TOPO_AUTH_ENABLED", raising=False)
+    monkeypatch.setenv("TOPO_API_TOKEN_HASHES_JSON", json.dumps(registry))
+    return create_app()

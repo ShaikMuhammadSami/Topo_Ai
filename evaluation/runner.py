@@ -78,10 +78,14 @@ class ManagedTopoEnvironment:
         log = log_path.open("w", encoding="utf-8")
         self._files.append(log)
         env = os.environ.copy()
+        env.pop("TOPO_AUTH_ENABLED", None)
+        env.pop("TOPO_API_TOKEN_HASHES_JSON", None)
         env.update(
             {
                 "TOPO_DATABASE_URL": f"sqlite:///{(self.root / 'topo-eval.db').as_posix()}",
-                "TOPO_AUTH_ENABLED": "false",
+                # Transitional PH-2B exception. PH-2E replaces this isolated
+                # SQLite development mode with ephemeral required auth.
+                "TOPO_AUTH_MODE": "development-disabled",
                 "PYTHONUNBUFFERED": "1",
             }
         )

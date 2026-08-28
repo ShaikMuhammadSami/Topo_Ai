@@ -31,6 +31,33 @@ python scripts/security/check_tracked_secrets.py
 The check reports only a path, line number, and credential category. It does
 not print the matching value and does not inspect ignored local `.env` files.
 
+## Authentication mode
+
+Authentication is required when `TOPO_AUTH_MODE` is absent or set to
+`required`. Required mode must be configured with a non-empty
+`TOPO_API_TOKEN_HASHES_JSON` object whose keys are lowercase SHA-256 token
+digests and whose values provide a stable `subject`, optional string
+`display_name`, and a JSON `roles` list. This digest registry is a transitional
+bootstrap authority; raw bearer credentials must not be stored in repository
+configuration or logs.
+
+Local SQLite development may explicitly set:
+
+```text
+TOPO_AUTH_MODE=development-disabled
+```
+
+That mode is rejected with PostgreSQL or any other non-SQLite database and
+must never be used in production. `TOPO_AUTH_ENABLED=false` no longer disables
+authentication; remove the legacy variable and select the new mode explicitly.
+
+Swagger, ReDoc, and OpenAPI endpoints are unavailable in required mode and
+remain available only in explicit SQLite development mode. The production
+browser does not yet have a credential transport; its server-side session
+boundary is intentionally deferred to PH-2C. The isolated evaluation harness
+also uses explicit SQLite development mode temporarily until PH-2E moves it to
+an ephemeral required-auth credential.
+
 Application startup never upgrades or stamps PostgreSQL. It fails closed
 unless the database is already at the application's single Alembic head.
 `schema_admin verify` is the required deployment preflight: it additionally
