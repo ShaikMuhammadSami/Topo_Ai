@@ -13,12 +13,18 @@ class WebhookAuthenticationError(
     pass
 
 
+class WebhookAuthenticationUnavailableError(
+    RuntimeError
+):
+    pass
+
+
 def resolve_secret(
     secret_ref: str | None,
 ) -> str:
     if not secret_ref:
-        raise WebhookAuthenticationError(
-            "No secret_ref configured."
+        raise WebhookAuthenticationUnavailableError(
+            "Provider authentication is unavailable."
         )
 
     secret = os.getenv(
@@ -26,12 +32,8 @@ def resolve_secret(
     )
 
     if not secret:
-        raise WebhookAuthenticationError(
-            (
-                "Required environment "
-                f"variable {secret_ref} "
-                "is not set."
-            )
+        raise WebhookAuthenticationUnavailableError(
+            "Provider authentication is unavailable."
         )
 
     return secret

@@ -38,6 +38,8 @@ from app.services.github_source_file_enrichment import (
     unavailable_github_push_events,
 )
 from app.services.webhook_security import (
+    WebhookAuthenticationError,
+    WebhookAuthenticationUnavailableError,
     resolve_secret,
     verify_basic_auth,
     verify_github,
@@ -291,10 +293,20 @@ def _verify(
         headers
     )
 
-    config = json.loads(
-        source.config_json
-        or "{}"
-    )
+    try:
+        config = json.loads(
+            source.config_json
+            or "{}"
+        )
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise WebhookAuthenticationUnavailableError(
+            "Provider authentication is unavailable."
+        ) from exc
+
+    if not isinstance(config, dict):
+        raise WebhookAuthenticationUnavailableError(
+            "Provider authentication is unavailable."
+        )
 
     if source.source_type == "github":
         verify_github(
@@ -336,12 +348,7 @@ def _verify(
                 signature=lower.get(
                     "webhook-signature"
                 ),
-                maximum_age_seconds=int(
-                    config.get(
-                        "signature_max_age",
-                        300,
-                    )
-                ),
+                maximum_age_seconds=_signature_maximum_age(config),
             )
 
         return
@@ -390,9 +397,23 @@ def _verify(
 
         return
 
-    raise ValueError(
-        "Unsupported change source."
+    raise WebhookAuthenticationUnavailableError(
+        "Provider authentication is unavailable."
     )
+
+
+def _signature_maximum_age(config: dict[str, Any]) -> int:
+    try:
+        maximum_age = int(config.get("signature_max_age", 300))
+    except (TypeError, ValueError) as exc:
+        raise WebhookAuthenticationUnavailableError(
+            "Provider authentication is unavailable."
+        ) from exc
+    if maximum_age < 1:
+        raise WebhookAuthenticationUnavailableError(
+            "Provider authentication is unavailable."
+        )
+    return maximum_age
 
 
 def _normalize(
@@ -595,8 +616,8 @@ def ingest_change_source_webhook(
     ),
 ) -> ChangeSourceDeliveryReceipt:
     if not source.enabled:
-        raise ValueError(
-            "Change source is disabled."
+        raise WebhookAuthenticationError(
+            "Provider authentication failed."
         )
 
     # Verify BEFORE parsing or storing.

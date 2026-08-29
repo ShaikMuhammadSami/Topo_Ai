@@ -35,6 +35,7 @@ from app.models.agents import (
     AgentPluginsResponse,
 )
 from app.repositories.agent_repository import (
+    AgentEnrollmentRejected,
     agent_health,
     create_enrollment_token,
     enroll_agent,
@@ -217,7 +218,7 @@ def enroll(
             request=request,
         )
 
-    except ValueError as exc:
+    except AgentEnrollmentRejected as exc:
         raise HTTPException(
             status_code=401,
             detail=str(exc),
