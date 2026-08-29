@@ -10,7 +10,7 @@ from datetime import (
 )
 from uuid import uuid4
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.db.models import (
@@ -83,6 +83,18 @@ def _token_hint(
         + "..."
         + token[-4:]
     )
+
+
+class AgentEnrollmentRejected(ValueError):
+    """Credential-safe enrollment rejection with an internal reason."""
+
+    public_message = (
+        "The enrollment credential is invalid or unavailable."
+    )
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(self.public_message)
 
 
 def _effective_status(
@@ -257,113 +269,89 @@ def enroll_agent(
     digest = _token_hash(
         request.enrollment_token
     )
+    observed = session.execute(
+        select(
+            AgentEnrollmentTokenRecord.expires_at,
+            AgentEnrollmentTokenRecord.revoked_at,
+            AgentEnrollmentTokenRecord.use_count,
+            AgentEnrollmentTokenRecord.max_uses,
+        ).where(
+            AgentEnrollmentTokenRecord.token_hash == digest
+        )
+    ).one_or_none()
 
-    statement = select(
-        AgentEnrollmentTokenRecord
-    ).where(
-        AgentEnrollmentTokenRecord
-        .token_hash
-        == digest
-    )
+    if observed is None:
+        session.rollback()
+        raise AgentEnrollmentRejected("unknown")
 
-    enrollment = session.scalars(
-        statement
-    ).first()
+    expires_at = _parse_datetime(observed.expires_at)
+    consumption_time = _now()
+    consumption_time_iso = consumption_time.isoformat()
 
-    if enrollment is None:
-        raise ValueError(
-            "The enrollment token is invalid."
+    if observed.revoked_at:
+        session.rollback()
+        raise AgentEnrollmentRejected("revoked")
+    if expires_at is None or expires_at <= consumption_time:
+        session.rollback()
+        raise AgentEnrollmentRejected("expired")
+    if observed.use_count >= observed.max_uses:
+        session.rollback()
+        raise AgentEnrollmentRejected("fully_used")
+
+    try:
+        consumption = session.execute(
+            update(AgentEnrollmentTokenRecord)
+            .where(
+                AgentEnrollmentTokenRecord.token_hash == digest,
+                AgentEnrollmentTokenRecord.revoked_at.is_(None),
+                AgentEnrollmentTokenRecord.expires_at > consumption_time_iso,
+                AgentEnrollmentTokenRecord.use_count
+                < AgentEnrollmentTokenRecord.max_uses,
+            )
+            .values(
+                use_count=AgentEnrollmentTokenRecord.use_count + 1,
+                last_used_at=consumption_time_iso,
+                updated_at=consumption_time_iso,
+            )
+            .execution_options(synchronize_session=False)
         )
 
-    if enrollment.revoked_at:
-        raise ValueError(
-            "The enrollment token was revoked."
+        if consumption.rowcount != 1:
+            raise AgentEnrollmentRejected("concurrent_or_unavailable")
+
+        raw_agent_token = "topo_agent_" + secrets.token_urlsafe(40)
+        record = TopoAgentRecord(
+            agent_id="agent:" + uuid4().hex,
+            name=request.name,
+            agent_type=request.agent_type,
+            cluster_name=request.cluster_name,
+            environment=request.environment,
+            version=request.version,
+            token_hash=_token_hash(raw_agent_token),
+            token_hint=_token_hint(raw_agent_token),
+            status=AgentStatus.ENROLLED.value,
+            collection_interval_seconds=request.collection_interval_seconds,
+            heartbeat_interval_seconds=request.heartbeat_interval_seconds,
+            namespace_scope_json=json.dumps(request.namespace_scope),
+            capabilities_json=json.dumps(request.capabilities),
+            labels_json=json.dumps(request.labels),
+            metadata_json=json.dumps(request.metadata),
+            buffered_item_count=0,
+            last_collection_status=None,
+            last_error=None,
+            last_seen_at=None,
+            last_heartbeat_at=None,
+            last_snapshot_at=None,
+            enrolled_at=consumption_time_iso,
+            revoked_at=None,
+            created_at=consumption_time_iso,
+            updated_at=consumption_time_iso,
         )
-
-    expires_at = _parse_datetime(
-        enrollment.expires_at
-    )
-
-    if (
-        expires_at is None
-        or expires_at <= _now()
-    ):
-        raise ValueError(
-            "The enrollment token expired."
-        )
-
-    if (
-        enrollment.use_count
-        >= enrollment.max_uses
-    ):
-        raise ValueError(
-            "The enrollment token has "
-            "already reached its usage limit."
-        )
-
-    raw_agent_token = (
-        "topo_agent_"
-        + secrets.token_urlsafe(40)
-    )
-
-    now = utc_now_iso()
-
-    record = TopoAgentRecord(
-        agent_id=(
-            "agent:" + uuid4().hex
-        ),
-        name=request.name,
-        agent_type=request.agent_type,
-        cluster_name=(
-            request.cluster_name
-        ),
-        environment=request.environment,
-        version=request.version,
-        token_hash=_token_hash(
-            raw_agent_token
-        ),
-        token_hint=_token_hint(
-            raw_agent_token
-        ),
-        status=AgentStatus.ENROLLED.value,
-        collection_interval_seconds=(
-            request
-            .collection_interval_seconds
-        ),
-        heartbeat_interval_seconds=(
-            request
-            .heartbeat_interval_seconds
-        ),
-        namespace_scope_json=json.dumps(
-            request.namespace_scope
-        ),
-        capabilities_json=json.dumps(
-            request.capabilities
-        ),
-        labels_json=json.dumps(
-            request.labels
-        ),
-        metadata_json=json.dumps(
-            request.metadata
-        ),
-        buffered_item_count=0,
-        last_collection_status=None,
-        last_error=None,
-        last_seen_at=None,
-        last_heartbeat_at=None,
-        last_snapshot_at=None,
-        enrolled_at=now,
-        revoked_at=None,
-        created_at=now,
-        updated_at=now,
-    )
-
-    enrollment.use_count += 1
-    enrollment.last_used_at = now
-    enrollment.updated_at = now
-
-    session.add(record)
-    session.commit()
+        session.add(record)
+        session.commit()
+    except Exception:
+        session.rollback()
+        raise
 
     return AgentEnrollResponse(
         agent_id=record.agent_id,

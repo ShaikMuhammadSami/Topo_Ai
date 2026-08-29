@@ -22,6 +22,7 @@ from app.services.change_source_ingest import (
 )
 from app.services.webhook_security import (
     WebhookAuthenticationError,
+    WebhookAuthenticationUnavailableError,
 )
 
 
@@ -56,10 +57,8 @@ async def receive(
 
     if source is None:
         raise HTTPException(
-            status_code=404,
-            detail=(
-                "Change source not found."
-            ),
+            status_code=401,
+            detail="Change-source authentication failed.",
         )
 
     body = await request.body()
@@ -78,6 +77,12 @@ async def receive(
                 body=body,
                 headers=headers,
             )
+        )
+
+    except WebhookAuthenticationUnavailableError:
+        raise HTTPException(
+            status_code=503,
+            detail="Change-source authentication is unavailable.",
         )
 
     except WebhookAuthenticationError:

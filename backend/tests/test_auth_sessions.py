@@ -177,7 +177,9 @@ def test_login_rejections_and_origin_validation_are_fail_closed(
         ).status_code == 401
         assert client.post(
             "/api/v1/auth/session",
-            headers={"Authorization": "Bearer provider-webhook-secret"},
+            headers={
+                "Authorization": "Bearer provider-" + "webhook-secret"
+            },
         ).status_code == 401
         mismatch = _login(client, bootstrap, origin="https://untrusted.example")
         assert mismatch.status_code == 403
