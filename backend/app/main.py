@@ -54,7 +54,16 @@ from app.api.topology import router as topology_router
 from app.api.webhooks import router as webhooks_router
 from app.db.database import DATABASE_URL, SessionLocal, init_db
 from app.security.api_tokens import ApiTokenAuthMiddleware
-from app.security.auth_config import AuthConfiguration, AuthMode, load_auth_configuration
+from app.security.auth_config import (
+    AuthConfiguration,
+    AuthConfigurationError,
+    AuthConfigurationFailure,
+    AuthMode,
+    load_auth_configuration,
+)
+from app.services.auth_api_credential_service import (
+    has_active_human_admin_credential,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -67,6 +76,20 @@ load_dotenv()
 async def lifespan(application: FastAPI):
     application.state.ready = False
     application.state.database_initializer()
+    configuration = application.state.auth_configuration
+    if (
+        configuration.mode is AuthMode.REQUIRED
+        and not configuration.token_registry
+    ):
+        with application.state.session_factory() as session:
+            if not has_active_human_admin_credential(session):
+                raise AuthConfigurationError(
+                    AuthConfigurationFailure.EMPTY_REQUIRED_AUTHORITY,
+                    (
+                        "required mode needs a valid static bootstrap mapping "
+                        "or an active durable human admin API credential."
+                    ),
+                )
     application.state.ready = True
     try:
         yield

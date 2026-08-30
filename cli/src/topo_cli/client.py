@@ -9,6 +9,7 @@ import httpx
 from topo_cli.errors import (
     ApiFailure,
     AuthenticationFailure,
+    AuthorizationFailure,
     ConnectionFailure,
     ResourceNotFound,
 )
@@ -110,8 +111,13 @@ class TopoClient:
         self,
         response: httpx.Response,
     ) -> None:
-        if response.status_code in {401, 403}:
+        if response.status_code == 401:
             raise AuthenticationFailure(
+                self._error_message(response)
+            )
+
+        if response.status_code == 403:
+            raise AuthorizationFailure(
                 self._error_message(response)
             )
 
@@ -1522,6 +1528,68 @@ class TopoClient:
                  "Identity endpoint returned "
                  "an invalid response."
                 )
+        return value
+
+    def create_api_credential(
+     self,
+     *,
+     name: str,
+     caller_type: str,
+     subject: str,
+     display_name: str | None,
+     roles: list[str],
+     expires_in_days: int,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            "/api/v1/auth/api-credentials",
+            json_body={
+                "name": name,
+                "caller_type": caller_type,
+                "subject": subject,
+                "display_name": display_name,
+                "roles": roles,
+                "expires_in_days": expires_in_days,
+            },
+        )
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "API credential endpoint returned an invalid response."
+            )
+        return value
+
+    def list_api_credentials(
+     self,
+     *,
+     limit: int,
+     offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        value = self._request(
+            "GET",
+            "/api/v1/auth/api-credentials",
+            params={"limit": limit, "offset": offset},
+        )
+        return self._collection(
+            value,
+            keys=("items", "credentials", "records"),
+        )
+
+    def revoke_api_credential(
+     self,
+     credential_id: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "POST",
+            (
+                "/api/v1/auth/api-credentials/"
+                + self._encode_identifier(credential_id)
+                + "/revoke"
+            ),
+        )
+        if not isinstance(value, dict):
+            raise ApiFailure(
+                "API credential revocation returned an invalid response."
+            )
         return value
     
     def create_agent_enrollment_token(

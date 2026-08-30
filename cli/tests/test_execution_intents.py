@@ -7,7 +7,7 @@ import pytest
 
 from topo_cli.client import TopoClient
 import topo_cli.commands.execution_intents as commands
-from topo_cli.errors import AuthenticationFailure
+from topo_cli.errors import AuthorizationFailure
 from topo_cli.output import OutputFormat
 
 
@@ -358,7 +358,7 @@ def test_cli_exposes_no_worker_claim_or_execute_command() -> None:
     assert "execute" not in command_names
 
 
-def test_authorization_error_maps_to_authentication_failure(
+def test_authorization_error_maps_to_authorization_failure(
 ) -> None:
     client = TopoClient.__new__(TopoClient)
     response = httpx.Response(
@@ -374,5 +374,5 @@ def test_authorization_error_maps_to_authentication_failure(
         ),
     )
 
-    with pytest.raises(AuthenticationFailure):
+    with pytest.raises(AuthorizationFailure):
         client._raise_for_status(response)

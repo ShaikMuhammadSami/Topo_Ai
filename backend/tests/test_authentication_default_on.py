@@ -185,15 +185,15 @@ def test_registry_structure_is_strict(monkeypatch, registry: dict) -> None:
     assert raised.value.category is AuthConfigurationFailure.INVALID_TOKEN_REGISTRY
 
 
-def test_empty_required_authority_fails_closed(monkeypatch) -> None:
+def test_empty_required_authority_defers_to_post_schema_startup(monkeypatch) -> None:
     monkeypatch.setenv("TOPO_AUTH_MODE", "required")
     monkeypatch.delenv("TOPO_AUTH_ENABLED", raising=False)
     monkeypatch.delenv("TOPO_API_TOKEN_HASHES_JSON", raising=False)
 
-    with pytest.raises(AuthConfigurationError) as raised:
-        load_auth_configuration(database_url="sqlite://")
+    configuration = load_auth_configuration(database_url="sqlite://")
 
-    assert raised.value.category is AuthConfigurationFailure.EMPTY_REQUIRED_AUTHORITY
+    assert configuration.mode is AuthMode.REQUIRED
+    assert not configuration.token_registry
 
 
 def test_unknown_non_empty_roles_are_preserved_without_privilege(monkeypatch) -> None:
