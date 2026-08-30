@@ -1,4 +1,10 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 
 import json
 import math
@@ -90,10 +96,14 @@ def _metadata(
 def _incident_time(
     session: Session,
     incident: IncidentRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> str:
+    require_record_owner(incident, tenant_id=tenant_id)
     return incident_operational_time(
         session,
         incident,
+        tenant_id=tenant_id,
     ).isoformat()
 
 
@@ -243,7 +253,10 @@ def _incident_namespace(
 def _snapshot_for_incident(
     session: Session,
     incident: IncidentRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> GraphSnapshot | None:
+    require_record_owner(incident, tenant_id=tenant_id)
     for field_name in (
         "snapshot_id",
         "topology_snapshot_id",
@@ -255,9 +268,11 @@ def _snapshot_for_incident(
         )
 
         if value:
-            record = session.get(
+            record = tenant_get(
+                session,
                 SnapshotRecord,
                 str(value),
+                tenant_id=tenant_id,
             )
 
             if record:
@@ -277,7 +292,8 @@ def _snapshot_for_incident(
         session,
         cluster_name=cluster,
         namespace=_incident_namespace(incident),
-        boundary_at=incident_operational_time(session, incident),
+        boundary_at=incident_operational_time(session, incident, tenant_id=tenant_id),
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -337,8 +353,10 @@ def _candidate_for_record(
     incident_cluster: str,
     incident_namespace: str,
     minimum_score: float,
+    tenant_id: DomainTenant,
 ) -> IncidentChangeCandidate | None:
     """Apply the unchanged incident-change score to one admitted record."""
+    require_record_owner(record, tenant_id=tenant_id)
 
     change_time = change_event_temporal(record).effective_at
     minutes_before = (incident_time - change_time).total_seconds() / 60
@@ -350,9 +368,9 @@ def _candidate_for_record(
 
     links = list(
         session.scalars(
-            select(ChangeEntityLinkRecord).where(
-                ChangeEntityLinkRecord.event_id == record.event_id
-            )
+            select(ChangeEntityLinkRecord)
+            .where(tenant_predicate(ChangeEntityLinkRecord, tenant_id))
+            .where(ChangeEntityLinkRecord.event_id == record.event_id)
         ).all()
     )
     linked_ids = {link.entity_id for link in links}
@@ -401,7 +419,7 @@ def _candidate_for_record(
             f"Change occurred {abs(minutes_before):.1f} minutes after incident start."
         )
     return IncidentChangeCandidate(
-        event=change_event_view(session, record=record),
+        event=change_event_view(session, record=record, tenant_id=tenant_id),
         score=round(total, 2),
         reasons=reasons,
         direct_entity_matches=direct,
@@ -418,10 +436,13 @@ def analyze_incident_change_events(
     after_minutes: int = 10,
     minimum_score: float = 0,
     limit: int = 100,
+    tenant_id: DomainTenant,
 ) -> IncidentChangeAnalysisResponse:
-    incident = session.get(
+    incident = tenant_get(
+        session,
         IncidentRecord,
         incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -429,11 +450,10 @@ def analyze_incident_change_events(
             "Incident not found."
         )
 
-    incident_time_value = (
-        _incident_time(
-            session,
-            incident
-        )
+    incident_time_value = _incident_time(
+        session,
+        incident,
+        tenant_id=tenant_id,
     )
 
     incident_time = _parse_time(
@@ -454,9 +474,12 @@ def analyze_incident_change_events(
         )
     )
 
-    statement = select(ChangeEventRecord).order_by(
-        ChangeEventRecord.received_at.desc()
-    ).limit(2000)
+    statement = (
+        select(ChangeEventRecord)
+        .where(tenant_predicate(ChangeEventRecord, tenant_id))
+        .order_by(ChangeEventRecord.received_at.desc())
+        .limit(2000)
+    )
 
     records = [
         record
@@ -474,11 +497,10 @@ def analyze_incident_change_events(
         incident
     )
 
-    snapshot = (
-        _snapshot_for_incident(
-            session,
-            incident,
-        )
+    snapshot = _snapshot_for_incident(
+        session,
+        incident,
+        tenant_id=tenant_id,
     )
 
     if snapshot is not None:
@@ -546,6 +568,7 @@ def analyze_incident_change_events(
                 incident_cluster=incident_cluster,
                 incident_namespace=incident_namespace,
                 minimum_score=minimum_score,
+                tenant_id=tenant_id,
             )
         )
         is not None
@@ -568,6 +591,7 @@ def analyze_incident_change_events(
         session,
         incident=incident,
         incident_time=incident_time,
+        tenant_id=tenant_id,
     )
     candidate_by_event_id = {
         candidate.event.event_id: candidate for candidate in candidates
@@ -586,6 +610,7 @@ def analyze_incident_change_events(
                 incident_cluster=incident_cluster,
                 incident_namespace=incident_namespace,
                 minimum_score=minimum_score,
+                tenant_id=tenant_id,
             )
             if existing is None:
                 continue

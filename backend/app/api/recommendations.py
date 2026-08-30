@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -36,7 +37,6 @@ from app.services.recommendation_engine import (
     generate_recommendations,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/recommendations",
     tags=["recommendations"],
@@ -45,9 +45,7 @@ router = APIRouter(
 
 @router.post(
     "/generate",
-    response_model=list[
-        RemediationRecommendation
-    ],
+    response_model=list[RemediationRecommendation],
     status_code=status.HTTP_201_CREATED,
 )
 def generate_analysis_recommendations(
@@ -62,15 +60,14 @@ def generate_analysis_recommendations(
         ge=1,
         le=20,
     ),
-    session: Session = Depends(
-        get_session
-    ),
-) -> list[
-    RemediationRecommendation
-]:
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> list[RemediationRecommendation]:
     analysis = load_incident_analysis(
         session=session,
         analysis_id=analysis_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if analysis is None:
@@ -85,6 +82,7 @@ def generate_analysis_recommendations(
     signal = load_signal(
         session=session,
         signal_id=analysis.signal_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if signal is None:
@@ -98,9 +96,8 @@ def generate_analysis_recommendations(
 
     snapshot = load_snapshot(
         session=session,
-        snapshot_id=(
-            analysis.topology_snapshot_id
-        ),
+        snapshot_id=(analysis.topology_snapshot_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if snapshot is None:
@@ -114,14 +111,11 @@ def generate_analysis_recommendations(
 
     changes_by_id = {}
 
-    for hypothesis in (
-        analysis.hypotheses
-    ):
+    for hypothesis in analysis.hypotheses:
         change = load_change(
             session=session,
-            change_id=(
-                hypothesis.change_id
-            ),
+            change_id=(hypothesis.change_id),
+            tenant_id=tenant_context.tenant_id,
         )
 
         if change is not None:
@@ -146,14 +140,11 @@ def generate_analysis_recommendations(
         )
     )
 
-    for recommendation in (
-        recommendations
-    ):
+    for recommendation in recommendations:
         save_recommendation(
             session=session,
-            recommendation=(
-                recommendation
-            ),
+            recommendation=(recommendation),
+            tenant_id=tenant_context.tenant_id,
         )
 
     return recommendations
@@ -161,16 +152,12 @@ def generate_analysis_recommendations(
 
 @router.get(
     "",
-    response_model=list[
-        RecommendationSummary
-    ],
+    response_model=list[RecommendationSummary],
 )
 def get_recommendations(
     analysis_id: str | None = None,
     signal_id: str | None = None,
-    status_filter: (
-        RecommendationStatus | None
-    ) = Query(
+    status_filter: RecommendationStatus | None = Query(
         default=None,
         alias="status",
     ),
@@ -179,44 +166,34 @@ def get_recommendations(
         ge=1,
         le=500,
     ),
-    session: Session = Depends(
-        get_session
-    ),
-) -> list[
-    RecommendationSummary
-]:
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> list[RecommendationSummary]:
     return list_recommendations(
         session=session,
         analysis_id=analysis_id,
         signal_id=signal_id,
-        status=(
-            status_filter.value
-            if status_filter
-            else None
-        ),
+        status=(status_filter.value if status_filter else None),
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.get(
     "/{recommendation_id}",
-    response_model=(
-        RemediationRecommendation
-    ),
+    response_model=(RemediationRecommendation),
 )
 def get_recommendation(
     recommendation_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> RemediationRecommendation:
-    recommendation = (
-        load_recommendation(
-            session=session,
-            recommendation_id=(
-                recommendation_id
-            ),
-        )
+    recommendation = load_recommendation(
+        session=session,
+        recommendation_id=(recommendation_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if recommendation is None:
@@ -233,28 +210,21 @@ def get_recommendation(
 
 @router.patch(
     "/{recommendation_id}/status",
-    response_model=(
-        RemediationRecommendation
-    ),
+    response_model=(RemediationRecommendation),
 )
 def change_recommendation_status(
     recommendation_id: str,
-    request: (
-        RecommendationStatusUpdate
-    ),
-    session: Session = Depends(
-        get_session
-    ),
+    request: RecommendationStatusUpdate,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> RemediationRecommendation:
-    recommendation = (
-        update_recommendation_status(
-            session=session,
-            recommendation_id=(
-                recommendation_id
-            ),
-            status=request.status,
-            note=request.note,
-        )
+    recommendation = update_recommendation_status(
+        session=session,
+        recommendation_id=(recommendation_id),
+        status=request.status,
+        note=request.note,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if recommendation is None:

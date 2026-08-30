@@ -1,3 +1,12 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    tenant_flush,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 import hashlib
 import json
 
@@ -70,20 +79,14 @@ def _step_to_view(
 def _load_step_records(
     session: Session,
     plan_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[InvestigationStepRecord]:
     statement = (
-        select(
-            InvestigationStepRecord
-        )
-        .where(
-            InvestigationStepRecord.plan_id
-            == plan_id
-        )
-        .order_by(
-            InvestigationStepRecord
-            .sequence
-            .asc()
-        )
+        select(InvestigationStepRecord)
+        .where(tenant_predicate(InvestigationStepRecord, tenant_id))
+        .where(InvestigationStepRecord.plan_id == plan_id)
+        .order_by(InvestigationStepRecord.sequence.asc())
     )
 
     return list(
@@ -96,10 +99,14 @@ def _load_step_records(
 def _plan_to_summary(
     session: Session,
     record: InvestigationPlanRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> InvestigationPlanSummary:
+    require_record_owner(record, tenant_id=tenant_id)
     steps = _load_step_records(
         session=session,
         plan_id=record.plan_id,
+        tenant_id=tenant_id,
     )
 
     completed = sum(
@@ -152,10 +159,14 @@ def _plan_to_summary(
 def load_investigation_plan(
     session: Session,
     plan_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> InvestigationPlanDetail | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         InvestigationPlanRecord,
         plan_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -164,6 +175,7 @@ def load_investigation_plan(
     summary = _plan_to_summary(
         session=session,
         record=record,
+        tenant_id=tenant_id,
     )
 
     steps = [
@@ -171,6 +183,7 @@ def load_investigation_plan(
         for step in _load_step_records(
             session=session,
             plan_id=plan_id,
+            tenant_id=tenant_id,
         )
     ]
 
@@ -201,21 +214,14 @@ def list_incident_investigation_plans(
     incident_id: str,
     limit: int = 50,
     offset: int = 0,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[InvestigationPlanSummary]:
     statement = (
-        select(
-            InvestigationPlanRecord
-        )
-        .where(
-            InvestigationPlanRecord
-            .incident_id
-            == incident_id
-        )
-        .order_by(
-            InvestigationPlanRecord
-            .created_at
-            .desc()
-        )
+        select(InvestigationPlanRecord)
+        .where(tenant_predicate(InvestigationPlanRecord, tenant_id))
+        .where(InvestigationPlanRecord.incident_id == incident_id)
+        .order_by(InvestigationPlanRecord.created_at.desc())
         .limit(limit)
         .offset(offset)
     )
@@ -230,6 +236,7 @@ def list_incident_investigation_plans(
         _plan_to_summary(
             session=session,
             record=record,
+            tenant_id=tenant_id,
         )
         for record in records
     ]
@@ -244,14 +251,15 @@ def create_investigation_plan(
     model_name: str | None,
     prompt_version: str,
     grounding_hash: str,
-    generated:
-        GeneratedInvestigationPlan,
+    generated: GeneratedInvestigationPlan,
     evidence: list[GroundingEvidence],
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> InvestigationPlanDetail:
     existing = load_investigation_plan(
         session=session,
         plan_id=plan_id,
+        tenant_id=tenant_id,
     )
 
     if existing is not None:
@@ -264,39 +272,20 @@ def create_investigation_plan(
         incident_id=incident_id,
         title=generated.title,
         objective=generated.objective,
-        incident_summary=(
-            generated.incident_summary
-        ),
+        incident_summary=(generated.incident_summary),
         provider=provider.value,
         model_name=model_name,
         prompt_version=prompt_version,
         grounding_hash=grounding_hash,
-        status=(
-            InvestigationPlanStatus
-            .ACTIVE.value
-        ),
-        overall_confidence=str(
-            generated.overall_confidence
-        ),
-        evidence_gaps_json=json.dumps(
-            generated.evidence_gaps
-        ),
-        warnings_json=json.dumps(
-            warnings
-        ),
-        evidence_json=json.dumps(
-            [
-                item.model_dump(
-                    mode="json"
-                )
-                for item in evidence
-            ]
-        ),
-        payload_json=(
-            generated.model_dump_json()
-        ),
+        status=(InvestigationPlanStatus.ACTIVE.value),
+        overall_confidence=str(generated.overall_confidence),
+        evidence_gaps_json=json.dumps(generated.evidence_gaps),
+        warnings_json=json.dumps(warnings),
+        evidence_json=json.dumps([item.model_dump(mode="json") for item in evidence]),
+        payload_json=(generated.model_dump_json()),
         created_at=now,
         updated_at=now,
+        tenant_id=tenant_value(tenant_id),
     )
 
     session.add(plan_record)
@@ -310,53 +299,37 @@ def create_investigation_plan(
             ).encode("utf-8")
         ).hexdigest()[:24]
 
-        step_record = (
-            InvestigationStepRecord(
-                step_id=(
-                    "investigation-step:"
-                    f"{step_hash}"
-                ),
-                plan_id=plan_id,
-                incident_id=incident_id,
-                sequence=step.sequence,
-                title=step.title,
-                objective=step.objective,
-                command_type=(
-                    step.command_type.value
-                ),
-                command=step.command,
-                target=step.target,
-                expected_observation=(
-                    step.expected_observation
-                ),
-                success_criteria=(
-                    step.success_criteria
-                ),
-                failure_indication=(
-                    step.failure_indication
-                ),
-                evidence_ids_json=json.dumps(
-                    step.evidence_ids
-                ),
-                status=(
-                    InvestigationStepStatus
-                    .PENDING.value
-                ),
-                finding=None,
-                responder_notes=None,
-                completed_at=None,
-                created_at=now,
-                updated_at=now,
-            )
+        step_record = InvestigationStepRecord(
+            step_id=("investigation-step:" f"{step_hash}"),
+            plan_id=plan_id,
+            incident_id=incident_id,
+            sequence=step.sequence,
+            title=step.title,
+            objective=step.objective,
+            command_type=(step.command_type.value),
+            command=step.command,
+            target=step.target,
+            expected_observation=(step.expected_observation),
+            success_criteria=(step.success_criteria),
+            failure_indication=(step.failure_indication),
+            evidence_ids_json=json.dumps(step.evidence_ids),
+            status=(InvestigationStepStatus.PENDING.value),
+            finding=None,
+            responder_notes=None,
+            completed_at=None,
+            created_at=now,
+            updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(step_record)
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     result = load_investigation_plan(
         session=session,
         plan_id=plan_id,
+        tenant_id=tenant_id,
     )
 
     if result is None:
@@ -373,12 +346,14 @@ def update_investigation_step(
     *,
     plan_id: str,
     step_id: str,
-    request:
-        InvestigationStepUpdateRequest,
+    request: InvestigationStepUpdateRequest,
+    tenant_id: DomainTenant,
 ) -> InvestigationPlanDetail | None:
-    step = session.get(
+    step = tenant_get(
+        session,
         InvestigationStepRecord,
         step_id,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -427,19 +402,22 @@ def update_investigation_step(
 
     step.updated_at = utc_now_iso()
 
-    plan = session.get(
+    plan = tenant_get(
+        session,
         InvestigationPlanRecord,
         plan_id,
+        tenant_id=tenant_id,
     )
 
     if plan is None:
         return None
 
-    session.flush()
+    tenant_flush(session, tenant_id=tenant_id)
 
     steps = _load_step_records(
         session=session,
         plan_id=plan_id,
+        tenant_id=tenant_id,
     )
 
     completed_states = {
@@ -469,9 +447,10 @@ def update_investigation_step(
 
     plan.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return load_investigation_plan(
         session=session,
         plan_id=plan_id,
+        tenant_id=tenant_id,
     )

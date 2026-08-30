@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_CONTEXT, TEST_HEADERS, TEST_TENANT
 
 import inspect
 from datetime import (
@@ -90,7 +91,6 @@ from app.security.api_tokens import (
 from app.services.llm_client import (
     OpenAITextResult,
 )
-
 
 NOW = datetime(
     2026,
@@ -864,16 +864,12 @@ def _response(
     plan: IncidentResponsePlan | None = None,
     history: IncidentHistoricalIntelligence | None = None,
 ):
-    return (
-        response_service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-            response_plan=plan or _plan(),
-            historical_intelligence=(
-                history or _history()
-            ),
-        )
+    return response_service.build_incident_response_intelligence(
+        session=object(),
+        incident_id="incident:1",
+        response_plan=plan or _plan(),
+        historical_intelligence=(history or _history()),
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -1060,8 +1056,7 @@ def _wire(
 def _build(monkeypatch, **kwargs):
     _wire(monkeypatch, **kwargs)
     return service.build_incident_briefing(
-        session=object(),
-        incident_id="incident:1",
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
 
@@ -1378,8 +1373,7 @@ def test_missing_history_degrades_cleanly(
         ),
     )
     result = service.build_incident_briefing(
-        session=object(),
-        incident_id="incident:1",
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.historical_context.similar_incident_count == 0
@@ -1404,8 +1398,7 @@ def test_missing_outcome_is_in_progress_not_fabricated(
         lambda *args, **kwargs: calls.append(True),
     )
     result = service.build_incident_briefing(
-        session=object(),
-        incident_id="incident:1",
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.outcome is None
@@ -1445,11 +1438,13 @@ def test_ai_disabled_is_deterministic(
         session=object(),
         incident_id="incident:1",
         include_ai=False,
+        tenant_id=TEST_TENANT,
     )
     second = service.build_incident_briefing(
         session=object(),
         incident_id="incident:1",
         include_ai=False,
+        tenant_id=TEST_TENANT,
     )
 
     assert first == second
@@ -1490,6 +1485,7 @@ def test_openai_summary_success(
         session=object(),
         incident_id="incident:1",
         include_ai=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.ai_summary == (
@@ -1507,6 +1503,7 @@ def test_missing_openai_key_preserves_briefing(
         session=object(),
         incident_id="incident:1",
         include_ai=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.root_cause.root_event_id == "event:commit"
@@ -1536,6 +1533,7 @@ def test_openai_failure_preserves_briefing(
         session=object(),
         incident_id="incident:1",
         include_ai=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.ai_status == HistoricalAiStatus.FAILED
@@ -1563,6 +1561,7 @@ def test_llm_output_cannot_alter_structured_facts(
         session=object(),
         incident_id="incident:1",
         include_ai=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.ai_summary == (
@@ -1696,7 +1695,7 @@ def test_authentication_and_route_are_registered() -> None:
 def test_briefing_route_requires_authentication(
     required_auth_app,
 ) -> None:
-    client = TestClient(required_auth_app)
+    client = TestClient(required_auth_app, headers=TEST_HEADERS)
     response = client.get(
         "/api/v1/incidents/incident%3A1/briefing"
     )
@@ -1722,6 +1721,7 @@ def test_missing_causal_analysis_uses_api_404(
             incident_id="incident:missing",
             include_ai=False,
             session=object(),
+            tenant_context=TEST_CONTEXT,
         )
 
     assert raised.value.status_code == 404
@@ -1749,14 +1749,17 @@ def test_api_passes_single_ai_flag(
         incident_id="incident:1",
         include_ai=True,
         session=object(),
+        tenant_context=TEST_CONTEXT,
     )
 
     assert result is expected
     assert captured["include_ai"] is True
+    assert captured["tenant_id"] == TEST_TENANT
     assert set(captured) == {
         "session",
         "incident_id",
         "include_ai",
+        "tenant_id",
     }
 
 
@@ -1777,14 +1780,12 @@ def test_precomputed_plan_and_history_are_reused(
         lambda **kwargs: calls.append("history"),
     )
 
-    result = (
-        response_service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-            response_plan=plan,
-            historical_intelligence=history,
-        )
+    result = response_service.build_incident_response_intelligence(
+        session=object(),
+        incident_id="incident:1",
+        response_plan=plan,
+        historical_intelligence=history,
+        tenant_id=TEST_TENANT,
     )
 
     assert calls == []
@@ -1807,8 +1808,7 @@ def test_orchestrator_passes_precomputed_results(
         captured=captured,
     )
     service.build_incident_briefing(
-        session=object(),
-        incident_id="incident:1",
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert captured["context_analysis"].analysis_id == (
@@ -1834,8 +1834,7 @@ def test_operational_failure_preserves_core_rca(
         ),
     )
     result = service.build_incident_briefing(
-        session=object(),
-        incident_id="incident:1",
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.root_cause.root_event_id == "event:commit"

@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from sqlalchemy.orm import Session
 
@@ -188,17 +191,15 @@ def build_incident_operational_context(
     session: Session,
     incident_id: str,
     *,
-    causal_analysis: (
-        CausalAnalysisResponse | None
-    ) = None,
-    ownership_impact: (
-        IncidentOwnershipImpact | None
-    ) = None,
+    causal_analysis: CausalAnalysisResponse | None = None,
+    ownership_impact: IncidentOwnershipImpact | None = None,
+    tenant_id: DomainTenant,
 ) -> IncidentOperationalContext:
     analysis = causal_analysis or (
         latest_causal_analysis(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
 
@@ -212,6 +213,7 @@ def build_incident_operational_context(
         calculate_incident_ownership_impact(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
 
@@ -247,9 +249,8 @@ def build_incident_operational_context(
     else:
         snapshot = load_topology_snapshot(
             session=session,
-            snapshot_id=(
-                analysis.topology_snapshot_id
-            ),
+            snapshot_id=(analysis.topology_snapshot_id),
+            tenant_id=tenant_id,
         )
 
         if snapshot is None:
@@ -281,19 +282,16 @@ def build_incident_operational_context(
 
             else:
                 try:
-                    ownership = (
-                        resolve_entity_ownership(
-                            session=session,
-                            snapshot=snapshot,
-                            entity=entity,
-                        )
+                    ownership = resolve_entity_ownership(
+                        session=session,
+                        snapshot=snapshot,
+                        entity=entity,
+                        tenant_id=tenant_id,
                     )
 
                 except ValueError as exc:
                     warnings.append(
-                        "Root-cause ownership "
-                        "could not be resolved: "
-                        f"{exc}"
+                        "Root-cause ownership " "could not be resolved: " f"{exc}"
                     )
 
                 if (

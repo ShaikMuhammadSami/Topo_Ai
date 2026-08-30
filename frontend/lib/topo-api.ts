@@ -67,6 +67,7 @@ export type BrowserSession = {
 
 export type ApiFailureKind =
   | "unauthenticated"
+  | "tenant-access-denied"
   | "forbidden"
   | "backend-unavailable"
   | "http"
@@ -82,6 +83,28 @@ type AuthTransportListener = (
 
 const authTransportListeners =
   new Set<AuthTransportListener>()
+
+export type TenantView = {
+  tenant_id: string
+  display_name: string
+}
+
+// Non-secret selection only. The server proves membership on every request.
+let selectedTenantId: string | null = null
+const tenantDeniedListeners = new Set<(tenantId: string | null) => void>()
+
+export function selectApiTenant(tenantId: string | null): void {
+  selectedTenantId = tenantId
+}
+
+export function subscribeTenantDenied(listener: (tenantId: string | null) => void): () => void {
+  tenantDeniedListeners.add(listener)
+  return () => { tenantDeniedListeners.delete(listener) }
+}
+
+export function listTenants(): Promise<TenantView[]> {
+  return apiRequest<TenantView[]>("/api/v1/tenants")
+}
 
 export class TopoApiError extends Error {
   readonly status: number | null
@@ -142,10 +165,10 @@ function isUnsafeMethod(method?: string): boolean {
   )
 }
 
-export async function apiRequest<T>(
+async function apiResponse(
   path: string,
   options?: RequestInit,
-): Promise<T> {
+): Promise<Response> {
   if (!path.startsWith("/api/")) {
     throw new TopoApiError(
       "Topo API requests must use the same-origin API boundary.",
@@ -154,6 +177,12 @@ export async function apiRequest<T>(
   }
 
   const headers = new Headers(options?.headers)
+  const requestTenant = selectedTenantId
+  // Call-site headers cannot override the active workspace boundary.
+  headers.delete("X-Topo-Tenant-ID")
+  if (requestTenant && !path.startsWith("/api/v1/auth/")) {
+    headers.set("X-Topo-Tenant-ID", requestTenant)
+  }
   if (!headers.has("Accept")) {
     headers.set("Accept", "application/json")
   }
@@ -215,11 +244,17 @@ export async function apiRequest<T>(
     const kind: ApiFailureKind =
       response.status === 401
         ? "unauthenticated"
+        : response.status === 403 && message === "TENANT_ACCESS_DENIED"
+          ? "tenant-access-denied"
         : response.status === 403
           ? "forbidden"
           : "http"
     if (kind === "unauthenticated" || kind === "forbidden") {
+      if (kind === "unauthenticated") selectApiTenant(null)
       publishAuthTransport({ kind })
+    }
+    if (kind === "tenant-access-denied") {
+      for (const listener of tenantDeniedListeners) listener(requestTenant)
     }
     throw new TopoApiError(message, {
       status: response.status,
@@ -227,10 +262,32 @@ export async function apiRequest<T>(
     })
   }
 
+  if (!path.startsWith("/api/v1/auth/") && requestTenant !== selectedTenantId) {
+    throw new TopoApiError("Tenant selection changed; reload this request.", { status: null, kind: "http" })
+  }
+  return response
+}
+
+export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await apiResponse(path, options)
   if (response.status === 204) {
     return undefined as T
   }
   return await response.json() as T
+}
+
+export async function downloadApiFile(path: string, filename: string): Promise<void> {
+  const response = await apiResponse(path)
+  const blob = await response.blob()
+  const url = URL.createObjectURL(blob)
+  try {
+    const link = document.createElement("a")
+    link.href = url
+    link.download = filename
+    link.click()
+  } finally {
+    URL.revokeObjectURL(url)
+  }
 }
 
 export function getBrowserSession(): Promise<BrowserSession> {

@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 import hashlib
 from dataclasses import dataclass
@@ -57,7 +60,6 @@ from app.repositories.topology_snapshot_repository import (
 from app.services.incident_context import (
     build_incident_operational_context,
 )
-
 
 STRONG_CAUSAL_CONFIDENCE = 0.75
 
@@ -157,10 +159,12 @@ def _load_event_context(
     event_id: str,
     fallback_title: str,
     fallback_source: str | None,
+    tenant_id: DomainTenant,
 ) -> _EventContext:
     record = load_change_event(
         session,
         event_id=event_id,
+        tenant_id=tenant_id,
     )
 
     view: ChangeEventView | None = None
@@ -169,6 +173,7 @@ def _load_event_context(
         view = change_event_view(
             session,
             record=record,
+            tenant_id=tenant_id,
         )
 
     node = _analysis_event_node(
@@ -1234,6 +1239,7 @@ def _historical_entity(
     *,
     analysis: CausalAnalysisResponse,
     entity_id: str | None,
+    tenant_id: DomainTenant,
 ) -> tuple[
     GraphSnapshot | None,
     Entity | None,
@@ -1252,9 +1258,8 @@ def _historical_entity(
 
     snapshot = load_topology_snapshot(
         session=session,
-        snapshot_id=(
-            analysis.topology_snapshot_id
-        ),
+        snapshot_id=(analysis.topology_snapshot_id),
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:
@@ -1656,20 +1661,16 @@ def build_incident_response_plan(
     session: Session,
     incident_id: str,
     *,
-    incident_record: (
-        IncidentRecordView | None
-    ) = None,
-    causal_analysis: (
-        CausalAnalysisResponse | None
-    ) = None,
-    operational_context: (
-        IncidentOperationalContext | None
-    ) = None,
+    incident_record: IncidentRecordView | None = None,
+    causal_analysis: CausalAnalysisResponse | None = None,
+    operational_context: IncidentOperationalContext | None = None,
+    tenant_id: DomainTenant,
 ) -> IncidentResponsePlan:
     incident = incident_record or (
         load_incident_record(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
 
@@ -1682,6 +1683,7 @@ def build_incident_response_plan(
         latest_causal_analysis(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
 
@@ -1706,6 +1708,7 @@ def build_incident_response_plan(
         build_incident_operational_context(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
 
@@ -1714,9 +1717,8 @@ def build_incident_response_plan(
         analysis=analysis,
         event_id=hypothesis.root_event_id,
         fallback_title=hypothesis.root_title,
-        fallback_source=(
-            hypothesis.root_source
-        ),
+        fallback_source=(hypothesis.root_source),
+        tenant_id=tenant_id,
     )
 
     target_event = _load_event_context(
@@ -1725,6 +1727,7 @@ def build_incident_response_plan(
         event_id=hypothesis.target_event_id,
         fallback_title=hypothesis.target_title,
         fallback_source=None,
+        tenant_id=tenant_id,
     )
 
     # The target event is the change connected to the
@@ -1754,6 +1757,7 @@ def build_incident_response_plan(
         session,
         analysis=analysis,
         entity_id=context.root_entity_id,
+        tenant_id=tenant_id,
     )
 
     runbooks = _discover_runbooks(

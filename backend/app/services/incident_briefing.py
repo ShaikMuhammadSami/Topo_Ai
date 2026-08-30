@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from enum import Enum
 from typing import Any
@@ -102,7 +105,6 @@ from app.services.response_intelligence import (
 from app.services.response_plan import (
     build_incident_response_plan,
 )
-
 
 MAX_CAUSAL_EVIDENCE = 25
 MAX_RELEVANT_CHANGES = 10
@@ -1451,10 +1453,12 @@ def build_incident_briefing(
     *,
     incident_id: str,
     include_ai: bool = False,
+    tenant_id: DomainTenant,
 ) -> IncidentBriefing:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -1465,6 +1469,7 @@ def build_incident_briefing(
     analysis = latest_causal_analysis(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if analysis is None:
@@ -1513,9 +1518,8 @@ def build_incident_briefing(
     if analysis.topology_snapshot_id:
         snapshot = load_topology_snapshot(
             session=session,
-            snapshot_id=(
-                analysis.topology_snapshot_id
-            ),
+            snapshot_id=(analysis.topology_snapshot_id),
+            tenant_id=tenant_id,
         )
 
         if snapshot is None:
@@ -1567,6 +1571,7 @@ def build_incident_briefing(
             session=session,
             incident_id=incident_id,
             causal_analysis=analysis,
+            tenant_id=tenant_id,
         )
 
     except Exception as exc:
@@ -1586,6 +1591,7 @@ def build_incident_briefing(
                 incident_record=incident,
                 causal_analysis=analysis,
                 operational_context=context,
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:
@@ -1601,28 +1607,24 @@ def build_incident_briefing(
         )
 
     try:
-        current_profile = (
-            build_current_incident_profile(
-                session=session,
-                incident_id=incident_id,
-                incident_record=incident,
-                causal_analysis=analysis,
-                operational_impact=(
-                    context.overall_business_impact
-                    if context is not None
-                    else None
-                ),
-            )
+        current_profile = build_current_incident_profile(
+            session=session,
+            incident_id=incident_id,
+            incident_record=incident,
+            causal_analysis=analysis,
+            operational_impact=(
+                context.overall_business_impact if context is not None else None
+            ),
+            tenant_id=tenant_id,
         )
-        history = (
-            build_historical_incident_intelligence(
-                session=session,
-                incident_id=incident_id,
-                limit=MAX_SIMILAR_INCIDENTS,
-                min_similarity=0.5,
-                include_ai=False,
-                current_profile=current_profile,
-            )
+        history = build_historical_incident_intelligence(
+            session=session,
+            incident_id=incident_id,
+            limit=MAX_SIMILAR_INCIDENTS,
+            min_similarity=0.5,
+            include_ai=False,
+            current_profile=current_profile,
+            tenant_id=tenant_id,
         )
 
     except Exception as exc:
@@ -1643,14 +1645,13 @@ def build_incident_briefing(
 
     if plan is not None:
         try:
-            response = (
-                build_incident_response_intelligence(
-                    session=session,
-                    incident_id=incident_id,
-                    include_ai=False,
-                    response_plan=plan,
-                    historical_intelligence=history,
-                )
+            response = build_incident_response_intelligence(
+                session=session,
+                incident_id=incident_id,
+                include_ai=False,
+                response_plan=plan,
+                historical_intelligence=history,
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:
@@ -1664,20 +1665,18 @@ def build_incident_briefing(
     outcome = load_incident_outcome(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
-    if (
-        outcome is None
-        and incident.status
-        in {
-            IncidentStatus.RESOLVED,
-            IncidentStatus.DISMISSED,
-        }
-    ):
+    if outcome is None and incident.status in {
+        IncidentStatus.RESOLVED,
+        IncidentStatus.DISMISSED,
+    }:
         try:
             outcome = get_incident_outcome(
                 session,
                 incident_id=incident_id,
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:

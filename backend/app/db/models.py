@@ -9,9 +9,10 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from app.db.database import Base
+from app.db.domain_ownership import REQUIRED_OWNERSHIP_TABLES
 
 
 def utc_now_iso() -> str:
@@ -19,13 +20,15 @@ def utc_now_iso() -> str:
 
 
 class TenantOwnedRecordMixin:
-    """Transitional PH-3C ownership metadata for customer-domain rows."""
+    """Explicit PH-3D ownership; only proven machine-dependent rows stay nullable."""
 
-    tenant_id: Mapped[str | None] = mapped_column(
-        String(255),
-        nullable=True,
-        index=True,
-    )
+    @declared_attr
+    def tenant_id(cls) -> Mapped[str | None]:
+        return mapped_column(
+            String(255),
+            nullable=cls.__tablename__ not in REQUIRED_OWNERSHIP_TABLES,
+            index=True,
+        )
 
 
 class SnapshotRecord(TenantOwnedRecordMixin, Base):
@@ -99,6 +102,7 @@ class SnapshotRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class IdentityResolutionRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "identity_resolutions"
@@ -228,6 +232,7 @@ class IdentityOverrideRecord(TenantOwnedRecordMixin, Base):
         default=utc_now_iso,
     )    
 
+
 class SignalRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "signals"
 
@@ -354,6 +359,7 @@ class SignalRecord(TenantOwnedRecordMixin, Base):
         default=utc_now_iso,
     )
 
+
 class ChangeRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "changes"
 
@@ -476,6 +482,7 @@ class ChangeRecord(TenantOwnedRecordMixin, Base):
         default=utc_now_iso,
     )
 
+
 class IncidentAnalysisRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_analyses"
 
@@ -564,6 +571,7 @@ class IncidentAnalysisRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class RecommendationRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = (
@@ -719,6 +727,7 @@ class RecommendationRecord(TenantOwnedRecordMixin, Base):
             default=utc_now_iso,
         )
     )
+
 
 class RecoveryVerificationRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = (
@@ -891,6 +900,7 @@ class RecoveryVerificationRecord(TenantOwnedRecordMixin, Base):
             default=utc_now_iso,
         )
     )
+
 
 class IncidentRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incidents"
@@ -1141,6 +1151,7 @@ class IncidentOutcomeRecord(TenantOwnedRecordMixin, Base):
         default=utc_now_iso,
     )
 
+
 class OwnershipMappingRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "ownership_mappings"
 
@@ -1271,6 +1282,7 @@ class OwnershipMappingRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class WebhookEndpointRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "webhook_endpoints"
@@ -1447,6 +1459,7 @@ class WebhookDeliveryRecord(TenantOwnedRecordMixin, Base):
         default=utc_now_iso,
     )
 
+
 class IncidentExplanationRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_explanations"
 
@@ -1533,6 +1546,7 @@ class IncidentExplanationRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class CopilotSessionRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_copilot_sessions"
@@ -1658,6 +1672,7 @@ class CopilotMessageRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class InvestigationPlanRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_investigation_plans"
@@ -1878,6 +1893,7 @@ class InvestigationStepRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class PostIncidentReportRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "post_incident_reports"
@@ -2111,6 +2127,7 @@ class ReportActionItemRecord(TenantOwnedRecordMixin, Base):
         default=utc_now_iso,
     )
 
+
 class AgentEnrollmentTokenRecord(Base):
     __tablename__ = "agent_enrollment_tokens"
 
@@ -2332,6 +2349,7 @@ class TopoAgentRecord(Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class RuntimeSensorRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "runtime_sensors"
@@ -2772,6 +2790,7 @@ class RuntimeProcessRecord(TenantOwnedRecordMixin, Base):
         default=utc_now_iso,
     )
 
+
 class CloudAccountRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "cloud_accounts"
 
@@ -2982,6 +3001,7 @@ class CloudResourceRecord(TenantOwnedRecordMixin, Base):
             default=utc_now_iso,
         )
     )
+
 
 class BuildArtifactEvidenceRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "build_artifact_evidence"
@@ -3506,6 +3526,7 @@ class ChangeEntityLinkRecord(TenantOwnedRecordMixin, Base):
         )
     )
 
+
 class ChangeSourceRecord(Base):
     __tablename__ = "change_sources"
 
@@ -3757,6 +3778,7 @@ class ChangeSourceDeadLetterRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
         default=utc_now_iso,
     )
+
 
 class CausalAnalysisRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "causal_analyses"

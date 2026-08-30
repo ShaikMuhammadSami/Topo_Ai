@@ -5,15 +5,119 @@ import test from "node:test"
 import {
   TopoApiError,
   apiRequest,
+  downloadApiFile,
   createBrowserSession,
   csrfCookieValue,
   subscribeAuthTransport,
+  selectApiTenant,
+  subscribeTenantDenied,
 } from "../lib/topo-api.ts"
 
 
 async function source(path) {
   return readFile(new URL(`../${path}`, import.meta.url), "utf8")
 }
+
+test("central tenant selection is explicit, switches headers, and never overrides auth", async () => {
+  const originalFetch = globalThis.fetch
+  const seen = []
+  globalThis.fetch = async (_, init) => {
+    seen.push(init.headers.get("X-Topo-Tenant-ID"))
+    return Response.json({ ok: true })
+  }
+  try {
+    selectApiTenant("tenant:a")
+    await apiRequest("/api/v1/incidents", { headers: { "X-Topo-Tenant-ID": "spoofed" } })
+    selectApiTenant("tenant:b")
+    await apiRequest("/api/v1/incidents")
+    await apiRequest("/api/v1/auth/session")
+    selectApiTenant(null)
+    await apiRequest("/api/v1/incidents")
+    assert.deepEqual(seen, ["tenant:a", "tenant:b", null, null])
+  } finally {
+    selectApiTenant(null)
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("tenant access denial is bounded and distinct from authentication and generic forbidden", async () => {
+  const originalFetch = globalThis.fetch
+  const authEvents = []
+  const tenantEvents = []
+  const stopAuth = subscribeAuthTransport((event) => authEvents.push(event.kind))
+  const stopTenant = subscribeTenantDenied((id) => tenantEvents.push(id))
+  let release
+  globalThis.fetch = () => new Promise((resolve) => { release = resolve })
+  try {
+    selectApiTenant("tenant:a")
+    const pending = apiRequest("/api/v1/incidents")
+    selectApiTenant("tenant:b")
+    release(Response.json({ detail: "TENANT_ACCESS_DENIED" }, { status: 403 }))
+    await assert.rejects(pending, (error) => error.kind === "tenant-access-denied")
+    assert.deepEqual(tenantEvents, ["tenant:a"])
+    assert.deepEqual(authEvents, [])
+  } finally {
+    selectApiTenant(null)
+    stopAuth()
+    stopTenant()
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("a successful response from the previous tenant is discarded", async () => {
+  const originalFetch = globalThis.fetch
+  let release
+  globalThis.fetch = () => new Promise((resolve) => { release = resolve })
+  try {
+    selectApiTenant("tenant:a")
+    const pending = apiRequest("/api/v1/incidents")
+    selectApiTenant("tenant:b")
+    release(Response.json({ private: "tenant a" }))
+    await assert.rejects(pending, /Tenant selection changed/)
+  } finally {
+    selectApiTenant(null)
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("report downloads use the tenant-scoped transport, not a direct API anchor", async () => {
+  const originalFetch = globalThis.fetch
+  const originalDocument = globalThis.document
+  let observed
+  const link = { click() { this.clicked = true } }
+  globalThis.document = { createElement: () => link }
+  globalThis.fetch = async (url, init) => {
+    observed = { url, init }
+    return new Response("# Tenant report", { headers: { "Content-Type": "text/markdown" } })
+  }
+  try {
+    selectApiTenant("tenant:a")
+    await downloadApiFile("/api/v1/incidents/incident%3Aa/reports/report%3Aa/export", "report.md")
+    assert.equal(observed.init.headers.get("X-Topo-Tenant-ID"), "tenant:a")
+    assert.equal(observed.init.credentials, "same-origin")
+    assert.doesNotMatch(observed.url, /\?/)
+    assert.equal(link.download, "report.md")
+    assert.equal(link.clicked, true)
+    assert.match(link.href, /^blob:/)
+    const component = await source("components/app/incident-post-incident-report.tsx")
+    assert.match(component, /downloadApiFile\(/)
+    assert.doesNotMatch(component, /href=\{exportUrl/)
+  } finally {
+    selectApiTenant(null)
+    globalThis.fetch = originalFetch
+    globalThis.document = originalDocument
+  }
+})
+
+test("tenant gate precedes domain rendering and remounts tenant-owned state on switch", async () => {
+  const gate = await source("components/auth/tenant-boundary.tsx")
+  assert.match(await source("components/auth/auth-boundary.tsx"), /<TenantGate>\{children\}<\/TenantGate>/)
+  assert.match(gate, /available\.length === 1/)
+  assert.match(gate, /Fragment key=\{selected\}/)
+  assert.match(gate, /requestTenant !== selection\.current/)
+  assert.match(gate, /No tenant access is available/)
+  assert.doesNotMatch(gate, /localStorage|sessionStorage/)
+})
 
 const [boundarySource, layoutSource, apiSource, configSource, reportSource] =
   await Promise.all([

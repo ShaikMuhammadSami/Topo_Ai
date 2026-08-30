@@ -1,10 +1,15 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    UNOWNED_MACHINE,
+)
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 
 import json
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     Request,
@@ -89,6 +94,7 @@ from app.services.continuous_lifecycle import (
 from app.services.topology_checkpoint import (
     is_topology_affecting_change_event,
 )
+
 admin_router = APIRouter(
     prefix="/api/v1/agents",
     tags=["agents"],
@@ -98,6 +104,7 @@ agent_router = APIRouter(
     prefix="/api/v1/agent",
     tags=["agent-runtime"],
 )
+
 
 @admin_router.get(
     "/{agent_id}/cloud-status",
@@ -128,6 +135,7 @@ def get_agent_cloud_status(
         )
 
     return result
+
 
 def _principal_subject(
     request: Request,
@@ -413,6 +421,7 @@ def submit_snapshot(
         submission=submission,
     )
 
+
 @admin_router.get(
     "/{agent_id}/plugins",
     response_model=(
@@ -438,51 +447,40 @@ def get_agent_plugins(
 
     return result
 
+
 @agent_router.post(
     "/runtime/heartbeat",
-    response_model=(
-        RuntimeSensorHeartbeatResponse
-    ),
+    response_model=(RuntimeSensorHeartbeatResponse),
 )
 def runtime_sensor_heartbeat(
-    request:
-        RuntimeSensorHeartbeatRequest,
-    agent: TopoAgentRecord = Depends(
-        require_agent
-    ),
-    session: Session = Depends(
-        get_session
-    ),
+    request: RuntimeSensorHeartbeatRequest,
+    agent: TopoAgentRecord = Depends(require_agent),
+    session: Session = Depends(get_session),
 ) -> RuntimeSensorHeartbeatResponse:
     return record_sensor_heartbeat(
         session=session,
         agent=agent,
         request=request,
+        tenant_id=UNOWNED_MACHINE,
     )
 
 
 @agent_router.post(
     "/runtime/batches",
-    response_model=(
-        RuntimeEventBatchReceipt
-    ),
+    response_model=(RuntimeEventBatchReceipt),
     status_code=status.HTTP_201_CREATED,
 )
 def runtime_event_batch(
-    request:
-        RuntimeEventBatchRequest,
-    agent: TopoAgentRecord = Depends(
-        require_agent
-    ),
-    session: Session = Depends(
-        get_session
-    ),
+    request: RuntimeEventBatchRequest,
+    agent: TopoAgentRecord = Depends(require_agent),
+    session: Session = Depends(get_session),
 ) -> RuntimeEventBatchReceipt:
     try:
         return ingest_runtime_event_batch(
             session=session,
             agent=agent,
             request=request,
+            tenant_id=UNOWNED_MACHINE,
         )
 
     except ValueError as exc:
@@ -494,38 +492,26 @@ def runtime_event_batch(
 
 @admin_router.get(
     "/{agent_id}/sensors",
-    response_model=list[
-        RuntimeSensorView
-    ],
+    response_model=list[RuntimeSensorView],
 )
 def get_runtime_sensors(
     agent_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[RuntimeSensorView]:
-    existing = load_agent(
-        session=session,
-        agent_id=agent_id,
-    )
-
-    if existing is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Agent not found.",
-        )
-
+    # Domain evidence is independently owned. Do not disclose the existence
+    # of an unbound PH-3E agent while listing this tenant's sensor records.
     return list_runtime_sensors(
         session=session,
         agent_id=agent_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @admin_router.get(
     "/{agent_id}/runtime-dependencies",
-    response_model=list[
-        RuntimeDependencyView
-    ],
+    response_model=list[RuntimeDependencyView],
 )
 def get_runtime_dependencies(
     agent_id: str,
@@ -543,48 +529,30 @@ def get_runtime_dependencies(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[RuntimeDependencyView]:
-    existing = load_agent(
-        session=session,
-        agent_id=agent_id,
-    )
-
-    if existing is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Agent not found.",
-        )
-
+    # Unknown/foreign agent selectors produce the same empty evidence list.
     return list_runtime_dependencies(
         session=session,
         agent_id=agent_id,
         window_minutes=window_minutes,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
+
 
 @agent_router.post(
     "/change-events",
-    response_model=(
-        AgentChangeEventBatchReceipt
-    ),
-    status_code=(
-        status.HTTP_201_CREATED
-    ),
+    response_model=(AgentChangeEventBatchReceipt),
+    status_code=(status.HTTP_201_CREATED),
 )
 def submit_change_events(
     request: AgentChangeEventBatch,
-
-    agent: TopoAgentRecord = Depends(
-        require_agent
-    ),
-
-    session: Session = Depends(
-        get_session
-    ),
+    agent: TopoAgentRecord = Depends(require_agent),
+    session: Session = Depends(get_session),
 ) -> AgentChangeEventBatchReceipt:
     event_ids: list[str] = []
     topology_affecting_count = 0
@@ -618,29 +586,22 @@ def submit_change_events(
                         }
                     )
 
-            receipt = (
-                ingest_change_event(
-                    session,
-                    request=event,
-
-                    # This is the important
-                    # project-specific part.
-                    agent_id=(
-                        agent.agent_id
-                    ),
-
-                    auto_correlate=True,
-
-                    # Agent identity is authenticated. Source-native time
-                    # is still accepted only when its producer labeled it
-                    # available and supplied an aware value.
-                    source_time_trusted=True,
-                    observed_at=utc_now_iso(),
-
-                    # Commit the complete
-                    # batch atomically.
-                    commit=False,
-                )
+            receipt = ingest_change_event(
+                session,
+                request=event,
+                # This is the important
+                # project-specific part.
+                agent_id=(agent.agent_id),
+                auto_correlate=True,
+                # Agent identity is authenticated. Source-native time
+                # is still accepted only when its producer labeled it
+                # available and supplied an aware value.
+                source_time_trusted=True,
+                observed_at=utc_now_iso(),
+                # Commit the complete
+                # batch atomically.
+                commit=False,
+                tenant_id=UNOWNED_MACHINE,
             )
 
             event_ids.append(
@@ -655,7 +616,7 @@ def submit_change_events(
             ):
                 topology_affecting_count += 1
 
-        session.commit()
+        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
 
     except ValueError as exc:
         session.rollback()
@@ -698,12 +659,8 @@ def submit_change_events(
 )
 def submit_failure_signals(
     request: FailureSignalBatchRequest,
-    agent: TopoAgentRecord = Depends(
-        require_agent
-    ),
-    session: Session = Depends(
-        get_session
-    ),
+    agent: TopoAgentRecord = Depends(require_agent),
+    session: Session = Depends(get_session),
 ) -> FailureSignalBatchResult:
     namespace_scope = set(
         json.loads(agent.namespace_scope_json)
@@ -736,4 +693,5 @@ def submit_failure_signals(
     return ingest_failure_signal_batch(
         session=session,
         signals=request.signals,
+        tenant_id=UNOWNED_MACHINE,
     )

@@ -34,6 +34,7 @@ def test_configuration_does_not_store_token(
                 ),
                 verify_tls=True,
                 timeout=15.0,
+                tenant_id="tenant:11111111-1111-4111-8111-111111111111",
                 max_retries=4,
                 retry_backoff=1.0,
             )
@@ -50,6 +51,7 @@ def test_configuration_does_not_store_token(
     assert "token_env" in raw
 
     loaded = load_config()
+    assert loaded.profiles["test"].tenant_id == "tenant:11111111-1111-4111-8111-111111111111"
 
     assert (
         loaded.active_profile

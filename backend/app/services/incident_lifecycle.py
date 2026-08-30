@@ -1,4 +1,9 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+)
 
 from datetime import timedelta
 from hashlib import sha256
@@ -30,7 +35,6 @@ from app.services.incident_grouping import (
     incident_fingerprint,
     incident_group_label,
 )
-
 
 # def _incident_fingerprint(
 #     signal: NormalizedSignal,
@@ -155,10 +159,10 @@ def upsert_incident_from_orchestration(
     session: Session,
     signal: NormalizedSignal,
     analysis: IncidentAnalysis | None,
-    recommendations: list[
-        RemediationRecommendation
-    ],
+    recommendations: list[RemediationRecommendation],
     correlation_window_minutes: int = 120,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentRecord:
     fingerprint = incident_fingerprint(
         signal
@@ -170,14 +174,10 @@ def upsert_incident_from_orchestration(
         session=session,
         fingerprint=fingerprint,
         observed_after=(
-            signal.first_observed_at
-            - timedelta(
-                minutes=(
-                    correlation_window_minutes
-                )
-            )
+            signal.first_observed_at - timedelta(minutes=(correlation_window_minutes))
         ),
         replay_at=signal.last_observed_at,
+        tenant_id=tenant_id,
     )
 
     top_hypothesis = (
@@ -210,6 +210,7 @@ def upsert_incident_from_orchestration(
             list_incidents_by_fingerprint(
                 session,
                 fingerprint=fingerprint,
+                tenant_id=tenant_id,
             )
         )
         record = IncidentRecord(
@@ -220,51 +221,25 @@ def upsert_incident_from_orchestration(
             ),
             fingerprint=fingerprint,
             status=next_status.value,
-            severity=_severity(
-                signal
-            ).value,
+            severity=_severity(signal).value,
             title=_title(signal),
             summary=_summary(signal),
             cluster_name=signal.cluster_name,
             namespace=signal.namespace,
             primary_signal_id=signal.signal_id,
             latest_signal_id=signal.signal_id,
-            topology_snapshot_id=(
-                signal.topology_snapshot_id
-            ),
-            affected_entity_id=(
-                signal.involved_entity_id
-            ),
-            affected_object_kind=(
-                signal.involved_object_kind
-            ),
-            affected_object_name=(
-                signal.involved_object_name
-            ),
-            first_observed_at=(
-                signal.first_observed_at.isoformat()
-            ),
-            last_observed_at=(
-                signal.last_observed_at.isoformat()
-            ),
-            latest_analysis_id=(
-                analysis.analysis_id
-                if analysis
-                else None
-            ),
-            top_hypothesis_title=(
-                top_hypothesis.title
-                if top_hypothesis
-                else None
-            ),
+            topology_snapshot_id=(signal.topology_snapshot_id),
+            affected_entity_id=(signal.involved_entity_id),
+            affected_object_kind=(signal.involved_object_kind),
+            affected_object_name=(signal.involved_object_name),
+            first_observed_at=(signal.first_observed_at.isoformat()),
+            last_observed_at=(signal.last_observed_at.isoformat()),
+            latest_analysis_id=(analysis.analysis_id if analysis else None),
+            top_hypothesis_title=(top_hypothesis.title if top_hypothesis else None),
             top_hypothesis_score=(
-                str(top_hypothesis.score)
-                if top_hypothesis
-                else None
+                str(top_hypothesis.score) if top_hypothesis else None
             ),
-            recommendation_count=len(
-                recommendations
-            ),
+            recommendation_count=len(recommendations),
             latest_recommendation_id=(
                 latest_recommendation.recommendation_id
                 if latest_recommendation
@@ -272,15 +247,14 @@ def upsert_incident_from_orchestration(
             ),
             recovery_status=None,
             latest_recovery_verification_id=None,
-            occurrence_count=(
-                signal.occurrence_count
-            ),
+            occurrence_count=(signal.occurrence_count),
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
         session.refresh(record)
 
         return record
@@ -394,7 +368,7 @@ def upsert_incident_from_orchestration(
 
     existing.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(existing)
 
     return existing

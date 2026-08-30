@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 import hashlib
 from datetime import datetime, timezone
@@ -39,7 +42,6 @@ from app.services.relationship_provenance import (
 )
 from app.services.temporal_semantics import build_temporal_metadata
 from app.models.temporal import TimeOrigin, TimeQuality
-
 
 SOURCE_COMPONENT = "backend.app.services.github_actions_artifact_lineage"
 LINKER_VERSION = "github-actions-build-artifact-lineage:v1"
@@ -370,6 +372,7 @@ def enrich_snapshot_with_github_actions_provider_evidence(
     repository: dict[str, Any],
     workflow_runs: list[dict[str, Any]],
     observed_at: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> tuple[GraphSnapshot, dict[str, Any], BuildArtifactLineageStats]:
     """Collect, retain, and reconcile explicit provider build evidence."""
 
@@ -429,6 +432,7 @@ def enrich_snapshot_with_github_actions_provider_evidence(
                     session,
                     evidence=item,
                     commit=False,
+                    tenant_id=tenant_id,
                 )
                 persisted += int(created)
     run_ids = {str(run["id"]) for run in workflow_runs if run.get("id") is not None}
@@ -436,6 +440,7 @@ def enrich_snapshot_with_github_actions_provider_evidence(
         session,
         repository_id=str(repository.get("id") or ""),
         run_ids=run_ids,
+        tenant_id=tenant_id,
     )
     result, lineage = reconcile_build_artifact_lineage(
         base,

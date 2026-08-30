@@ -1,8 +1,9 @@
 from __future__ import annotations
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     Request,
@@ -32,7 +33,6 @@ from app.services.action_approval import (
     list_action_approvals,
     revoke_action_approval,
 )
-
 
 router = APIRouter(
     prefix="/api/v1/incidents",
@@ -70,9 +70,9 @@ def create_approval_request(
     incident_id: str,
     request_body: ActionApprovalRequest,
     request: Request,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ActionApprovalDetail:
     principal = approval_control_principal(
         request
@@ -85,6 +85,7 @@ def create_approval_request(
             action_id=request_body.action_id,
             requester=principal,
             reason=request_body.reason,
+            tenant_id=tenant_context.tenant_id,
         )
     except (
         ActionApprovalConflictError,
@@ -92,9 +93,7 @@ def create_approval_request(
         ActionApprovalAuthorizationError,
     ) as exc:
         _raise_controlled_error(exc)
-        raise AssertionError(
-            "unreachable"
-        )
+        raise AssertionError("unreachable")
     except ValueError as exc:
         raise HTTPException(
             status_code=404,
@@ -123,9 +122,9 @@ def list_approval_history(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[ActionApprovalView]:
     authenticated_principal(request)
 
@@ -136,6 +135,7 @@ def list_approval_history(
         action_id=action_id,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -147,9 +147,9 @@ def get_approval_request(
     incident_id: str,
     approval_id: str,
     request: Request,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ActionApprovalDetail:
     authenticated_principal(request)
 
@@ -158,6 +158,7 @@ def get_approval_request(
             session,
             incident_id=incident_id,
             approval_id=approval_id,
+            tenant_id=tenant_context.tenant_id,
         )
     except ActionApprovalNotFoundError as exc:
         _raise_controlled_error(exc)
@@ -173,9 +174,9 @@ def approve_request(
     approval_id: str,
     request_body: ActionApprovalDecisionRequest,
     request: Request,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ActionApprovalDetail:
     principal = approval_control_principal(
         request
@@ -186,11 +187,10 @@ def approve_request(
             session,
             incident_id=incident_id,
             approval_id=approval_id,
-            decision=(
-                ActionApprovalStatus.APPROVED
-            ),
+            decision=(ActionApprovalStatus.APPROVED),
             decider=principal,
             reason=request_body.reason,
+            tenant_id=tenant_context.tenant_id,
         )
     except (
         ActionApprovalConflictError,
@@ -210,9 +210,9 @@ def reject_request(
     approval_id: str,
     request_body: ActionApprovalDecisionRequest,
     request: Request,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ActionApprovalDetail:
     principal = approval_control_principal(
         request
@@ -223,11 +223,10 @@ def reject_request(
             session,
             incident_id=incident_id,
             approval_id=approval_id,
-            decision=(
-                ActionApprovalStatus.REJECTED
-            ),
+            decision=(ActionApprovalStatus.REJECTED),
             decider=principal,
             reason=request_body.reason,
+            tenant_id=tenant_context.tenant_id,
         )
     except (
         ActionApprovalConflictError,
@@ -247,9 +246,9 @@ def revoke_request(
     approval_id: str,
     request_body: ActionApprovalRevocationRequest,
     request: Request,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ActionApprovalDetail:
     principal = approval_control_principal(
         request
@@ -262,6 +261,7 @@ def revoke_request(
             approval_id=approval_id,
             revoker=principal,
             reason=request_body.reason,
+            tenant_id=tenant_context.tenant_id,
         )
     except (
         ActionApprovalConflictError,

@@ -1,3 +1,8 @@
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+)
+
 # import json
 
 # from sqlalchemy.orm import Session
@@ -64,13 +69,14 @@ from app.models.topology import GraphSnapshot
 def load_topology_snapshot(
     session: Session,
     snapshot_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> GraphSnapshot | None:
 
     record = (
         session.query(SnapshotRecord)
-        .filter(
-            SnapshotRecord.snapshot_id == snapshot_id
-        )
+        .filter(tenant_predicate(SnapshotRecord, tenant_id))
+        .filter(SnapshotRecord.snapshot_id == snapshot_id)
         .first()
     )
 

@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    require_record_owner,
+)
 
 import hashlib
 import hmac
@@ -44,7 +48,6 @@ from app.services.action_approval import (
     _sanitize_reason,
     get_action_approval,
 )
-
 
 EXECUTION_CLAIM_TTL_ENV = (
     "TOPO_EXECUTION_CLAIM_TTL_SECONDS"
@@ -268,13 +271,16 @@ def _approval_for_intent(
     *,
     record: ExecutionIntentRecord,
     now: datetime,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalDetail | None:
+    require_record_owner(record, tenant_id=tenant_id)
     try:
         return get_action_approval(
             session,
             incident_id=record.incident_id,
             approval_id=record.approval_id,
             now=now,
+            tenant_id=tenant_id,
         )
     except ActionApprovalNotFoundError:
         return None
@@ -399,11 +405,15 @@ def _terminal_reason(
 def _reload(
     session: Session,
     record: ExecutionIntentRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord:
+    require_record_owner(record, tenant_id=tenant_id)
     refreshed = load_execution_intent_record(
         session,
         incident_id=record.incident_id,
         execution_id=record.execution_id,
+        tenant_id=tenant_id,
     )
 
     if refreshed is None:
@@ -419,7 +429,9 @@ def _refresh_active_intent(
     *,
     record: ExecutionIntentRecord,
     now: datetime,
+    tenant_id: DomainTenant,
 ) -> tuple[ExecutionIntentRecord, bool]:
+    require_record_owner(record, tenant_id=tenant_id)
     status = ExecutionIntentStatus(record.status)
 
     if status not in {
@@ -430,6 +442,7 @@ def _refresh_active_intent(
             session,
             record=record,
             now=now,
+            tenant_id=tenant_id,
         )
         return (
             record,
@@ -444,6 +457,7 @@ def _refresh_active_intent(
         session,
         record=record,
         now=now,
+        tenant_id=tenant_id,
     )
     invalid_reason = _approval_invalid_reason(
         record=record,
@@ -451,35 +465,29 @@ def _refresh_active_intent(
     )
 
     if invalid_reason is not None:
-        if (
-            approval is not None
-            and approval.status
-            == ActionApprovalStatus.EXPIRED
-        ):
-            transitioned = (
-                atomic_expire_execution_intent_record(
-                    session,
-                    record=record,
-                    expected_status=status,
-                    actor=SYSTEM_PRINCIPAL,
-                    reason=invalid_reason,
-                    expired_at=now,
-                )
+        if approval is not None and approval.status == ActionApprovalStatus.EXPIRED:
+            transitioned = atomic_expire_execution_intent_record(
+                session,
+                record=record,
+                expected_status=status,
+                actor=SYSTEM_PRINCIPAL,
+                reason=invalid_reason,
+                expired_at=now,
+                tenant_id=tenant_id,
             )
         else:
-            transitioned = (
-                atomic_invalidate_execution_intent_record(
-                    session,
-                    record=record,
-                    expected_status=status,
-                    actor=SYSTEM_PRINCIPAL,
-                    reason=invalid_reason,
-                    invalidated_at=now,
-                )
+            transitioned = atomic_invalidate_execution_intent_record(
+                session,
+                record=record,
+                expected_status=status,
+                actor=SYSTEM_PRINCIPAL,
+                reason=invalid_reason,
+                invalidated_at=now,
+                tenant_id=tenant_id,
             )
 
         return (
-            transitioned or _reload(session, record),
+            transitioned or _reload(session, record, tenant_id=tenant_id),
             False,
         )
 
@@ -493,16 +501,15 @@ def _refresh_active_intent(
         )
 
         if now >= _utc_now(claim_expires_at):
-            transitioned = (
-                atomic_expire_execution_claim_record(
-                    session,
-                    record=record,
-                    system_actor=SYSTEM_PRINCIPAL,
-                    expired_at=now,
-                )
+            transitioned = atomic_expire_execution_claim_record(
+                session,
+                record=record,
+                system_actor=SYSTEM_PRINCIPAL,
+                expired_at=now,
+                tenant_id=tenant_id,
             )
             return (
-                transitioned or _reload(session, record),
+                transitioned or _reload(session, record, tenant_id=tenant_id),
                 True,
             )
 
@@ -667,7 +674,9 @@ def _detail(
     *,
     record: ExecutionIntentRecord,
     approval_valid: bool,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
+    require_record_owner(record, tenant_id=tenant_id)
     view = _record_to_view(
         record,
         approval_valid=approval_valid,
@@ -677,6 +686,7 @@ def _detail(
         audit_events=list_execution_intent_events(
             session,
             execution_id=record.execution_id,
+            tenant_id=tenant_id,
         ),
     )
 
@@ -688,6 +698,7 @@ def create_execution_intent(
     approval_id: str,
     creator: AuthPrincipal,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
     current_time = _utc_now(now)
 
@@ -697,11 +708,10 @@ def create_execution_intent(
             incident_id=incident_id,
             approval_id=approval_id,
             now=current_time,
+            tenant_id=tenant_id,
         )
     except ActionApprovalNotFoundError as exc:
-        raise ExecutionIntentNotFoundError(
-            "Source approval not found."
-        ) from exc
+        raise ExecutionIntentNotFoundError("Source approval not found.") from exc
 
     if (
         approval.status
@@ -738,12 +748,14 @@ def create_execution_intent(
         idempotency_key=idempotency_key,
         creator=creator,
         created_at=current_time,
+        tenant_id=tenant_id,
     )
 
     return _detail(
         session,
         record=record,
         approval_valid=approval.currently_valid,
+        tenant_id=tenant_id,
     )
 
 
@@ -753,11 +765,13 @@ def get_execution_intent(
     incident_id: str,
     execution_id: str,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
     record = load_execution_intent_record(
         session,
         incident_id=incident_id,
         execution_id=execution_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -765,17 +779,17 @@ def get_execution_intent(
             "Execution intent not found."
         )
 
-    record, approval_valid = (
-        _refresh_active_intent(
-            session,
-            record=record,
-            now=_utc_now(now),
-        )
+    record, approval_valid = _refresh_active_intent(
+        session,
+        record=record,
+        now=_utc_now(now),
+        tenant_id=tenant_id,
     )
     return _detail(
         session,
         record=record,
         approval_valid=approval_valid,
+        tenant_id=tenant_id,
     )
 
 
@@ -789,6 +803,7 @@ def list_execution_intents(
     limit: int = 50,
     offset: int = 0,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> list[ExecutionIntentView]:
     records = list_execution_intent_records(
         session,
@@ -798,17 +813,17 @@ def list_execution_intents(
         action_id=action_id,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_id,
     )
     current_time = _utc_now(now)
     result: list[ExecutionIntentView] = []
 
     for record in records:
-        record, approval_valid = (
-            _refresh_active_intent(
-                session,
-                record=record,
-                now=current_time,
-            )
+        record, approval_valid = _refresh_active_intent(
+            session,
+            record=record,
+            now=current_time,
+            tenant_id=tenant_id,
         )
 
         if (
@@ -835,12 +850,14 @@ def cancel_execution_intent(
     actor: AuthPrincipal,
     reason: str,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
     current_time = _utc_now(now)
     record = load_execution_intent_record(
         session,
         incident_id=incident_id,
         execution_id=execution_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -848,12 +865,11 @@ def cancel_execution_intent(
             "Execution intent not found."
         )
 
-    record, approval_valid = (
-        _refresh_active_intent(
-            session,
-            record=record,
-            now=current_time,
-        )
+    record, approval_valid = _refresh_active_intent(
+        session,
+        record=record,
+        now=current_time,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -879,6 +895,7 @@ def cancel_execution_intent(
         actor=actor,
         reason=sanitized,
         cancelled_at=current_time,
+        tenant_id=tenant_id,
     )
 
     if transitioned is None:
@@ -891,6 +908,7 @@ def cancel_execution_intent(
         session,
         record=transitioned,
         approval_valid=approval_valid,
+        tenant_id=tenant_id,
     )
 
 
@@ -901,6 +919,7 @@ def claim_execution_intent(
     execution_id: str,
     worker: ExecutionWorkerIdentity,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ExecutionClaimReceipt:
     worker_principal = _worker_principal(worker)
     current_time = _utc_now(now)
@@ -908,6 +927,7 @@ def claim_execution_intent(
         session,
         incident_id=incident_id,
         execution_id=execution_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -915,12 +935,11 @@ def claim_execution_intent(
             "Execution intent not found."
         )
 
-    record, approval_valid = (
-        _refresh_active_intent(
-            session,
-            record=record,
-            now=current_time,
-        )
+    record, approval_valid = _refresh_active_intent(
+        session,
+        record=record,
+        now=current_time,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -946,15 +965,14 @@ def claim_execution_intent(
             )
         )
     )
-    transitioned = (
-        atomic_claim_execution_intent_record(
-            session,
-            record=record,
-            worker=worker_principal,
-            claim_token_hash=claim_token_hash,
-            claimed_at=current_time,
-            claim_expires_at=claim_expires_at,
-        )
+    transitioned = atomic_claim_execution_intent_record(
+        session,
+        record=record,
+        worker=worker_principal,
+        claim_token_hash=claim_token_hash,
+        claimed_at=current_time,
+        claim_expires_at=claim_expires_at,
+        tenant_id=tenant_id,
     )
 
     if transitioned is None:
@@ -967,6 +985,7 @@ def claim_execution_intent(
         session,
         record=transitioned,
         approval_valid=True,
+        tenant_id=tenant_id,
     )
     return ExecutionClaimReceipt(
         execution_intent=detail,
@@ -988,6 +1007,7 @@ def release_execution_claim(
     claim_token: str,
     reason: str = "Internal worker released the claim.",
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
     worker_principal = _worker_principal(worker)
     current_time = _utc_now(now)
@@ -995,6 +1015,7 @@ def release_execution_claim(
         session,
         incident_id=incident_id,
         execution_id=execution_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -1002,12 +1023,11 @@ def release_execution_claim(
             "Execution intent not found."
         )
 
-    record, approval_valid = (
-        _refresh_active_intent(
-            session,
-            record=record,
-            now=current_time,
-        )
+    record, approval_valid = _refresh_active_intent(
+        session,
+        record=record,
+        now=current_time,
+        tenant_id=tenant_id,
     )
 
     supplied_hash = hashlib.sha256(
@@ -1043,14 +1063,13 @@ def release_execution_claim(
             "A non-empty release reason is required."
         )
 
-    transitioned = (
-        atomic_release_execution_claim_record(
-            session,
-            record=record,
-            worker=worker_principal,
-            reason=sanitized,
-            released_at=current_time,
-        )
+    transitioned = atomic_release_execution_claim_record(
+        session,
+        record=record,
+        worker=worker_principal,
+        reason=sanitized,
+        released_at=current_time,
+        tenant_id=tenant_id,
     )
 
     if transitioned is None:
@@ -1062,4 +1081,5 @@ def release_execution_claim(
         session,
         record=transitioned,
         approval_valid=True,
+        tenant_id=tenant_id,
     )

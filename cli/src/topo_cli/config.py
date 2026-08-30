@@ -32,6 +32,9 @@ DEFAULT_CAPTURE_PATH = (
 class Profile:
     api_url: str = DEFAULT_API_URL
 
+    # Explicit non-secret preference, never a membership/authorization claim.
+    tenant_id: str | None = None
+
     token_env: str = "TOPO_API_TOKEN"
 
     verify_tls: bool = True
@@ -52,6 +55,7 @@ class Profile:
         value: dict[str, Any],
     ) -> "Profile":
         return cls(
+            tenant_id=value.get("tenant_id") or None,
             api_url=str(
                 value.get(
                     "api_url",
@@ -298,6 +302,7 @@ def resolve_profile(
 
     return name, Profile(
         api_url=profile.api_url,
+        tenant_id=profile.tenant_id,
         token_env=profile.token_env,
         verify_tls=profile.verify_tls,
         timeout=profile.timeout,

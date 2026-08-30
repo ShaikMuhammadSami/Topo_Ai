@@ -1,3 +1,5 @@
+from domain_tenant_fixtures import TEST_CONTEXT, TEST_TENANT, seed_domain_tenant
+from domain_tenant_fixtures import seed_domain_parents
 from datetime import (
     datetime,
     timezone,
@@ -49,7 +51,6 @@ from app.models.topology import (
     EntityType,
     GraphSnapshot,
 )
-
 
 STARTED = datetime(
     2026,
@@ -290,14 +291,10 @@ def _event(
 def _wire(
     monkeypatch,
     *,
-    analysis: (
-        CausalAnalysisResponse | None
-    ) = None,
+    analysis: CausalAnalysisResponse | None = None,
     plan: dict | None = None,
-    events: dict[str, ChangeEventView]
-        | None = None,
-    loaded_snapshots: list[str]
-        | None = None,
+    events: dict[str, ChangeEventView] | None = None,
+    loaded_snapshots: list[str] | None = None,
     incident=None,
 ) -> None:
     selected_analysis = (
@@ -315,18 +312,10 @@ def _wire(
     monkeypatch.setattr(
         service,
         "load_incident_record",
-        lambda *, session, incident_id: (
-            incident or _incident()
-        ),
+        lambda *, session, incident_id, **_tenant_kwargs: (incident or _incident()),
     )
 
-    def context(
-        session,
-        *,
-        incident_id,
-        source,
-        warnings,
-    ):
+    def context(session, *, incident_id, source, warnings, tenant_id=None):
         return selected_analysis, selected_plan
 
     monkeypatch.setattr(
@@ -337,10 +326,8 @@ def _wire(
     monkeypatch.setattr(
         service,
         "load_topology_snapshot",
-        lambda *, session, snapshot_id: (
-            loaded_snapshots.append(
-                snapshot_id
-            )
+        lambda *, session, snapshot_id, **_tenant_kwargs: (
+            loaded_snapshots.append(snapshot_id)
             if loaded_snapshots is not None
             else None
         )
@@ -354,7 +341,7 @@ def _wire(
     monkeypatch.setattr(
         service,
         "_legacy_observation",
-        lambda session, *, incident: (
+        lambda session, *, incident, **_tenant_kwargs: (
             None,
             None,
         ),
@@ -362,9 +349,7 @@ def _wire(
     monkeypatch.setattr(
         service,
         "_change_event_for_action",
-        lambda session, *, event_id: (
-            event_map.get(event_id)
-        ),
+        lambda session, *, event_id, **_tenant_kwargs: (event_map.get(event_id)),
     )
 
 
@@ -406,6 +391,7 @@ def _derive(
         incident_id="incident:1",
         manual=update,
         source={},
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -615,13 +601,7 @@ def test_missing_response_plan_degrades_cleanly(
 ) -> None:
     _wire(monkeypatch)
 
-    def no_plan(
-        session,
-        *,
-        incident_id,
-        source,
-        warnings,
-    ):
+    def no_plan(session, *, incident_id, source, warnings, tenant_id=None):
         warnings.append(
             "No response plan available."
         )
@@ -650,13 +630,7 @@ def test_missing_causal_analysis_keeps_resolution(
 ) -> None:
     _wire(monkeypatch)
 
-    def no_analysis(
-        session,
-        *,
-        incident_id,
-        source,
-        warnings,
-    ):
+    def no_analysis(session, *, incident_id, source, warnings, tenant_id=None):
         warnings.extend(
             [
                 "No causal analysis available.",
@@ -827,31 +801,24 @@ def test_outcome_persistence_is_idempotent(
         "sqlite:///:memory:"
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
+    seed_domain_parents(
+        engine, ("incidents", "incident:1"), ("causal_analyses", "causal-analysis:1")
+    )
     Session = sessionmaker(bind=engine)
 
     with Session() as session:
         update = IncidentOutcomeUpdate(
             resolved_at=RESOLVED,
-            resolution_summary=(
-                "Rollback restored service."
-            ),
+            resolution_summary=("Rollback restored service."),
         )
         first = service.record_incident_outcome(
-            session,
-            incident_id="incident:1",
-            update=update,
+            session, incident_id="incident:1", update=update, tenant_id=TEST_TENANT
         )
         second = service.record_incident_outcome(
-            session,
-            incident_id="incident:1",
-            update=update,
+            session, incident_id="incident:1", update=update, tenant_id=TEST_TENANT
         )
-        count = session.scalar(
-            select(func.count())
-            .select_from(
-                IncidentOutcomeRecord
-            )
-        )
+        count = session.scalar(select(func.count()).select_from(IncidentOutcomeRecord))
 
     assert count == 1
     assert first.model_dump() == second.model_dump()
@@ -863,19 +830,14 @@ def test_missing_incident_returns_controlled_404(
     monkeypatch.setattr(
         outcome_api,
         "get_incident_outcome",
-        lambda session, *, incident_id: (
-            (_ for _ in ()).throw(
-                ValueError(
-                    "Incident not found: missing"
-                )
-            )
+        lambda session, *, incident_id, **_tenant_kwargs: (
+            (_ for _ in ()).throw(ValueError("Incident not found: missing"))
         ),
     )
 
     with pytest.raises(HTTPException) as exc:
         outcome_api.get_outcome(
-            "missing",
-            session=object(),
+            "missing", session=object(), tenant_context=TEST_CONTEXT
         )
 
     assert exc.value.status_code == 404
@@ -891,31 +853,32 @@ def test_existing_13c_14a_14b_api_functions_unchanged(
     monkeypatch.setattr(
         causal_api,
         "latest_causal_analysis",
-        lambda session, *, incident_id:
-            causal,
+        lambda session, *, incident_id, **_tenant_kwargs: causal,
     )
     monkeypatch.setattr(
         context_api,
         "build_incident_operational_context",
-        lambda *, session, incident_id:
-            context,
+        lambda *, session, incident_id, **_tenant_kwargs: context,
     )
     monkeypatch.setattr(
         response_api,
         "build_incident_response_plan",
-        lambda *, session, incident_id:
-            plan,
+        lambda *, session, incident_id, **_tenant_kwargs: plan,
     )
 
-    assert causal_api.latest(
-        "incident:1",
-        session=object(),
-    ) is causal
-    assert context_api.get_incident_operational_context(
-        "incident:1",
-        session=object(),
-    ) is context
-    assert response_api.get_incident_response_plan(
-        "incident:1",
-        session=object(),
-    ) is plan
+    assert (
+        causal_api.latest("incident:1", session=object(), tenant_context=TEST_CONTEXT)
+        is causal
+    )
+    assert (
+        context_api.get_incident_operational_context(
+            "incident:1", session=object(), tenant_context=TEST_CONTEXT
+        )
+        is context
+    )
+    assert (
+        response_api.get_incident_response_plan(
+            "incident:1", session=object(), tenant_context=TEST_CONTEXT
+        )
+        is plan
+    )

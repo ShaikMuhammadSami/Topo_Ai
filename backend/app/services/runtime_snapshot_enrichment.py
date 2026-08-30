@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+)
 
 import hashlib
 from datetime import (
@@ -80,6 +84,7 @@ def enrich_snapshot_with_runtime_dependencies(
     agent: TopoAgentRecord,
     snapshot: GraphSnapshot,
     window_minutes: int = 30,
+    tenant_id: DomainTenant,
 ) -> GraphSnapshot:
     cutoff = (
         datetime.now(timezone.utc)
@@ -90,12 +95,10 @@ def enrich_snapshot_with_runtime_dependencies(
 
     statement = (
         select(RuntimeDependencyRecord)
+        .where(tenant_predicate(RuntimeDependencyRecord, tenant_id))
         .where(
-            RuntimeDependencyRecord.agent_id
-            == agent.agent_id,
-            RuntimeDependencyRecord
-            .last_seen_at
-            >= cutoff,
+            RuntimeDependencyRecord.agent_id == agent.agent_id,
+            RuntimeDependencyRecord.last_seen_at >= cutoff,
         )
     )
 

@@ -1,8 +1,9 @@
 from __future__ import annotations
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 
 from fastapi import (
     APIRouter,
-    Depends,
     Query,
 )
 from sqlalchemy.orm import Session
@@ -21,7 +22,6 @@ from app.repositories.cloud_repository import (
     list_cloud_resources,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/clouds",
     tags=["clouds"],
@@ -30,29 +30,26 @@ router = APIRouter(
 
 @router.get(
     "/accounts",
-    response_model=list[
-        CloudAccountView
-    ],
+    response_model=list[CloudAccountView],
 )
 def get_cloud_accounts(
     provider: str | None = Query(
         default=None,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[CloudAccountView]:
     return list_cloud_accounts(
         session=session,
         provider=provider,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.get(
     "/resources",
-    response_model=list[
-        CloudResourceView
-    ],
+    response_model=list[CloudResourceView],
 )
 def get_cloud_resources(
     provider: str | None = Query(
@@ -64,10 +61,9 @@ def get_cloud_resources(
     region: str | None = Query(
         default=None,
     ),
-    resource_type:
-        str | None = Query(
-            default=None,
-        ),
+    resource_type: str | None = Query(
+        default=None,
+    ),
     tag_key: str | None = Query(
         default=None,
     ),
@@ -83,30 +79,27 @@ def get_cloud_resources(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[CloudResourceView]:
     return list_cloud_resources(
         session=session,
         provider=provider,
         account_id=account_id,
         region=region,
-        resource_type=(
-            resource_type
-        ),
+        resource_type=(resource_type),
         tag_key=tag_key,
         tag_value=tag_value,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.get(
     "/topology",
-    response_model=(
-        CloudTopologyResponse
-    ),
+    response_model=(CloudTopologyResponse),
 )
 def get_cloud_topology(
     provider: str = Query(
@@ -118,13 +111,14 @@ def get_cloud_topology(
     region: str | None = Query(
         default=None,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> CloudTopologyResponse:
     return latest_cloud_topology(
         session=session,
         provider=provider,
         account_id=account_id,
         region=region,
+        tenant_id=tenant_context.tenant_id,
     )

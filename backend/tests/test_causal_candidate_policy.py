@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 import json
@@ -32,7 +33,6 @@ from app.models.changes import ChangeCategory, ChangeType
 from app.repositories.causal_analysis_repository import latest_causal_analysis
 from app.services.blast_impact_policy import BLAST_POLICY_VERSION
 from app.models.confidence_semantics import CONFIDENCE_SEMANTICS_VERSION
-
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[2]
@@ -462,6 +462,7 @@ def test_machine_contract_matches_executable_policy_registry() -> None:
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -483,6 +484,7 @@ def _incident(session: Session, incident_id: str = "incident:cc1") -> None:
             last_observed_at=NOW.isoformat(),
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -522,8 +524,11 @@ def test_causal_analysis_persists_candidate_audit_and_policy(monkeypatch) -> Non
         session,
         incident_id="incident:cc1",
         request=CausalAnalysisRequest(max_hypotheses=1),
+        tenant_id=TEST_TENANT,
     )
-    loaded = latest_causal_analysis(session, incident_id="incident:cc1")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:cc1", tenant_id=TEST_TENANT
+    )
 
     assert loaded is not None
     assert loaded.analysis_id == analysis.analysis_id
@@ -555,6 +560,7 @@ def test_only_derived_candidates_produce_no_hypothesis(monkeypatch) -> None:
         session,
         incident_id="incident:cc1",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     assert analysis.hypothesis_count == 0
     assert analysis.top_hypothesis is None
@@ -581,6 +587,7 @@ def test_only_runtime_symptoms_produce_no_hypothesis(monkeypatch) -> None:
         session,
         incident_id="incident:cc1",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     assert analysis.top_hypothesis is None
 
@@ -598,11 +605,13 @@ def test_analysis_generation_is_idempotent_with_candidate_policy(monkeypatch) ->
         session,
         incident_id="incident:cc1",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     second = causal_service.analyze_causal_rca(
         session,
         incident_id="incident:cc1",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     assert second.model_dump_json() == first.model_dump_json()
     assert session.query(CausalAnalysisRecord).count() == 1
@@ -622,6 +631,7 @@ def test_legacy_analysis_loads_without_v1_claim_or_payload_rewrite(monkeypatch) 
         incident_id="incident:cc1",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     payload = current.model_dump(mode="json")
     payload.pop("candidate_policy_version")
@@ -641,11 +651,14 @@ def test_legacy_analysis_loads_without_v1_claim_or_payload_rewrite(monkeypatch) 
             payload_json=legacy_json,
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
 
-    loaded = latest_causal_analysis(session, incident_id="incident:cc1")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:cc1", tenant_id=TEST_TENANT
+    )
     assert loaded is not None
     assert loaded.candidate_policy_version is None
     assert loaded.candidate_selection_audit == []
@@ -676,6 +689,7 @@ def test_13c_formula_coefficients_and_versions_remain_unchanged(monkeypatch) -> 
         incident_id="incident:cc1",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     expected = 55.2 * 0.40 + math.exp(-2 / 90) * 15 + 1.0 * 10
     assert analysis.top_hypothesis.score == round(expected, 2)

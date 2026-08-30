@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
 )
@@ -14,7 +15,6 @@ from app.services.incident_similarity import (
     build_historical_incident_intelligence,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/incidents",
     tags=["incident-history"],
@@ -23,9 +23,7 @@ router = APIRouter(
 
 @router.get(
     "/{incident_id}/historical-intelligence",
-    response_model=(
-        IncidentHistoricalIntelligence
-    ),
+    response_model=(IncidentHistoricalIntelligence),
 )
 def get_historical_incident_intelligence(
     incident_id: str,
@@ -42,19 +40,18 @@ def get_historical_incident_intelligence(
     include_ai: bool = Query(
         default=False,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentHistoricalIntelligence:
     try:
-        return (
-            build_historical_incident_intelligence(
-                session=session,
-                incident_id=incident_id,
-                limit=limit,
-                min_similarity=min_similarity,
-                include_ai=include_ai,
-            )
+        return build_historical_incident_intelligence(
+            session=session,
+            incident_id=incident_id,
+            limit=limit,
+            min_similarity=min_similarity,
+            include_ai=include_ai,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

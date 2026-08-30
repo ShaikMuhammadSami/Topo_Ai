@@ -1,3 +1,10 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 from datetime import datetime
 from uuid import uuid4
 
@@ -21,10 +28,14 @@ from app.models.identity import (
 def save_identity_resolution(
     session: Session,
     result: IdentityResolutionResult,
+    *,
+    tenant_id: DomainTenant,
 ) -> IdentityResolutionRecord:
-    record = session.get(
+    record = tenant_get(
+        session,
         IdentityResolutionRecord,
         result.snapshot_id,
+        tenant_id=tenant_id,
     )
 
     now = utc_now_iso()
@@ -32,23 +43,14 @@ def save_identity_resolution(
     if record is None:
         record = IdentityResolutionRecord(
             snapshot_id=result.snapshot_id,
-            generated_at=(
-                result.generated_at.isoformat()
-            ),
-            identity_count=len(
-                result.identities
-            ),
-            unresolved_count=len(
-                result.unresolved_entity_ids
-            ),
-            excluded_count=len(
-                result.excluded_entity_ids
-            ),
-            payload_json=(
-                result.model_dump_json()
-            ),
+            generated_at=(result.generated_at.isoformat()),
+            identity_count=len(result.identities),
+            unresolved_count=len(result.unresolved_entity_ids),
+            excluded_count=len(result.excluded_entity_ids),
+            payload_json=(result.model_dump_json()),
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -76,7 +78,7 @@ def save_identity_resolution(
 
         record.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return record
@@ -85,10 +87,14 @@ def save_identity_resolution(
 def load_identity_resolution(
     session: Session,
     snapshot_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> IdentityResolutionResult | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         IdentityResolutionRecord,
         snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -145,18 +151,18 @@ def record_to_override_view(
 def upsert_identity_override(
     session: Session,
     request: IdentityOverrideCreate,
+    *,
+    tenant_id: DomainTenant,
 ) -> IdentityOverrideView:
-    statement = select(
-        IdentityOverrideRecord
-    ).where(
-        IdentityOverrideRecord.cluster_name
-        == request.cluster_name,
-        IdentityOverrideRecord.namespace
-        == request.namespace,
-        IdentityOverrideRecord.entity_kind
-        == request.entity_kind,
-        IdentityOverrideRecord.entity_name
-        == request.entity_name,
+    statement = (
+        select(IdentityOverrideRecord)
+        .where(tenant_predicate(IdentityOverrideRecord, tenant_id))
+        .where(
+            IdentityOverrideRecord.cluster_name == request.cluster_name,
+            IdentityOverrideRecord.namespace == request.namespace,
+            IdentityOverrideRecord.entity_kind == request.entity_kind,
+            IdentityOverrideRecord.entity_name == request.entity_name,
+        )
     )
 
     record = session.scalar(statement)
@@ -172,9 +178,7 @@ def upsert_identity_override(
 
     if record is None:
         record = IdentityOverrideRecord(
-            override_id=(
-                f"override:{uuid4()}"
-            ),
+            override_id=(f"override:{uuid4()}"),
             cluster_name=request.cluster_name,
             namespace=request.namespace,
             entity_kind=request.entity_kind,
@@ -185,6 +189,7 @@ def upsert_identity_override(
             active=True,
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -196,7 +201,7 @@ def upsert_identity_override(
         record.active = True
         record.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return record_to_override_view(record)
@@ -207,9 +212,11 @@ def list_identity_overrides(
     cluster_name: str | None = None,
     namespace: str | None = None,
     active_only: bool = True,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[IdentityOverrideView]:
-    statement = select(
-        IdentityOverrideRecord
+    statement = select(IdentityOverrideRecord).where(
+        tenant_predicate(IdentityOverrideRecord, tenant_id)
     )
 
     if cluster_name:
@@ -249,10 +256,14 @@ def list_identity_overrides(
 def deactivate_identity_override(
     session: Session,
     override_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> bool:
-    record = session.get(
+    record = tenant_get(
+        session,
         IdentityOverrideRecord,
         override_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -261,6 +272,6 @@ def deactivate_identity_override(
     record.active = False
     record.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return True

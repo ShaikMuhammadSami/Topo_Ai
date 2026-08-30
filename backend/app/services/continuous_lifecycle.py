@@ -1,4 +1,10 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_predicate,
+    require_record_owner,
+)
 
 import hashlib
 import os
@@ -68,7 +74,6 @@ from app.services.webhook_delivery import (
     build_webhook_event,
     publish_event_safely,
 )
-
 
 INCIDENT_CORRELATION_WINDOW_MINUTES = max(
     int(
@@ -177,6 +182,8 @@ def _is_safe_incident_snapshot(
 def bind_signal_to_incident_topology(
     session: Session,
     signal: NormalizedSignal,
+    *,
+    tenant_id: DomainTenant,
 ) -> tuple[NormalizedSignal, list[str]]:
     warnings: list[str] = []
     snapshot = None
@@ -185,6 +192,7 @@ def bind_signal_to_incident_topology(
         snapshot = load_snapshot(
             session,
             signal.topology_snapshot_id,
+            tenant_id=tenant_id,
         )
 
         if snapshot is None:
@@ -250,9 +258,8 @@ def bind_signal_to_incident_topology(
             session,
             cluster_name=signal.cluster_name,
             namespace=signal.namespace,
-            observed_at=(
-                signal.first_observed_at.isoformat()
-            ),
+            observed_at=(signal.first_observed_at.isoformat()),
+            tenant_id=tenant_id,
         )
 
         if snapshot is None:
@@ -458,7 +465,10 @@ def failure_signals_from_snapshot(
 def _publish_incident_created(
     session: Session,
     incident: IncidentRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> None:
+    require_record_owner(incident, tenant_id=tenant_id)
     event = build_webhook_event(
         event_type=(
             WebhookEventType.INCIDENT_CREATED
@@ -487,6 +497,7 @@ def _publish_incident_created(
     publish_event_safely(
         session=session,
         event=event,
+        tenant_id=tenant_id,
     )
 
 
@@ -495,7 +506,9 @@ def _attach_causal_analysis(
     *,
     incident: IncidentRecord,
     analysis,
+    tenant_id: DomainTenant,
 ) -> None:
+    require_record_owner(incident, tenant_id=tenant_id)
     top = analysis.top_hypothesis
 
     incident.latest_analysis_id = (
@@ -512,7 +525,7 @@ def _attach_causal_analysis(
     incident.status = (
         IncidentStatus.INVESTIGATING.value
     )
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(incident)
 
 
@@ -523,7 +536,9 @@ def _complete_automatic_analysis(
     signal_id: str,
     created: bool,
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> AutomaticIncidentResult:
+    require_record_owner(incident, tenant_id=tenant_id)
     action = (
         AutomaticIncidentAction.CREATED
         if created
@@ -562,6 +577,7 @@ def _complete_automatic_analysis(
     existing_analysis = latest_causal_analysis(
         session,
         incident_id=incident.incident_id,
+        tenant_id=tenant_id,
     )
 
     if existing_analysis is not None:
@@ -589,11 +605,13 @@ def _complete_automatic_analysis(
             incident_id=incident.incident_id,
             request=CausalAnalysisRequest(),
             persist=True,
+            tenant_id=tenant_id,
         )
         _attach_causal_analysis(
             session,
             incident=incident,
             analysis=analysis,
+            tenant_id=tenant_id,
         )
         analysis_state = (
             AutomaticAnalysisState.COMPLETED
@@ -636,12 +654,8 @@ def _complete_automatic_analysis(
             incident_id=incident.incident_id,
             incident_created=created,
             incident_correlated=not created,
-            topology_snapshot_id=(
-                incident.topology_snapshot_id
-            ),
-            automatic_analysis_state=(
-                AutomaticAnalysisState.FAILED
-            ),
+            topology_snapshot_id=(incident.topology_snapshot_id),
+            automatic_analysis_state=(AutomaticAnalysisState.FAILED),
             warnings=warnings,
         )
 
@@ -651,6 +665,7 @@ def process_failure_signal(
     *,
     signal: NormalizedSignal,
     initial_warnings: list[str] | None = None,
+    tenant_id: DomainTenant,
 ) -> AutomaticIncidentResult:
     warnings = list(initial_warnings or [])
 
@@ -669,22 +684,18 @@ def process_failure_signal(
         fingerprint=fingerprint,
         observed_after=(
             signal.first_observed_at
-            - timedelta(
-                minutes=(
-                    INCIDENT_CORRELATION_WINDOW_MINUTES
-                )
-            )
+            - timedelta(minutes=(INCIDENT_CORRELATION_WINDOW_MINUTES))
         ),
         replay_at=signal.last_observed_at,
+        tenant_id=tenant_id,
     )
     incident = upsert_incident_from_orchestration(
         session=session,
         signal=signal,
         analysis=None,
         recommendations=[],
-        correlation_window_minutes=(
-            INCIDENT_CORRELATION_WINDOW_MINUTES
-        ),
+        correlation_window_minutes=(INCIDENT_CORRELATION_WINDOW_MINUTES),
+        tenant_id=tenant_id,
     )
     created = existing is None
 
@@ -692,6 +703,7 @@ def process_failure_signal(
         _publish_incident_created(
             session,
             incident,
+            tenant_id=tenant_id,
         )
 
     return _complete_automatic_analysis(
@@ -700,6 +712,7 @@ def process_failure_signal(
         signal_id=signal.signal_id,
         created=created,
         warnings=warnings,
+        tenant_id=tenant_id,
     )
 
 
@@ -708,6 +721,7 @@ def reconcile_pending_incidents_for_checkpoint(
     *,
     snapshot_id: str,
     limit: int = 100,
+    tenant_id: DomainTenant,
 ) -> list[AutomaticIncidentResult]:
     """
     Complete only incidents for which this checkpoint is
@@ -715,13 +729,14 @@ def reconcile_pending_incidents_for_checkpoint(
     the newest topology snapshot.
     """
 
-    snapshot = load_snapshot(session, snapshot_id)
+    snapshot = load_snapshot(session, snapshot_id, tenant_id=tenant_id)
 
     if snapshot is None:
         return []
 
     statement = (
         select(IncidentRecord)
+        .where(tenant_predicate(IncidentRecord, tenant_id))
         .where(
             IncidentRecord.status.in_(
                 [
@@ -732,10 +747,8 @@ def reconcile_pending_incidents_for_checkpoint(
                 ]
             ),
             or_(
-                IncidentRecord.topology_snapshot_id
-                .is_(None),
-                IncidentRecord.affected_entity_id
-                .is_(None),
+                IncidentRecord.topology_snapshot_id.is_(None),
+                IncidentRecord.affected_entity_id.is_(None),
             ),
         )
         .order_by(IncidentRecord.created_at.asc())
@@ -771,7 +784,7 @@ def reconcile_pending_incidents_for_checkpoint(
         warnings: list[str] = []
 
         for signal_id in signal_ids:
-            signal = load_signal(session, signal_id)
+            signal = load_signal(session, signal_id, tenant_id=tenant_id)
 
             if signal is None:
                 continue
@@ -781,11 +794,10 @@ def reconcile_pending_incidents_for_checkpoint(
                     "topology_snapshot_id": snapshot_id,
                 }
             )
-            candidate, candidate_warnings = (
-                bind_signal_to_incident_topology(
-                    session,
-                    candidate,
-                )
+            candidate, candidate_warnings = bind_signal_to_incident_topology(
+                session,
+                candidate,
+                tenant_id=tenant_id,
             )
 
             if (
@@ -804,6 +816,7 @@ def reconcile_pending_incidents_for_checkpoint(
         save_signals(
             session=session,
             signals=[bound_signal],
+            tenant_id=tenant_id,
         )
 
         if not incident.topology_snapshot_id:
@@ -817,7 +830,7 @@ def reconcile_pending_incidents_for_checkpoint(
                 bound_signal.involved_entity_id
             )
 
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
         session.refresh(incident)
         results.append(
             _complete_automatic_analysis(
@@ -826,6 +839,7 @@ def reconcile_pending_incidents_for_checkpoint(
                 signal_id=bound_signal.signal_id,
                 created=False,
                 warnings=warnings,
+                tenant_id=tenant_id,
             )
         )
 
@@ -836,13 +850,13 @@ def ingest_failure_signal_batch(
     session: Session,
     *,
     signals: list[NormalizedSignal],
+    tenant_id: DomainTenant,
 ) -> FailureSignalBatchResult:
-    bound: list[
-        tuple[NormalizedSignal, list[str]]
-    ] = [
+    bound: list[tuple[NormalizedSignal, list[str]]] = [
         bind_signal_to_incident_topology(
             session,
             signal,
+            tenant_id=tenant_id,
         )
         for signal in signals
     ]
@@ -852,6 +866,7 @@ def ingest_failure_signal_batch(
         existing = load_signal(
             session,
             signal.signal_id,
+            tenant_id=tenant_id,
         )
 
         if (
@@ -876,6 +891,7 @@ def ingest_failure_signal_batch(
     created_count, updated_count = save_signals(
         session=session,
         signals=normalized,
+        tenant_id=tenant_id,
     )
     results: list[AutomaticIncidentResult] = []
 
@@ -892,6 +908,7 @@ def ingest_failure_signal_batch(
                 # durable signal's original first-seen time.
                 signal=signal,
                 initial_warnings=warnings,
+                tenant_id=tenant_id,
             )
         )
 

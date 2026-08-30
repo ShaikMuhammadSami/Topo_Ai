@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from collections.abc import Iterable
 
@@ -49,7 +52,6 @@ from app.services.llm_client import (
 from app.services.response_intelligence import (
     build_incident_response_intelligence,
 )
-
 
 EXECUTION_READINESS_POLICY_VERSION = (
     "14f-v1"
@@ -877,21 +879,21 @@ def build_incident_execution_readiness(
     history_limit: int = 5,
     min_similarity: float = 0.5,
     include_ai: bool = False,
+    tenant_id: DomainTenant,
 ) -> IncidentExecutionReadiness:
-    intelligence = (
-        build_incident_response_intelligence(
-            session=session,
-            incident_id=incident_id,
-            history_limit=max(
-                1,
-                min(history_limit, 20),
-            ),
-            min_similarity=max(
-                0.0,
-                min(min_similarity, 1.0),
-            ),
-            include_ai=False,
-        )
+    intelligence = build_incident_response_intelligence(
+        session=session,
+        incident_id=incident_id,
+        history_limit=max(
+            1,
+            min(history_limit, 20),
+        ),
+        min_similarity=max(
+            0.0,
+            min(min_similarity, 1.0),
+        ),
+        include_ai=False,
+        tenant_id=tenant_id,
     )
     outcome_warning: list[str] = []
 
@@ -899,6 +901,7 @@ def build_incident_execution_readiness(
         outcome = load_incident_outcome(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     except ValueError:
         outcome = None

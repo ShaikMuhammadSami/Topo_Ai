@@ -1,8 +1,9 @@
 from __future__ import annotations
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     status,
 )
@@ -23,7 +24,6 @@ from app.services.causal_rca import (
     analyze_causal_rca,
 )
 
-
 incident_router = APIRouter(
     prefix="/api/v1/incidents",
     tags=["causal-rca"],
@@ -38,19 +38,15 @@ router = APIRouter(
 
 @incident_router.post(
     "/{incident_id}/causal-rca",
-    response_model=(
-        CausalAnalysisResponse
-    ),
-    status_code=(
-        status.HTTP_201_CREATED
-    ),
+    response_model=(CausalAnalysisResponse),
+    status_code=(status.HTTP_201_CREATED),
 )
 def analyze(
     incident_id: str,
     request: CausalAnalysisRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> CausalAnalysisResponse:
     try:
         return analyze_causal_rca(
@@ -58,6 +54,7 @@ def analyze(
             incident_id=incident_id,
             request=request,
             persist=True,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -69,19 +66,18 @@ def analyze(
 
 @incident_router.get(
     "/{incident_id}/causal-rca/latest",
-    response_model=(
-        CausalAnalysisResponse
-    ),
+    response_model=(CausalAnalysisResponse),
 )
 def latest(
     incident_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> CausalAnalysisResponse:
     result = latest_causal_analysis(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if result is None:
@@ -99,19 +95,18 @@ def latest(
 
 @router.get(
     "/{analysis_id}",
-    response_model=(
-        CausalAnalysisResponse
-    ),
+    response_model=(CausalAnalysisResponse),
 )
 def get_analysis(
     analysis_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> CausalAnalysisResponse:
     result = load_causal_analysis(
         session,
         analysis_id=analysis_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if result is None:

@@ -1,4 +1,10 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 
 import hashlib
 import json
@@ -40,7 +46,6 @@ from app.repositories.build_artifact_evidence_repository import (
 )
 from app.repositories.signal_repository import load_signal
 from app.services.temporal_semantics import change_event_temporal
-
 
 MAX_PROVIDER_PATHS_PER_ARTIFACT = 32
 MAX_SOURCE_EVENTS_PER_REVISION = 8
@@ -126,8 +131,11 @@ def _owner_relationships(
 def _exact_container_from_incident(
     session: Session,
     incident: IncidentRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> str | None:
-    signal = load_signal(session, incident.primary_signal_id)
+    require_record_owner(incident, tenant_id=tenant_id)
+    signal = load_signal(session, incident.primary_signal_id, tenant_id=tenant_id)
     if signal is None:
         return None
     for key in ("container_name", "container"):
@@ -193,14 +201,19 @@ def _runtime_path(
     *,
     incident: IncidentRecord,
     snapshot: GraphSnapshot,
-) -> tuple[
-    Entity,
-    Entity | None,
-    Entity,
-    Entity,
-    str,
-    list[Relationship],
-] | LineageAdmissionReason:
+    tenant_id: DomainTenant,
+) -> (
+    tuple[
+        Entity,
+        Entity | None,
+        Entity,
+        Entity,
+        str,
+        list[Relationship],
+    ]
+    | LineageAdmissionReason
+):
+    require_record_owner(incident, tenant_id=tenant_id)
     entities = {entity.id: entity for entity in snapshot.entities}
     affected_id = str(incident.affected_entity_id or "")
     affected = entities.get(affected_id)
@@ -276,7 +289,9 @@ def _runtime_path(
     if not pod_uses:
         return LineageAdmissionReason.IMMUTABLE_IMAGE_MISSING
 
-    exact_container = _exact_container_from_incident(session, incident)
+    exact_container = _exact_container_from_incident(
+        session, incident, tenant_id=tenant_id
+    )
     container_names = {
         str(item.properties.get("container_name") or "").strip()
         for item in pod_uses
@@ -369,6 +384,7 @@ def _source_event(
     revision: str,
     incident_time: datetime,
     provider_effective_at: datetime,
+    tenant_id: DomainTenant,
 ) -> tuple[
     ChangeEventRecord | None,
     list[dict],
@@ -378,6 +394,7 @@ def _source_event(
     records = list(
         session.scalars(
             select(ChangeEventRecord)
+            .where(tenant_predicate(ChangeEventRecord, tenant_id))
             .where(ChangeEventRecord.commit_sha == revision)
             .order_by(ChangeEventRecord.event_id)
             .limit(MAX_SOURCE_EVENTS_PER_REVISION + 1)
@@ -503,6 +520,7 @@ def evaluate_lineage_candidate_admission(
     *,
     incident: IncidentRecord,
     incident_time: datetime,
+    tenant_id: DomainTenant,
 ) -> LineageAdmissionResult:
     """Admit one old canonical source change only through exact lineage.
 
@@ -510,12 +528,15 @@ def evaluate_lineage_candidate_admission(
     topology pin. The provider half begins with the resulting exact digest and
     performs bounded indexed lookups. This function neither scores nor ranks.
     """
+    require_record_owner(incident, tenant_id=tenant_id)
 
     if not incident.topology_snapshot_id:
         return _incomplete(
             LineageAdmissionReason.INCIDENT_PINNED_TOPOLOGY_MISSING
         )
-    snapshot_record = session.get(SnapshotRecord, incident.topology_snapshot_id)
+    snapshot_record = tenant_get(
+        session, SnapshotRecord, incident.topology_snapshot_id, tenant_id=tenant_id
+    )
     if snapshot_record is None:
         return _incomplete(
             LineageAdmissionReason.INCIDENT_PINNED_TOPOLOGY_MISSING
@@ -527,6 +548,7 @@ def evaluate_lineage_candidate_admission(
         session,
         incident=incident,
         snapshot=snapshot,
+        tenant_id=tenant_id,
     )
     if isinstance(runtime, LineageAdmissionReason):
         return _incomplete(runtime)
@@ -544,6 +566,7 @@ def evaluate_lineage_candidate_admission(
         session,
         image_digest=digest,
         limit=MAX_PROVIDER_PATHS_PER_ARTIFACT + 1,
+        tenant_id=tenant_id,
     )
     if len(provider) > MAX_PROVIDER_PATHS_PER_ARTIFACT:
         return _incomplete(LineageAdmissionReason.LINEAGE_BUDGET_EXCEEDED)
@@ -602,6 +625,7 @@ def evaluate_lineage_candidate_admission(
         provider_effective_at=min(
             item.temporal.effective_at for item in relevant_paths
         ),
+        tenant_id=tenant_id,
     )
     if source_error is not None or source_event is None:
         return _incomplete(

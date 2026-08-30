@@ -1,6 +1,10 @@
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -32,7 +36,6 @@ from app.services.identity_resolver import (
     resolve_kubernetes_identities,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/identities",
     tags=["identities"],
@@ -42,10 +45,13 @@ router = APIRouter(
 def load_snapshot_or_404(
     session: Session,
     snapshot_id: str,
+    *,
+    tenant_id: DomainTenant,
 ):
     snapshot = load_snapshot(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:
@@ -65,12 +71,10 @@ def load_snapshot_or_404(
     response_model=IdentityResolutionResult,
 )
 def resolve_snapshot_identities(
-    snapshot_id: str = Query(
-        description=(
-            "Stored topology snapshot to resolve."
-        )
-    ),
+    snapshot_id: str = Query(description=("Stored topology snapshot to resolve.")),
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IdentityResolutionResult:
     """
     Run automatic identity resolution without
@@ -79,6 +83,7 @@ def resolve_snapshot_identities(
     snapshot = load_snapshot_or_404(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     return resolve_kubernetes_identities(
@@ -92,12 +97,11 @@ def resolve_snapshot_identities(
 )
 def materialize_snapshot_identities(
     snapshot_id: str = Query(
-        description=(
-            "Stored topology snapshot to resolve "
-            "and persist."
-        )
+        description=("Stored topology snapshot to resolve " "and persist.")
     ),
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IdentityResolutionSummary:
     """
     Resolve identities, apply active overrides,
@@ -106,6 +110,7 @@ def materialize_snapshot_identities(
     snapshot = load_snapshot_or_404(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     cluster_name = snapshot.scope.get(
@@ -139,6 +144,7 @@ def materialize_snapshot_identities(
         cluster_name=cluster_name,
         namespace=override_namespace,
         active_only=True,
+        tenant_id=tenant_context.tenant_id,
     )
 
     automatic_result = (
@@ -156,6 +162,7 @@ def materialize_snapshot_identities(
     record = save_identity_resolution(
         session=session,
         result=final_result,
+        tenant_id=tenant_context.tenant_id,
     )
 
     return identity_resolution_summary(
@@ -170,10 +177,13 @@ def materialize_snapshot_identities(
 def get_stored_identity_resolution(
     snapshot_id: str,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IdentityResolutionResult:
     result = load_identity_resolution(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if result is None:
@@ -196,10 +206,13 @@ def get_stored_identity_resolution(
 def create_identity_override(
     request: IdentityOverrideCreate,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IdentityOverrideView:
     return upsert_identity_override(
         session=session,
         request=request,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -212,12 +225,15 @@ def get_identity_overrides(
     namespace: str | None = None,
     active_only: bool = True,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[IdentityOverrideView]:
     return list_identity_overrides(
         session=session,
         cluster_name=cluster_name,
         namespace=namespace,
         active_only=active_only,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -227,10 +243,13 @@ def get_identity_overrides(
 def delete_identity_override(
     override_id: str,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> dict[str, str]:
     removed = deactivate_identity_override(
         session=session,
         override_id=override_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if not removed:

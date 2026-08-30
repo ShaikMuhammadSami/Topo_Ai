@@ -1,8 +1,9 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from collections import Counter
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -55,6 +56,7 @@ from app.services.topology_checkpoint import (
     persist_topology_checkpoint,
 )
 
+
 def _select_representative_signals(
     signals,
 ):
@@ -81,6 +83,8 @@ def _select_representative_signals(
         key=signal_priority_key,
         reverse=True,
     )
+
+
 router = APIRouter(
     prefix="/api/v1/signals",
     tags=["signals"],
@@ -95,6 +99,8 @@ router = APIRouter(
 def ingest_normalized_failure_signals(
     request: FailureSignalBatchRequest,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> FailureSignalBatchResult:
     """
     Deterministic internal signal contract for current
@@ -104,6 +110,7 @@ def ingest_normalized_failure_signals(
     return ingest_failure_signal_batch(
         session=session,
         signals=request.signals,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -121,14 +128,14 @@ def ingest_kubernetes_events(
             "to canonical entity IDs. When omitted, "
             "Topo performs and checkpoints discovery "
             "automatically."
-        )
+        ),
     ),
     auto_orchestrate: bool = Query(
         default=True,
     ),
     auto_orchestrate_grouped: bool = Query(
-       default=True,
-   ),
+        default=True,
+    ),
     orchestration_lookback_minutes: int = Query(
         default=60,
         ge=5,
@@ -164,15 +171,16 @@ def ingest_kubernetes_events(
         ge=1,
         le=50,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> SignalIngestionResult:
     try:
         snapshot = (
             load_snapshot(
                 session=session,
                 snapshot_id=snapshot_id,
+                tenant_id=tenant_context.tenant_id,
             )
             if snapshot_id
             else None
@@ -207,21 +215,18 @@ def ingest_kubernetes_events(
                     kubernetes.collect()
                 )
             )
-            checkpoint = (
-                persist_topology_checkpoint(
-                    session=session,
-                    snapshot=discovered,
-                    reason=(
-                        TopologyCheckpointReason
-                        .PERIODIC_RECONCILE
-                    ),
-                    derive_changes=True,
-                )
+            checkpoint = persist_topology_checkpoint(
+                session=session,
+                snapshot=discovered,
+                reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+                derive_changes=True,
+                tenant_id=tenant_context.tenant_id,
             )
             snapshot_id = checkpoint.snapshot_id
             snapshot = load_snapshot(
                 session=session,
                 snapshot_id=snapshot_id,
+                tenant_id=tenant_context.tenant_id,
             )
 
         if snapshot is None:
@@ -260,7 +265,7 @@ def ingest_kubernetes_events(
                 snapshot=snapshot
             )
         )
-        
+
         signals = [
             signal.model_copy(
                 update={
@@ -276,9 +281,7 @@ def ingest_kubernetes_events(
         raise HTTPException(
             status_code=502,
             detail=(
-                "Kubernetes Events API "
-                f"returned {exc.status}: "
-                f"{exc.reason}"
+                "Kubernetes Events API " f"returned {exc.status}: " f"{exc.reason}"
             ),
         ) from exc
 
@@ -291,11 +294,10 @@ def ingest_kubernetes_events(
     lifecycle_result = None
 
     if auto_orchestrate:
-        lifecycle_result = (
-            ingest_failure_signal_batch(
-                session=session,
-                signals=signals,
-            )
+        lifecycle_result = ingest_failure_signal_batch(
+            session=session,
+            signals=signals,
+            tenant_id=tenant_context.tenant_id,
         )
         created_count = (
             lifecycle_result
@@ -307,11 +309,10 @@ def ingest_kubernetes_events(
         )
 
     else:
-        created_count, updated_count = (
-            save_signals(
-                session=session,
-                signals=signals,
-            )
+        created_count, updated_count = save_signals(
+            session=session,
+            signals=signals,
+            tenant_id=tenant_context.tenant_id,
         )
     qualifying_signals = [
         signal
@@ -422,9 +423,7 @@ def ingest_kubernetes_events(
 
 @router.get(
     "",
-    response_model=list[
-        SignalSummary
-    ],
+    response_model=list[SignalSummary],
 )
 def get_signals(
     cluster_name: str | None = None,
@@ -435,20 +434,17 @@ def get_signals(
         ge=1,
         le=500,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[SignalSummary]:
     return list_signals(
         session=session,
         cluster_name=cluster_name,
         namespace=namespace,
-        severity=(
-            severity.value
-            if severity
-            else None
-        ),
+        severity=(severity.value if severity else None),
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -458,13 +454,14 @@ def get_signals(
 )
 def get_signal(
     signal_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> NormalizedSignal:
     signal = load_signal(
         session=session,
         signal_id=signal_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if signal is None:

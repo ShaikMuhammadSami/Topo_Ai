@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -34,7 +35,6 @@ from app.services.topology_checkpoint import (
     checkpoint_metadata,
     persist_topology_checkpoint,
 )
-
 
 router = APIRouter(
     prefix="/api/v1/snapshots",
@@ -89,11 +89,12 @@ def capture_snapshot(
     namespace: str | None = Query(
         default=None,
         description=(
-            "Optional namespace filter. "
-            "Leave empty for the entire cluster."
+            "Optional namespace filter. " "Leave empty for the entire cluster."
         ),
     ),
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> SnapshotSummary:
     """
     Collect the current Kubernetes topology and persist it.
@@ -112,15 +113,15 @@ def capture_snapshot(
         checkpoint = persist_topology_checkpoint(
             session=session,
             snapshot=snapshot,
-            reason=(
-                TopologyCheckpointReason.MANUAL
-            ),
+            reason=(TopologyCheckpointReason.MANUAL),
             derive_changes=False,
             force=True,
+            tenant_id=tenant_context.tenant_id,
         )
         record = get_snapshot_record(
             session=session,
             snapshot_id=checkpoint.snapshot_id,
+            tenant_id=tenant_context.tenant_id,
         )
 
         if record is None:
@@ -133,10 +134,7 @@ def capture_snapshot(
     except ApiException as exc:
         raise HTTPException(
             status_code=502,
-            detail=(
-                f"Kubernetes API error "
-                f"{exc.status}: {exc.reason}"
-            ),
+            detail=(f"Kubernetes API error " f"{exc.status}: {exc.reason}"),
         ) from exc
 
     except RuntimeError as exc:
@@ -161,11 +159,14 @@ def get_snapshot_list(
         ge=0,
     ),
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[SnapshotSummary]:
     records = list_snapshots(
         session=session,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
     return [
@@ -182,15 +183,19 @@ def get_snapshot_diff(
     from_snapshot_id: str,
     to_snapshot_id: str,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> SnapshotDiffResult:
     before = load_snapshot(
         session=session,
         snapshot_id=from_snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     after = load_snapshot(
         session=session,
         snapshot_id=to_snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if before is None:
@@ -224,10 +229,13 @@ def get_snapshot_diff(
 def get_snapshot(
     snapshot_id: str,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> GraphSnapshot:
     snapshot = load_snapshot(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if snapshot is None:

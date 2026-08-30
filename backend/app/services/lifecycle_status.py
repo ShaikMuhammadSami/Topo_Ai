@@ -1,4 +1,9 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+    tenant_get,
+)
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -8,7 +13,6 @@ from app.db.models import (
     IncidentRecord,
     SignalRecord,
     SnapshotRecord,
-    TopoAgentRecord,
 )
 from app.models.lifecycle_automation import (
     AutomaticAnalysisState,
@@ -35,8 +39,9 @@ def _latest(
     order_by,
     *,
     cluster_name: str | None,
+    tenant_id: DomainTenant,
 ):
-    statement = select(model)
+    statement = select(model).where(tenant_predicate(model, tenant_id))
 
     if cluster_name and hasattr(
         model,
@@ -57,27 +62,26 @@ def build_lifecycle_status(
     session: Session,
     *,
     cluster_name: str | None = None,
+    tenant_id: DomainTenant,
 ) -> LifecycleStatusResponse:
     snapshot_record = _latest(
         session,
         SnapshotRecord,
         SnapshotRecord.collected_at,
         cluster_name=cluster_name,
-    )
-    agent = _latest(
-        session,
-        TopoAgentRecord,
-        TopoAgentRecord.last_snapshot_at,
-        cluster_name=cluster_name,
+        tenant_id=tenant_id,
     )
     change = _latest(
         session,
         ChangeEventRecord,
         ChangeEventRecord.received_at,
         cluster_name=cluster_name,
+        tenant_id=tenant_id,
     )
-    signal_statement = select(SignalRecord).where(
-        SignalRecord.severity != "info"
+    signal_statement = (
+        select(SignalRecord)
+        .where(tenant_predicate(SignalRecord, tenant_id))
+        .where(SignalRecord.severity != "info")
     )
 
     if cluster_name:
@@ -96,6 +100,7 @@ def build_lifecycle_status(
         IncidentRecord,
         IncidentRecord.last_observed_at,
         cluster_name=cluster_name,
+        tenant_id=tenant_id,
     )
     reason = None
 
@@ -127,6 +132,7 @@ def build_lifecycle_status(
         analysis = latest_causal_analysis(
             session,
             incident_id=incident.incident_id,
+            tenant_id=tenant_id,
         )
 
         if analysis is not None:
@@ -159,66 +165,30 @@ def build_lifecycle_status(
     return LifecycleStatusResponse(
         cluster_name=cluster_name,
         last_successful_discovery_at=(
-            agent.last_snapshot_at
-            if agent is not None
-            else (
-                snapshot_record.collected_at
-                if snapshot_record is not None
-                else None
-            )
+            snapshot_record.collected_at if snapshot_record is not None else None
         ),
         last_topology_checkpoint_id=(
-            snapshot_record.snapshot_id
-            if snapshot_record is not None
-            else None
+            snapshot_record.snapshot_id if snapshot_record is not None else None
         ),
         last_topology_checkpoint_at=(
-            snapshot_record.collected_at
-            if snapshot_record is not None
-            else None
+            snapshot_record.collected_at if snapshot_record is not None else None
         ),
         last_topology_checkpoint_reason=reason,
-        latest_change_event_id=(
-            change.event_id
-            if change is not None
-            else None
-        ),
-        latest_change_event_at=(
-            change.received_at
-            if change is not None
-            else None
-        ),
-        latest_failure_signal_id=(
-            signal.signal_id
-            if signal is not None
-            else None
-        ),
+        latest_change_event_id=(change.event_id if change is not None else None),
+        latest_change_event_at=(change.received_at if change is not None else None),
+        latest_failure_signal_id=(signal.signal_id if signal is not None else None),
         latest_failure_signal_at=(
-            signal.last_observed_at
-            if signal is not None
-            else None
+            signal.last_observed_at if signal is not None else None
         ),
-        latest_incident_id=(
-            incident.incident_id
-            if incident is not None
-            else None
-        ),
+        latest_incident_id=(incident.incident_id if incident is not None else None),
         latest_incident_correlation=(
-            (
-                "correlated"
-                if incident.occurrence_count > 1
-                else "created"
-            )
+            ("correlated" if incident.occurrence_count > 1 else "created")
             if incident is not None
             else None
         ),
         automatic_analysis_state=analysis_state,
-        checkpoint_debounce_seconds=(
-            CHECKPOINT_DEBOUNCE_SECONDS
-        ),
-        incident_correlation_window_minutes=(
-            INCIDENT_CORRELATION_WINDOW_MINUTES
-        ),
+        checkpoint_debounce_seconds=(CHECKPOINT_DEBOUNCE_SECONDS),
+        incident_correlation_window_minutes=(INCIDENT_CORRELATION_WINDOW_MINUTES),
     )
 
 
@@ -226,10 +196,13 @@ def build_incident_lifecycle_status(
     session: Session,
     *,
     incident_id: str,
+    tenant_id: DomainTenant,
 ) -> IncidentLifecycleStatusResponse:
-    incident = session.get(
+    incident = tenant_get(
+        session,
         IncidentRecord,
         incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -240,6 +213,7 @@ def build_incident_lifecycle_status(
     analysis = latest_causal_analysis(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if analysis is not None:

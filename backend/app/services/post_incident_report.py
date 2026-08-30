@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 import hashlib
 import json
@@ -43,7 +46,6 @@ from app.services.llm_client import (
     resolve_configured_provider,
 )
 
-
 REPORT_PROMPT_VERSION = (
     "post-incident-report-groq-0.1.0"
 )
@@ -85,6 +87,7 @@ class PostIncidentReportGenerationError(
     Exception
 ):
     pass
+
 
 SENSITIVE_KEY_PARTS = {
     "password",
@@ -197,19 +200,20 @@ def _sanitize_evidence(
         for item in evidence
     ]
 
+
 def _append_investigation_evidence(
     session: Session,
     *,
     incident_id: str,
     evidence: list[GroundingEvidence],
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> None:
-    summaries = (
-        list_incident_investigation_plans(
-            session=session,
-            incident_id=incident_id,
-            limit=1,
-        )
+    summaries = list_incident_investigation_plans(
+        session=session,
+        incident_id=incident_id,
+        limit=1,
+        tenant_id=tenant_id,
     )
 
     if not summaries:
@@ -222,6 +226,7 @@ def _append_investigation_evidence(
     plan = load_investigation_plan(
         session=session,
         plan_id=summaries[0].plan_id,
+        tenant_id=tenant_id,
     )
 
     if plan is None:
@@ -293,6 +298,7 @@ def _append_investigation_evidence(
             },
         )
     )
+
 
 def _select_evidence(
     evidence: list[GroundingEvidence],
@@ -366,6 +372,7 @@ def _report_id(
         "post-incident-report:"
         f"{digest}"
     )
+
 
 def _validate_report(
     generated:
@@ -473,6 +480,7 @@ def _validate_report(
                 normalized_actions
         }
     )
+
 
 def _first_evidence(
     evidence: list[GroundingEvidence],
@@ -1045,6 +1053,7 @@ def _deterministic_report(
         ),
     )
 
+
 def _groq_report(
     *,
     evidence: list[GroundingEvidence],
@@ -1195,6 +1204,7 @@ def _openai_report(
         evidence=evidence,
     )
 
+
 def _resolve_provider(
     requested: ExplanationProvider,
 ) -> ExplanationProvider:
@@ -1209,8 +1219,8 @@ def generate_post_incident_report(
     session: Session,
     *,
     incident_id: str,
-    request:
-        PostIncidentReportGenerateRequest,
+    request: PostIncidentReportGenerateRequest,
+    tenant_id: DomainTenant,
 ) -> PostIncidentReportDetail:
     (
         _,
@@ -1219,6 +1229,7 @@ def generate_post_incident_report(
     ) = build_incident_evidence(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     _append_investigation_evidence(
@@ -1226,6 +1237,7 @@ def generate_post_incident_report(
         incident_id=incident_id,
         evidence=raw_evidence,
         warnings=warnings,
+        tenant_id=tenant_id,
     )
 
     sanitized = _sanitize_evidence(
@@ -1270,11 +1282,10 @@ def generate_post_incident_report(
         else None
     )
 
-    latest = (
-        load_latest_post_incident_report(
-            session=session,
-            incident_id=incident_id,
-        )
+    latest = load_latest_post_incident_report(
+        session=session,
+        incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -1408,14 +1419,14 @@ def generate_post_incident_report(
         version=version,
         provider=provider,
         model_name=model_name,
-        prompt_version=(
-            REPORT_PROMPT_VERSION
-        ),
+        prompt_version=(REPORT_PROMPT_VERSION),
         grounding_hash=grounding_hash,
         generated=generated,
         evidence=evidence,
         warnings=warnings,
+        tenant_id=tenant_id,
     )
+
 
 def render_post_incident_report_markdown(
     report: PostIncidentReportDetail,

@@ -189,7 +189,7 @@ def test_disposable_product_schema_preparation_preserves_frozen_seed(
     try:
         assert connection.execute(
             "SELECT version_num FROM alembic_version"
-        ).fetchone() == ("0005_domain_tenant_ownership",)
+        ).fetchone() == ("0006_domain_tenant_enforcement",)
         assert connection.execute(
             "SELECT tenant_id FROM tenants"
         ).fetchall() == [(DISPOSABLE_EVALUATION_TENANT_ID,)]

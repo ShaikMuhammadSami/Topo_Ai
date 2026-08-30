@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 import json
@@ -71,7 +72,6 @@ from app.services.relationship_provenance import (
 )
 from app.services.topology_checkpoint import topology_state_digest
 
-
 UTC = timezone.utc
 CHANGE_AT = datetime(2026, 8, 21, 10, 1, tzinfo=UTC)
 SNAPSHOT_AT = datetime(2026, 8, 21, 10, 2, tzinfo=UTC)
@@ -87,6 +87,7 @@ POD_ID = "entity:pod:payments"
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -324,6 +325,7 @@ def _incident(
         last_observed_at=INCIDENT_AT.isoformat(),
         created_at=(INCIDENT_AT + timedelta(minutes=1)).isoformat(),
         updated_at=(INCIDENT_AT + timedelta(minutes=1)).isoformat(),
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -378,6 +380,7 @@ def _persist_event(
         correlation_snapshot_id=SNAPSHOT_ID,
         source_time_trusted=source_time_trusted,
         observed_at=observed_at.isoformat(),
+        tenant_id=TEST_TENANT,
     )
     return receipt.event_id
 
@@ -401,9 +404,9 @@ def _analysis_fixture(
         ambiguous_identity=ambiguous_identity,
         reverse_source_reference_order=reverse_source_reference_order,
     )
-    save_snapshot(session, snapshot)
+    save_snapshot(session, snapshot, tenant_id=TEST_TENANT)
     if include_signal:
-        save_signals(session, [_signal()])
+        save_signals(session, [_signal()], tenant_id=TEST_TENANT)
     incident = _incident(primary_signal_id=primary_signal_id)
     session.add(incident)
     session.commit()
@@ -418,6 +421,7 @@ def _analysis_fixture(
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=persist,
+        tenant_id=TEST_TENANT,
     )
     assert analysis.top_hypothesis is not None
     assert analysis.top_hypothesis.evidence_ledger is not None
@@ -648,6 +652,7 @@ def test_alternative_hypotheses_keep_separate_ledgers() -> None:
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     assert len(analysis.hypotheses) >= 2
     for hypothesis in analysis.hypotheses:
@@ -668,8 +673,8 @@ def test_evidence_ids_and_order_are_deterministic_across_record_times() -> None:
     _, _, first = _analysis_fixture()
     first_ledger = first.top_hypothesis.evidence_ledger
     session = _session()
-    save_snapshot(session, _snapshot())
-    save_signals(session, [_signal()])
+    save_snapshot(session, _snapshot(), tenant_id=TEST_TENANT)
+    save_signals(session, [_signal()], tenant_id=TEST_TENANT)
     session.add(_incident())
     session.commit()
     _persist_event(
@@ -682,6 +687,7 @@ def test_evidence_ids_and_order_are_deterministic_across_record_times() -> None:
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     second_ledger = second.top_hypothesis.evidence_ledger
     first_ids = [
@@ -739,8 +745,12 @@ def test_legacy_analysis_without_ledger_loads_without_fabricated_evidence() -> N
 
 def test_new_ledger_persists_and_reloads_exactly() -> None:
     session, _, analysis = _analysis_fixture(persist=True)
-    reloaded = load_causal_analysis(session, analysis_id=analysis.analysis_id)
-    latest = latest_causal_analysis(session, incident_id=INCIDENT_ID)
+    reloaded = load_causal_analysis(
+        session, analysis_id=analysis.analysis_id, tenant_id=TEST_TENANT
+    )
+    latest = latest_causal_analysis(
+        session, incident_id=INCIDENT_ID, tenant_id=TEST_TENANT
+    )
     assert reloaded is not None
     assert latest is not None
     assert reloaded.model_dump_json() == analysis.model_dump_json()
@@ -754,7 +764,9 @@ def test_ar2_support_gate_persists_and_reloads_exactly() -> None:
         event=_event(kind=ChangeEventKind.CONFIGURATION),
         persist=True,
     )
-    reloaded = load_causal_analysis(session, analysis_id=analysis.analysis_id)
+    reloaded = load_causal_analysis(
+        session, analysis_id=analysis.analysis_id, tenant_id=TEST_TENANT
+    )
     assert reloaded is not None
     assert analysis.support_policy_version == CAUSAL_SUPPORT_GATE_POLICY_VERSION
     assert analysis.top_hypothesis.support_gate is not None
@@ -793,13 +805,13 @@ def test_legacy_persisted_support_result_is_not_reclassified_on_readback() -> No
             payload_json=json.dumps(payload),
             created_at=RECEIVED_AT.isoformat(),
             updated_at=RECEIVED_AT.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
 
     loaded = load_causal_analysis(
-        session,
-        analysis_id="causal-analysis:legacy-pre-ar2",
+        session, analysis_id="causal-analysis:legacy-pre-ar2", tenant_id=TEST_TENANT
     )
     assert loaded is not None
     assert loaded.support_policy_version is None
@@ -816,12 +828,13 @@ def test_same_generation_is_immutable_and_newer_topology_is_not_consulted() -> N
     newer = newer.model_copy(
         update={"collected_at": INCIDENT_AT + timedelta(hours=1)}
     )
-    save_snapshot(session, newer)
+    save_snapshot(session, newer, tenant_id=TEST_TENANT)
     rerun = analyze_causal_rca(
         session,
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=True,
+        tenant_id=TEST_TENANT,
     )
     assert rerun.analysis_id == analysis.analysis_id
     assert rerun.model_dump_json() == original
@@ -853,12 +866,12 @@ def test_late_evidence_creates_new_generation_without_mutating_generation_one() 
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=True,
+        tenant_id=TEST_TENANT,
     )
     assert generation_two.analysis_id != generation_one.analysis_id
     assert session.query(CausalAnalysisRecord).count() == 2
     reloaded_one = load_causal_analysis(
-        session,
-        analysis_id=generation_one.analysis_id,
+        session, analysis_id=generation_one.analysis_id, tenant_id=TEST_TENANT
     )
     assert reloaded_one.model_dump_json() == generation_one_json
     generation_two_event_ids = {
@@ -873,9 +886,7 @@ def test_late_evidence_creates_new_generation_without_mutating_generation_one() 
 def test_briefing_reuses_the_canonical_hypothesis_ledger() -> None:
     session, _, analysis = _analysis_fixture(persist=True)
     briefing = build_incident_briefing(
-        session,
-        incident_id=INCIDENT_ID,
-        include_ai=False,
+        session, incident_id=INCIDENT_ID, include_ai=False, tenant_id=TEST_TENANT
     )
     assert briefing.causal_evidence_ledger is not None
     assert briefing.causal_evidence_ledger.model_dump_json() == (
@@ -937,6 +948,7 @@ def test_tc4_does_not_change_snapshot_digest_or_change_fingerprint() -> None:
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     assert event_record.event_fingerprint == fingerprint
 
@@ -959,6 +971,7 @@ def test_recent_but_unlinked_change_gets_no_invented_linkage_support() -> None:
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     hypothesis = next(
         item for item in analysis.hypotheses
@@ -1010,6 +1023,7 @@ def test_machine_contract_matches_every_active_emitted_claim_type() -> None:
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     emitted = {
         item.claim_type.value
@@ -1186,6 +1200,7 @@ def test_repeated_generation_serializes_the_same_ledger() -> None:
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     assert repeated.top_hypothesis.evidence_ledger.model_dump_json() == (
         analysis.top_hypothesis.evidence_ledger.model_dump_json()
@@ -1383,8 +1398,8 @@ def test_ledger_builder_reuses_path_without_graph_queue_or_search() -> None:
 
 def test_resolved_identity_link_conflict_is_exact_contradiction() -> None:
     session = _session()
-    save_snapshot(session, _snapshot())
-    save_signals(session, [_signal()])
+    save_snapshot(session, _snapshot(), tenant_id=TEST_TENANT)
+    save_signals(session, [_signal()], tenant_id=TEST_TENANT)
     session.add(_incident())
     session.commit()
     event_id = _persist_event(session, _event())
@@ -1398,6 +1413,7 @@ def test_resolved_identity_link_conflict_is_exact_contradiction() -> None:
             confidence=1.0,
             reason="Fixture durable link points to the affected Pod.",
             snapshot_id=SNAPSHOT_ID,
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -1406,6 +1422,7 @@ def test_resolved_identity_link_conflict_is_exact_contradiction() -> None:
         incident_id=INCIDENT_ID,
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     ledger, _ = _ledger_items(analysis)
     identity = next(

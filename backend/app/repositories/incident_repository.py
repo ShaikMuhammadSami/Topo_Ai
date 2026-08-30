@@ -1,3 +1,10 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 from datetime import datetime
 
 from sqlalchemy import select
@@ -16,10 +23,14 @@ from app.models.incidents import (
 def save_incident_analysis(
     session: Session,
     analysis: IncidentAnalysis,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentAnalysisRecord:
-    record = session.get(
+    record = tenant_get(
+        session,
         IncidentAnalysisRecord,
         analysis.analysis_id,
+        tenant_id=tenant_id,
     )
 
     now = utc_now_iso()
@@ -32,53 +43,24 @@ def save_incident_analysis(
 
     if record is None:
         record = IncidentAnalysisRecord(
-            analysis_id=(
-                analysis.analysis_id
-            ),
+            analysis_id=(analysis.analysis_id),
             signal_id=analysis.signal_id,
-            topology_snapshot_id=(
-                analysis
-                .topology_snapshot_id
-            ),
-            algorithm_version=(
-                analysis
-                .algorithm_version
-            ),
-            generated_at=(
-                analysis
-                .generated_at
-                .isoformat()
-            ),
-            incident_title=(
-                analysis.incident_title
-            ),
-            cluster_name=(
-                analysis.cluster_name
-            ),
-            namespace=(
-                analysis.namespace
-            ),
-            candidate_count=(
-                analysis.candidate_count
-            ),
-            hypothesis_count=len(
-                analysis.hypotheses
-            ),
-            top_hypothesis_title=(
-                top_hypothesis.title
-                if top_hypothesis
-                else None
-            ),
+            topology_snapshot_id=(analysis.topology_snapshot_id),
+            algorithm_version=(analysis.algorithm_version),
+            generated_at=(analysis.generated_at.isoformat()),
+            incident_title=(analysis.incident_title),
+            cluster_name=(analysis.cluster_name),
+            namespace=(analysis.namespace),
+            candidate_count=(analysis.candidate_count),
+            hypothesis_count=len(analysis.hypotheses),
+            top_hypothesis_title=(top_hypothesis.title if top_hypothesis else None),
             top_hypothesis_score=(
-                str(top_hypothesis.score)
-                if top_hypothesis
-                else None
+                str(top_hypothesis.score) if top_hypothesis else None
             ),
-            payload_json=(
-                analysis.model_dump_json()
-            ),
+            payload_json=(analysis.model_dump_json()),
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -120,7 +102,7 @@ def save_incident_analysis(
 
         record.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return record
@@ -129,10 +111,14 @@ def save_incident_analysis(
 def load_incident_analysis(
     session: Session,
     analysis_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentAnalysis | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         IncidentAnalysisRecord,
         analysis_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -151,9 +137,11 @@ def list_incident_analyses(
     signal_id: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[IncidentAnalysisSummary]:
-    statement = select(
-        IncidentAnalysisRecord
+    statement = select(IncidentAnalysisRecord).where(
+        tenant_predicate(IncidentAnalysisRecord, tenant_id)
     )
 
     if signal_id:

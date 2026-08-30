@@ -1,3 +1,10 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 from datetime import datetime
 
 from sqlalchemy import select
@@ -90,12 +97,13 @@ def _to_summary(
 def get_incident_by_fingerprint(
     session: Session,
     fingerprint: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentRecord | None:
-    statement = select(
-        IncidentRecord
-    ).where(
-        IncidentRecord.fingerprint
-        == fingerprint
+    statement = (
+        select(IncidentRecord)
+        .where(tenant_predicate(IncidentRecord, tenant_id))
+        .where(IncidentRecord.fingerprint == fingerprint)
     )
 
     return session.scalars(
@@ -109,6 +117,7 @@ def find_correlatable_incident(
     fingerprint: str,
     observed_after: datetime,
     replay_at: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> IncidentRecord | None:
     """
     Return only an active, recent incident family.
@@ -119,9 +128,9 @@ def find_correlatable_incident(
 
     statement = (
         select(IncidentRecord)
+        .where(tenant_predicate(IncidentRecord, tenant_id))
         .where(
-            IncidentRecord.fingerprint
-            == fingerprint,
+            IncidentRecord.fingerprint == fingerprint,
             IncidentRecord.status.in_(
                 [
                     IncidentStatus.OPEN.value,
@@ -130,12 +139,9 @@ def find_correlatable_incident(
                     IncidentStatus.REMEDIATING.value,
                 ]
             ),
-            IncidentRecord.last_observed_at
-            >= observed_after.isoformat(),
+            IncidentRecord.last_observed_at >= observed_after.isoformat(),
         )
-        .order_by(
-            IncidentRecord.last_observed_at.desc()
-        )
+        .order_by(IncidentRecord.last_observed_at.desc())
         .limit(1)
     )
 
@@ -151,15 +157,12 @@ def find_correlatable_incident(
     # still allowed to create a new incident.
     replay_statement = (
         select(IncidentRecord)
+        .where(tenant_predicate(IncidentRecord, tenant_id))
         .where(
-            IncidentRecord.fingerprint
-            == fingerprint,
-            IncidentRecord.last_observed_at
-            >= replay_at.isoformat(),
+            IncidentRecord.fingerprint == fingerprint,
+            IncidentRecord.last_observed_at >= replay_at.isoformat(),
         )
-        .order_by(
-            IncidentRecord.last_observed_at.desc()
-        )
+        .order_by(IncidentRecord.last_observed_at.desc())
         .limit(1)
     )
 
@@ -170,16 +173,13 @@ def list_incidents_by_fingerprint(
     session: Session,
     *,
     fingerprint: str,
+    tenant_id: DomainTenant,
 ) -> list[IncidentRecord]:
     statement = (
         select(IncidentRecord)
-        .where(
-            IncidentRecord.fingerprint
-            == fingerprint
-        )
-        .order_by(
-            IncidentRecord.created_at.desc()
-        )
+        .where(tenant_predicate(IncidentRecord, tenant_id))
+        .where(IncidentRecord.fingerprint == fingerprint)
+        .order_by(IncidentRecord.created_at.desc())
     )
 
     return list(
@@ -190,10 +190,14 @@ def list_incidents_by_fingerprint(
 def load_incident_record(
     session: Session,
     incident_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentRecordView | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         IncidentRecord,
         incident_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -209,9 +213,11 @@ def list_incident_records(
     namespace: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[IncidentRecordSummary]:
-    statement = select(
-        IncidentRecord
+    statement = select(IncidentRecord).where(
+        tenant_predicate(IncidentRecord, tenant_id)
     )
 
     if status:
@@ -251,9 +257,12 @@ def list_incident_records(
 def save_incident_record(
     session: Session,
     record: IncidentRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentRecord:
+    require_record_owner(record, tenant_id=tenant_id)
     session.add(record)
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return record
@@ -264,10 +273,14 @@ def update_incident_status(
     incident_id: str,
     status: IncidentStatus,
     note: str | None,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentRecordView | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         IncidentRecord,
         incident_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -277,7 +290,7 @@ def update_incident_status(
     record.status_note = note
     record.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return _to_view(record)

@@ -1,8 +1,9 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from datetime import timedelta
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -31,7 +32,6 @@ from app.repositories.snapshot_repository import (
 from app.services.incident_analysis import (
     analyze_incident,
 )
-
 
 router = APIRouter(
     prefix="/api/v1/incidents",
@@ -66,13 +66,14 @@ def analyze_signal_incident(
         ge=1,
         le=50,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentAnalysis:
     signal = load_signal(
         session=session,
         signal_id=signal_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if signal is None:
@@ -95,9 +96,8 @@ def analyze_signal_incident(
 
     snapshot = load_snapshot(
         session=session,
-        snapshot_id=(
-            signal.topology_snapshot_id
-        ),
+        snapshot_id=(signal.topology_snapshot_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if snapshot is None:
@@ -126,13 +126,12 @@ def analyze_signal_incident(
 
     candidates = find_changes_in_window(
         session=session,
-        cluster_name=(
-            signal.cluster_name
-        ),
+        cluster_name=(signal.cluster_name),
         namespace=signal.namespace,
         start_at=start_at,
         end_at=end_at,
         limit=500,
+        tenant_id=tenant_context.tenant_id,
     )
 
     analysis = analyze_incident(
@@ -154,6 +153,7 @@ def analyze_signal_incident(
     save_incident_analysis(
         session=session,
         analysis=analysis,
+        tenant_id=tenant_context.tenant_id,
     )
 
     return analysis
@@ -161,9 +161,7 @@ def analyze_signal_incident(
 
 @router.get(
     "",
-    response_model=list[
-        IncidentAnalysisSummary
-    ],
+    response_model=list[IncidentAnalysisSummary],
 )
 def get_incident_analyses(
     signal_id: str | None = None,
@@ -172,16 +170,15 @@ def get_incident_analyses(
         ge=1,
         le=500,
     ),
-    session: Session = Depends(
-        get_session
-    ),
-) -> list[
-    IncidentAnalysisSummary
-]:
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> list[IncidentAnalysisSummary]:
     return list_incident_analyses(
         session=session,
         signal_id=signal_id,
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -191,13 +188,14 @@ def get_incident_analyses(
 )
 def get_incident_analysis(
     analysis_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentAnalysis:
     analysis = load_incident_analysis(
         session=session,
         analysis_id=analysis_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if analysis is None:

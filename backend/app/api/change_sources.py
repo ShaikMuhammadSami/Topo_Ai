@@ -1,10 +1,11 @@
 from __future__ import annotations
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 
 import os
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -35,7 +36,6 @@ from app.repositories.change_source_repository import (
 from app.services.change_source_ingest import (
     replay_dead_letter,
 )
-
 
 router = APIRouter(
     prefix="/api/v1/change-sources",
@@ -87,15 +87,11 @@ def list_all(
 
 @router.get(
     "/deliveries",
-    response_model=list[
-        ChangeSourceDeliveryView
-    ],
+    response_model=list[ChangeSourceDeliveryView],
 )
 def deliveries(
     source_id: str | None = None,
-    delivery_status: (
-        str | None
-    ) = Query(
+    delivery_status: str | None = Query(
         default=None,
         alias="status",
     ),
@@ -104,31 +100,26 @@ def deliveries(
         ge=1,
         le=1000,
     ),
-    session: Session = Depends(
-        get_session
-    ),
-) -> list[
-    ChangeSourceDeliveryView
-]:
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> list[ChangeSourceDeliveryView]:
     return list_deliveries(
         session,
         source_id=source_id,
         status=delivery_status,
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.get(
     "/dead-letters",
-    response_model=list[
-        ChangeSourceDeadLetterView
-    ],
+    response_model=list[ChangeSourceDeadLetterView],
 )
 def dead_letters(
     source_id: str | None = None,
-    dead_letter_status: (
-        str | None
-    ) = Query(
+    dead_letter_status: str | None = Query(
         default=None,
         alias="status",
     ),
@@ -137,38 +128,34 @@ def dead_letters(
         ge=1,
         le=1000,
     ),
-    session: Session = Depends(
-        get_session
-    ),
-) -> list[
-    ChangeSourceDeadLetterView
-]:
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> list[ChangeSourceDeadLetterView]:
     return list_dead_letters(
         session,
         source_id=source_id,
         status=dead_letter_status,
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.post(
     "/dead-letters/{dead_letter_id}/replay",
-    response_model=(
-        ChangeSourceReplayResponse
-    ),
+    response_model=(ChangeSourceReplayResponse),
 )
 def replay(
     dead_letter_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeSourceReplayResponse:
     try:
         return replay_dead_letter(
             session,
-            dead_letter_id=(
-                dead_letter_id
-            ),
+            dead_letter_id=(dead_letter_id),
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

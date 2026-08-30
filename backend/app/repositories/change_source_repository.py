@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+)
 
 import hashlib
 import json
@@ -22,7 +26,6 @@ from app.models.change_sources import (
     ChangeSourceUpdate,
     ChangeSourceView,
 )
-
 
 SECRET_REF_PATTERN = re.compile(
     r"^[A-Z][A-Z0-9_]{2,254}$"
@@ -340,9 +343,10 @@ def list_deliveries(
     source_id: str | None = None,
     status: str | None = None,
     limit: int = 200,
+    tenant_id: DomainTenant,
 ) -> list[ChangeSourceDeliveryView]:
-    statement = select(
-        ChangeSourceDeliveryRecord
+    statement = select(ChangeSourceDeliveryRecord).where(
+        tenant_predicate(ChangeSourceDeliveryRecord, tenant_id)
     )
 
     if source_id:
@@ -384,11 +388,10 @@ def list_dead_letters(
     source_id: str | None = None,
     status: str | None = None,
     limit: int = 200,
-) -> list[
-    ChangeSourceDeadLetterView
-]:
-    statement = select(
-        ChangeSourceDeadLetterRecord
+    tenant_id: DomainTenant,
+) -> list[ChangeSourceDeadLetterView]:
+    statement = select(ChangeSourceDeadLetterRecord).where(
+        tenant_predicate(ChangeSourceDeadLetterRecord, tenant_id)
     )
 
     if source_id:

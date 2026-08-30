@@ -1,4 +1,7 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT, seed_domain_tenant
+from domain_tenant_fixtures import seed_domain_parents
+from test_tenant_foundation import tenant_app
 
 from datetime import (
     UTC,
@@ -59,7 +62,6 @@ from app.security.approval_authorization import (
     approval_control_principal,
 )
 
-
 NOW = datetime(
     2026,
     8,
@@ -76,6 +78,8 @@ def session():
         "sqlite:///:memory:"
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
+    seed_domain_parents(engine, ("incidents", "incident:1"))
     Session = sessionmaker(
         bind=engine,
         expire_on_commit=False,
@@ -275,6 +279,7 @@ def _create(
         requester=requester,
         reason=reason,
         now=NOW,
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -310,11 +315,9 @@ def test_create_request_derives_safety_fields_from_14f(
 @pytest.mark.parametrize(
     "status",
     [
-        ExecutionReadinessStatus
-        .NEEDS_VALIDATION,
+        ExecutionReadinessStatus.NEEDS_VALIDATION,
         ExecutionReadinessStatus.BLOCKED,
-        ExecutionReadinessStatus
-        .NEEDS_MORE_EVIDENCE,
+        ExecutionReadinessStatus.NEEDS_MORE_EVIDENCE,
     ],
 )
 def test_non_ready_action_cannot_create_request(
@@ -329,15 +332,14 @@ def test_non_ready_action_cannot_create_request(
     }
     _wire(monkeypatch, holder)
 
-    with pytest.raises(
-        service.ActionApprovalConflictError
-    ):
+    with pytest.raises(service.ActionApprovalConflictError):
         service.create_action_approval(
             session,
             incident_id="incident:1",
             action_id="action:rollback",
             requester=REQUESTER,
             now=NOW,
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -357,15 +359,14 @@ def test_read_only_action_does_not_create_approval_noise(
     }
     _wire(monkeypatch, holder)
 
-    with pytest.raises(
-        service.ActionApprovalConflictError
-    ):
+    with pytest.raises(service.ActionApprovalConflictError):
         service.create_action_approval(
             session,
             incident_id="incident:1",
             action_id="action:rollback",
             requester=REQUESTER,
             now=NOW,
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -450,6 +451,7 @@ def test_authorized_distinct_principal_can_approve(
         decider=APPROVER,
         reason="Validated with the service owner.",
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert approved.status == (
@@ -468,18 +470,15 @@ def test_high_risk_self_approval_is_denied(
         monkeypatch,
     )
 
-    with pytest.raises(
-        service.ActionApprovalAuthorizationError
-    ):
+    with pytest.raises(service.ActionApprovalAuthorizationError):
         service.decide_action_approval(
             session,
             incident_id="incident:1",
             approval_id=pending.approval_id,
-            decision=(
-                ActionApprovalStatus.APPROVED
-            ),
+            decision=(ActionApprovalStatus.APPROVED),
             decider=REQUESTER,
             now=NOW + timedelta(minutes=1),
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -497,24 +496,22 @@ def test_evidence_change_before_approval_invalidates(
         evidence_ids=["evidence:new"]
     )
 
-    with pytest.raises(
-        service.ActionApprovalConflictError
-    ):
+    with pytest.raises(service.ActionApprovalConflictError):
         service.decide_action_approval(
             session,
             incident_id="incident:1",
             approval_id=pending.approval_id,
-            decision=(
-                ActionApprovalStatus.APPROVED
-            ),
+            decision=(ActionApprovalStatus.APPROVED),
             decider=APPROVER,
             now=NOW + timedelta(minutes=1),
+            tenant_id=TEST_TENANT,
         )
 
     record = load_action_approval_record(
         session,
         incident_id="incident:1",
         approval_id=pending.approval_id,
+        tenant_id=TEST_TENANT,
     )
     assert record is not None
     assert record.status == (
@@ -537,24 +534,22 @@ def test_target_change_before_approval_invalidates(
         change_event_id="event:deploy-new",
     )
 
-    with pytest.raises(
-        service.ActionApprovalConflictError
-    ):
+    with pytest.raises(service.ActionApprovalConflictError):
         service.decide_action_approval(
             session,
             incident_id="incident:1",
             approval_id=pending.approval_id,
-            decision=(
-                ActionApprovalStatus.APPROVED
-            ),
+            decision=(ActionApprovalStatus.APPROVED),
             decider=APPROVER,
             now=NOW + timedelta(minutes=1),
+            tenant_id=TEST_TENANT,
         )
 
     record = load_action_approval_record(
         session,
         incident_id="incident:1",
         approval_id=pending.approval_id,
+        tenant_id=TEST_TENANT,
     )
     assert record is not None
     assert "target changed" in (
@@ -580,6 +575,7 @@ def test_policy_version_change_invalidates(
         incident_id="incident:1",
         approval_id=pending.approval_id,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert result.status == (
@@ -610,6 +606,7 @@ def test_validation_evidence_change_invalidates(
         incident_id="incident:1",
         approval_id=pending.approval_id,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert result.status == (
@@ -637,18 +634,15 @@ def test_readiness_drop_before_approval_invalidates(
         )
     )
 
-    with pytest.raises(
-        service.ActionApprovalConflictError
-    ):
+    with pytest.raises(service.ActionApprovalConflictError):
         service.decide_action_approval(
             session,
             incident_id="incident:1",
             approval_id=pending.approval_id,
-            decision=(
-                ActionApprovalStatus.APPROVED
-            ),
+            decision=(ActionApprovalStatus.APPROVED),
             decider=APPROVER,
             now=NOW + timedelta(minutes=1),
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -665,6 +659,7 @@ def test_expiration_uses_injected_time_without_sleep(
         incident_id="incident:1",
         approval_id=pending.approval_id,
         now=NOW + timedelta(minutes=31),
+        tenant_id=TEST_TENANT,
     )
 
     assert result.status == (
@@ -688,12 +683,14 @@ def test_approved_record_also_expires(
         decision=ActionApprovalStatus.APPROVED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     expired = service.get_action_approval(
         session,
         incident_id="incident:1",
         approval_id=approved.approval_id,
         now=NOW + timedelta(minutes=31),
+        tenant_id=TEST_TENANT,
     )
 
     assert expired.status == (
@@ -717,6 +714,7 @@ def test_approved_status_never_means_execution(
         decision=ActionApprovalStatus.APPROVED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert (
@@ -749,12 +747,14 @@ def test_rejection_is_durable_and_retrievable(
         decider=APPROVER,
         reason="Risk is not acceptable.",
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     loaded = service.get_action_approval(
         session,
         incident_id="incident:1",
         approval_id=pending.approval_id,
         now=NOW + timedelta(minutes=2),
+        tenant_id=TEST_TENANT,
     )
 
     assert rejected.status == (
@@ -783,20 +783,18 @@ def test_rejected_record_cannot_be_silently_approved(
         decision=ActionApprovalStatus.REJECTED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
 
-    with pytest.raises(
-        service.ActionApprovalConflictError
-    ):
+    with pytest.raises(service.ActionApprovalConflictError):
         service.decide_action_approval(
             session,
             incident_id="incident:1",
             approval_id=pending.approval_id,
-            decision=(
-                ActionApprovalStatus.APPROVED
-            ),
+            decision=(ActionApprovalStatus.APPROVED),
             decider=APPROVER,
             now=NOW + timedelta(minutes=2),
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -815,6 +813,7 @@ def test_new_request_after_rejection_preserves_old_history(
         decision=ActionApprovalStatus.REJECTED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     second = service.create_action_approval(
         session,
@@ -822,6 +821,7 @@ def test_new_request_after_rejection_preserves_old_history(
         action_id="action:rollback",
         requester=REQUESTER,
         now=NOW + timedelta(minutes=2),
+        tenant_id=TEST_TENANT,
     )
     count = session.scalar(
         select(func.count())
@@ -850,6 +850,7 @@ def test_approved_request_can_be_revoked(
         decision=ActionApprovalStatus.APPROVED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     revoked = service.revoke_action_approval(
         session,
@@ -858,6 +859,7 @@ def test_approved_request_can_be_revoked(
         revoker=REQUESTER,
         reason="Incident conditions changed.",
         now=NOW + timedelta(minutes=2),
+        tenant_id=TEST_TENANT,
     )
 
     assert revoked.status == (
@@ -881,6 +883,7 @@ def test_duplicate_pending_request_is_idempotent(
         action_id="action:rollback",
         requester=REQUESTER,
         now=NOW + timedelta(seconds=5),
+        tenant_id=TEST_TENANT,
     )
     count = session.scalar(
         select(func.count())
@@ -910,11 +913,13 @@ def test_changed_evidence_creates_new_request_and_invalidates_old(
         action_id="action:rollback",
         requester=REQUESTER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     first_record = load_action_approval_record(
         session,
         incident_id="incident:1",
         approval_id=first.approval_id,
+        tenant_id=TEST_TENANT,
     )
 
     assert second.approval_id != first.approval_id
@@ -941,6 +946,7 @@ def test_get_recalculates_current_validity(
         decision=ActionApprovalStatus.APPROVED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     assert approved.currently_valid is True
 
@@ -952,6 +958,7 @@ def test_get_recalculates_current_validity(
         incident_id="incident:1",
         approval_id=pending.approval_id,
         now=NOW + timedelta(minutes=2),
+        tenant_id=TEST_TENANT,
     )
 
     assert refreshed.status == (
@@ -977,6 +984,7 @@ def test_display_wording_change_does_not_invalidate(
         decision=ActionApprovalStatus.APPROVED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     holder["readiness"].actions[0].title = (
         "Updated display wording only"
@@ -986,6 +994,7 @@ def test_display_wording_change_does_not_invalidate(
         incident_id="incident:1",
         approval_id=approved.approval_id,
         now=NOW + timedelta(minutes=2),
+        tenant_id=TEST_TENANT,
     )
 
     assert refreshed.status == (
@@ -1038,6 +1047,7 @@ def test_action_disappearance_invalidates_approval(
         incident_id="incident:1",
         approval_id=pending.approval_id,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert refreshed.status == (
@@ -1058,6 +1068,7 @@ def test_14f_is_called_without_ai_and_openai_is_not_required(
         action_id="action:rollback",
         requester=REQUESTER,
         now=NOW,
+        tenant_id=TEST_TENANT,
     )
 
     assert len(calls) == 1
@@ -1080,6 +1091,7 @@ def test_requester_and_decider_are_in_immutable_audit_events(
         decision=ActionApprovalStatus.APPROVED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert [
@@ -1144,6 +1156,7 @@ def test_listing_is_bounded_and_filterable(
         limit=1000,
         offset=0,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert [
@@ -1221,6 +1234,7 @@ def test_audit_events_are_append_only_across_transitions(
         decision=ActionApprovalStatus.APPROVED,
         decider=APPROVER,
         now=NOW + timedelta(minutes=1),
+        tenant_id=TEST_TENANT,
     )
     revoked = service.revoke_action_approval(
         session,
@@ -1229,6 +1243,7 @@ def test_audit_events_are_append_only_across_transitions(
         revoker=REQUESTER,
         reason="Stop the approval.",
         now=NOW + timedelta(minutes=2),
+        tenant_id=TEST_TENANT,
     )
     count = session.scalar(
         select(func.count())
@@ -1251,7 +1266,7 @@ def test_audit_events_are_append_only_across_transitions(
 def test_new_approval_routes_are_authenticated(
     required_auth_app,
 ) -> None:
-    client = TestClient(required_auth_app)
+    client = TestClient(required_auth_app, headers=TEST_HEADERS)
     response = client.post(
         "/api/v1/incidents/incident%3A1/approvals",
         json={"action_id": "action:rollback"},
@@ -1261,11 +1276,16 @@ def test_new_approval_routes_are_authenticated(
 
 
 def test_approval_list_limit_is_enforced_by_api(
+    tenant_app,
 ) -> None:
-    from app.main import app
-    client = TestClient(app)
+    from test_tenant_foundation import _bearer, _create_tenant
+
+    application, _, tokens = tenant_app
+    client = TestClient(application)
+    tenant = _create_tenant(client, tokens["bootstrap"])
     response = client.get(
-        "/api/v1/incidents/incident%3A1/approvals?limit=101"
+        "/api/v1/incidents/incident%3A1/approvals?limit=101",
+        headers=_bearer(tokens["bootstrap"], tenant["tenant_id"]),
     )
 
     assert response.status_code == 422

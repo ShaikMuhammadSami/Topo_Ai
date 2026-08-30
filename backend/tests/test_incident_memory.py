@@ -1,4 +1,6 @@
 from __future__ import annotations
+from app.db.models import IncidentOutcomeRecord
+from domain_tenant_fixtures import TEST_CONTEXT, TEST_TENANT
 
 import json
 from datetime import datetime, timezone
@@ -58,7 +60,6 @@ from app.services.llm_client import (
 from app.security.api_tokens import (
     ApiTokenAuthMiddleware,
 )
-
 
 NOW = datetime(
     2026,
@@ -698,19 +699,15 @@ def test_historical_profile_uses_pinned_snapshot(
     monkeypatch,
 ) -> None:
     outcome = _outcome()
-    record = SimpleNamespace(
+    record = IncidentOutcomeRecord(
         payload_json=outcome.model_dump_json(),
         source_json=json.dumps(
             {
                 "response_plan": {
                     "actions": [
                         {
-                            "action_id": (
-                                "plan:rollback"
-                            ),
-                            "runbook_url": (
-                                "https://runbooks/rollback"
-                            ),
+                            "action_id": ("plan:rollback"),
+                            "runbook_url": ("https://runbooks/rollback"),
                         }
                     ]
                 }
@@ -726,9 +723,7 @@ def test_historical_profile_uses_pinned_snapshot(
     monkeypatch.setattr(
         memory,
         "load_causal_analysis",
-        lambda session, analysis_id: (
-            _analysis()
-        ),
+        lambda session, analysis_id, **_tenant_kwargs: (_analysis()),
     )
 
     def load_snapshot(**kwargs):
@@ -773,11 +768,8 @@ def test_historical_profile_uses_pinned_snapshot(
         ),
     )
 
-    profile = (
-        memory.build_historical_incident_profile(
-            session=object(),
-            record=record,
-        )
+    profile = memory.build_historical_incident_profile(
+        session=object(), record=record, tenant_id=TEST_TENANT
     )
 
     assert profile is not None
@@ -807,7 +799,7 @@ def test_missing_causal_analysis_is_controlled(
     monkeypatch.setattr(
         memory,
         "latest_causal_analysis",
-        lambda session, incident_id: None,
+        lambda session, incident_id, **_tenant_kwargs: None,
     )
     monkeypatch.setattr(
         memory,
@@ -823,8 +815,7 @@ def test_missing_causal_analysis_is_controlled(
     )
 
     profile = memory.build_current_incident_profile(
-        session=object(),
-        incident_id="incident:current",
+        session=object(), incident_id="incident:current", tenant_id=TEST_TENANT
     )
 
     assert profile.root_event_id is None
@@ -845,9 +836,7 @@ def _patched_history_service(
     monkeypatch.setattr(
         similarity,
         "build_current_incident_profile",
-        lambda session, incident_id: (
-            _profile("current")
-        ),
+        lambda session, incident_id, **_tenant_kwargs: (_profile("current")),
     )
     records = (
         [SimpleNamespace(key="old")]
@@ -862,7 +851,7 @@ def _patched_history_service(
     monkeypatch.setattr(
         similarity,
         "build_historical_incident_profile",
-        lambda session, record: _profile(
+        lambda session, record, **_tenant_kwargs: _profile(
             "old",
             resolution=_resolution(),
         ),
@@ -876,9 +865,7 @@ def test_current_incident_is_excluded_from_history_query(
     monkeypatch.setattr(
         similarity,
         "build_current_incident_profile",
-        lambda session, incident_id: (
-            _profile("current")
-        ),
+        lambda session, incident_id, **_tenant_kwargs: (_profile("current")),
     )
 
     def list_records(session, **kwargs):
@@ -891,12 +878,8 @@ def test_current_incident_is_excluded_from_history_query(
         list_records,
     )
 
-    result = (
-        similarity
-        .build_historical_incident_intelligence(
-            session=object(),
-            incident_id="current",
-        )
+    result = similarity.build_historical_incident_intelligence(
+        session=object(), incident_id="current", tenant_id=TEST_TENANT
     )
 
     assert captured["exclude_incident_id"] == (
@@ -919,13 +902,8 @@ def test_missing_openai_key_keeps_structured_result(
         lambda: False,
     )
 
-    result = (
-        similarity
-        .build_historical_incident_intelligence(
-            session=object(),
-            incident_id="current",
-            include_ai=True,
-        )
+    result = similarity.build_historical_incident_intelligence(
+        session=object(), incident_id="current", include_ai=True, tenant_id=TEST_TENANT
     )
 
     assert len(result.matches) == 1
@@ -952,20 +930,11 @@ def test_openai_failure_does_not_change_scores(
         ),
     )
 
-    deterministic = (
-        similarity
-        .build_historical_incident_intelligence(
-            session=object(),
-            incident_id="current",
-        )
+    deterministic = similarity.build_historical_incident_intelligence(
+        session=object(), incident_id="current", tenant_id=TEST_TENANT
     )
-    enriched = (
-        similarity
-        .build_historical_incident_intelligence(
-            session=object(),
-            incident_id="current",
-            include_ai=True,
-        )
+    enriched = similarity.build_historical_incident_intelligence(
+        session=object(), incident_id="current", include_ai=True, tenant_id=TEST_TENANT
     )
 
     assert enriched.ai_status.value == "failed"
@@ -997,13 +966,8 @@ def test_openai_summary_is_annotation_only(
         ),
     )
 
-    result = (
-        similarity
-        .build_historical_incident_intelligence(
-            session=object(),
-            incident_id="current",
-            include_ai=True,
-        )
+    result = similarity.build_historical_incident_intelligence(
+        session=object(), incident_id="current", include_ai=True, tenant_id=TEST_TENANT
     )
 
     assert result.ai_status.value == "available"
@@ -1091,6 +1055,7 @@ def test_missing_incident_api_error_is_controlled(
             min_similarity=0.25,
             include_ai=False,
             session=object(),
+            tenant_context=TEST_CONTEXT,
         )
 
     assert raised.value.status_code == 404

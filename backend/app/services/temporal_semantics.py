@@ -1,4 +1,9 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+    tenant_get,
+)
 
 import json
 from datetime import datetime, timezone
@@ -190,6 +195,7 @@ def safe_snapshot_record_at_or_before(
     boundary_at: str | datetime,
     namespace: str | None = None,
     limit: int = 500,
+    tenant_id: DomainTenant,
 ) -> SnapshotRecord | None:
     """Return a scope-compatible checkpoint no later than the boundary.
 
@@ -198,8 +204,10 @@ def safe_snapshot_record_at_or_before(
     """
 
     boundary = parse_utc(boundary_at, allow_legacy_naive=True)
-    statement = select(SnapshotRecord).where(
-        SnapshotRecord.cluster_name == cluster_name
+    statement = (
+        select(SnapshotRecord)
+        .where(tenant_predicate(SnapshotRecord, tenant_id))
+        .where(SnapshotRecord.cluster_name == cluster_name)
     )
     if namespace:
         statement = statement.where(
@@ -232,6 +240,8 @@ def safe_snapshot_record_at_or_before(
 def incident_operational_time(
     session: Session,
     incident: Any,
+    *,
+    tenant_id: DomainTenant,
 ) -> datetime:
     """Earliest defensible customer/runtime failure observation.
 
@@ -242,7 +252,7 @@ def incident_operational_time(
 
     signal_id = getattr(incident, "primary_signal_id", None)
     if signal_id:
-        record = session.get(SignalRecord, str(signal_id))
+        record = tenant_get(session, SignalRecord, str(signal_id), tenant_id=tenant_id)
         if record is not None:
             try:
                 payload = json.loads(record.payload_json or "{}")

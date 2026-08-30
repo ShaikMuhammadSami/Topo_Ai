@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from statistics import median
 from typing import Any
@@ -45,7 +48,6 @@ from app.services.llm_client import (
 from app.services.response_plan import (
     build_incident_response_plan,
 )
-
 
 RCA_QUALITY_WEIGHT: dict[RcaVerdict, float] = {
     RcaVerdict.CONFIRMED: 1.0,
@@ -997,12 +999,9 @@ def build_incident_response_intelligence(
     history_limit: int = 5,
     min_similarity: float = 0.5,
     include_ai: bool = False,
-    response_plan: (
-        IncidentResponsePlan | None
-    ) = None,
-    historical_intelligence: (
-        IncidentHistoricalIntelligence | None
-    ) = None,
+    response_plan: IncidentResponsePlan | None = None,
+    historical_intelligence: IncidentHistoricalIntelligence | None = None,
+    tenant_id: DomainTenant,
 ) -> IncidentResponseIntelligence:
     # Callers that already orchestrate the baseline plan and
     # historical scan can pass those immutable results through.
@@ -1011,6 +1010,7 @@ def build_incident_response_intelligence(
         build_incident_response_plan(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
     history = historical_intelligence or (
@@ -1023,6 +1023,7 @@ def build_incident_response_intelligence(
                 min(min_similarity, 1.0),
             ),
             include_ai=False,
+            tenant_id=tenant_id,
         )
     )
     actions: list[

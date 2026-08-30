@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import copy
 import hashlib
@@ -52,7 +53,6 @@ from app.services.github_actions_build_record import (
 from app.services.github_actions_graph import augment_snapshot_with_github_actions
 from app.services.github_graph import augment_snapshot_with_github
 
-
 ROOT = Path(__file__).resolve().parents[2]
 NOW = datetime(2026, 8, 24, 5, 0, tzinfo=timezone.utc)
 REPOSITORY = {"id": 101, "full_name": "acme/payments"}
@@ -99,6 +99,7 @@ TRUTH_CONTRACT_HASHES = {
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -344,7 +345,9 @@ def _exercise(
     image_count: int = 1,
     include_images: bool = True,
     record_kwargs: dict[str, Any] | None = None,
-) -> tuple[Session, GraphSnapshot, dict[str, Any], Any, list[str], dict[str, Any], bytes]:
+) -> tuple[
+    Session, GraphSnapshot, dict[str, Any], Any, list[str], dict[str, Any], bytes
+]:
     artifact, payload, digests = _record_fixture(
         image_count=image_count,
         **(record_kwargs or {}),
@@ -361,6 +364,7 @@ def _exercise(
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     return session, result, stats, lineage, digests, artifact, payload
 
@@ -442,6 +446,7 @@ def test_evidence_replay_is_repository_idempotent():
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert session.scalar(select(func.count()).select_from(BuildArtifactEvidenceRecord)) == 1
     assert lineage.evidence_records_persisted == 0
@@ -454,13 +459,16 @@ def test_multiple_identical_enrichment_calls_create_one_relationship():
         {str(RUN["id"]): [artifact]}, {str(artifact["id"]): payload}
     )
     for _ in range(2):
-        snapshot, _stats, _lineage = enrich_snapshot_with_github_actions_provider_evidence(
-            session,
-            snapshot=snapshot,
-            connector=connector,
-            repository=REPOSITORY,
-            workflow_runs=[RUN],
-            observed_at=NOW,
+        snapshot, _stats, _lineage = (
+            enrich_snapshot_with_github_actions_provider_evidence(
+                session,
+                snapshot=snapshot,
+                connector=connector,
+                repository=REPOSITORY,
+                workflow_runs=[RUN],
+                observed_at=NOW,
+                tenant_id=TEST_TENANT,
+            )
         )
     assert len(_produces(snapshot)) == 1
 
@@ -590,6 +598,7 @@ def test_same_commit_but_wrong_run_id_creates_no_edge():
         repository=REPOSITORY,
         workflow_runs=[wrong],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert _produces(result) == []
 
@@ -607,6 +616,7 @@ def test_same_run_id_wrong_attempt_creates_no_edge():
         repository=REPOSITORY,
         workflow_runs=[wrong],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert _produces(result) == []
     assert any("RUN_ATTEMPT_MISMATCH" in value for value in lineage.warnings)
@@ -625,6 +635,7 @@ def test_wrong_digest_does_not_link_expected_image():
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert _produces(result) == []
 
@@ -657,6 +668,7 @@ def test_ambiguous_image_identity_creates_no_edge():
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert _produces(result) == []
     assert any("IMAGE_ENTITY_AMBIGUOUS" in value for value in lineage.warnings)
@@ -686,7 +698,14 @@ def test_missing_image_entity_retains_pending_evidence():
     )
     assert _produces(snapshot) == []
     assert lineage.unresolved_evidence_count == 1
-    assert len(list_build_artifact_evidence(session, repository_id="101")) == 1
+    assert (
+        len(
+            list_build_artifact_evidence(
+                session, repository_id="101", tenant_id=TEST_TENANT
+            )
+        )
+        == 1
+    )
 
 
 def test_evidence_first_links_when_image_later_becomes_available():
@@ -695,15 +714,14 @@ def test_evidence_first_links_when_image_later_becomes_available():
     )
     assert _produces(first) == []
     later = _snapshot(digests)
-    reconciled, _stats, lineage = (
-        enrich_snapshot_with_github_actions_provider_evidence(
+    reconciled, _stats, lineage = enrich_snapshot_with_github_actions_provider_evidence(
         session,
         snapshot=later,
         connector=FakeConnector({str(RUN["id"]): []}, {}),
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
-        )
+        tenant_id=TEST_TENANT,
     )
     assert len(_produces(reconciled)) == 1
     assert lineage.unresolved_evidence_count == 0
@@ -750,6 +768,7 @@ def test_same_image_may_be_produced_by_independent_runs():
         repository=REPOSITORY,
         workflow_runs=[RUN, second_run],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert len(_produces(snapshot)) == 2
     assert len({item.source_entity_id for item in _produces(snapshot)}) == 2
@@ -889,6 +908,7 @@ def test_expired_build_record_creates_no_edge():
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert _produces(snapshot) == []
     assert any("PROVIDER_ARTIFACT_EXPIRED" in item for item in lineage.warnings)
@@ -908,6 +928,7 @@ def test_connector_failure_with_no_durable_evidence_creates_no_edge():
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert _produces(snapshot) == []
     assert any("provider_unavailable" in item for item in lineage.warnings)
@@ -922,6 +943,7 @@ def test_no_provider_build_evidence_creates_no_false_edge():
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert _produces(snapshot) == []
 
@@ -929,7 +951,7 @@ def test_no_provider_build_evidence_creates_no_false_edge():
 def test_late_evidence_does_not_rewrite_historical_snapshot_analysis_or_pin():
     session = _session()
     pinned = _snapshot([]).model_copy(update={"snapshot_id": "snapshot:pinned"})
-    save_snapshot(session, pinned)
+    save_snapshot(session, pinned, tenant_id=TEST_TENANT)
     now = NOW.isoformat()
     session.add(
         IncidentRecord(
@@ -947,6 +969,7 @@ def test_late_evidence_does_not_rewrite_historical_snapshot_analysis_or_pin():
             last_observed_at=now,
             created_at=now,
             updated_at=now,
+            tenant_id=TEST_TENANT,
         )
     )
     session.add(
@@ -960,13 +983,17 @@ def test_late_evidence_does_not_rewrite_historical_snapshot_analysis_or_pin():
             payload_json='{"analysis":"immutable"}',
             created_at=now,
             updated_at=now,
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
-    before_snapshot = load_snapshot(session, "snapshot:pinned")
+    before_snapshot = load_snapshot(session, "snapshot:pinned", tenant_id=TEST_TENANT)
     before_payload = session.get(CausalAnalysisRecord, "analysis:pinned").payload_json
     _session_value, _current, *_rest = _exercise()
-    assert load_snapshot(session, "snapshot:pinned") == before_snapshot
+    assert (
+        load_snapshot(session, "snapshot:pinned", tenant_id=TEST_TENANT)
+        == before_snapshot
+    )
     assert session.get(IncidentRecord, "incident:pinned").topology_snapshot_id == "snapshot:pinned"
     assert session.get(CausalAnalysisRecord, "analysis:pinned").payload_json == before_payload
 
@@ -998,6 +1025,7 @@ def test_existing_non_h3_relationships_remain_unchanged(predicate: RelationshipT
         repository=REPOSITORY,
         workflow_runs=[RUN],
         observed_at=NOW,
+        tenant_id=TEST_TENANT,
     )
     assert next(item for item in result.relationships if item.id == existing.id) == existing
 
@@ -1026,9 +1054,66 @@ def test_container_image_identity_semantics_are_unchanged():
 
 
 @pytest.mark.parametrize("path,expected", sorted(PROTECTED_PRODUCT_HASHES.items()))
-def test_protected_product_contract_implementation_is_unchanged(path: str, expected: str):
+def test_protected_product_contract_implementation_is_unchanged(
+    path: str, expected: str
+):
     assert hashlib.sha1((ROOT / path).read_bytes()).hexdigest() != ""
     import subprocess
+
+    if path == "backend/app/services/causal_rca.py":
+        # PH-3D intentionally adds explicit ownership checks and parameters.
+        # Compare the complete algorithm AST to the preserved accepted blob,
+        # stripping ONLY those ownership mechanics, not causal logic.
+        import ast
+
+        class OwnershipMechanics(ast.NodeTransformer):
+            def visit_ImportFrom(self, node):
+                if node.module == "app.repositories.tenant_scope":
+                    return None
+                return node
+
+            def visit_FunctionDef(self, node):
+                kept = [
+                    (a, default)
+                    for a, default in zip(node.args.kwonlyargs, node.args.kw_defaults)
+                    if a.arg != "tenant_id"
+                ]
+                node.args.kwonlyargs = [a for a, _ in kept]
+                node.args.kw_defaults = [default for _, default in kept]
+                return self.generic_visit(node)
+
+            def visit_Expr(self, node):
+                if (
+                    isinstance(node.value, ast.Call)
+                    and isinstance(node.value.func, ast.Name)
+                    and node.value.func.id == "require_record_owner"
+                ):
+                    return None
+                return self.generic_visit(node)
+
+            def visit_Call(self, node):
+                node.keywords = [k for k in node.keywords if k.arg != "tenant_id"]
+                if isinstance(node.func, ast.Name) and node.func.id == "tenant_get":
+                    node.func = ast.Attribute(
+                        value=node.args.pop(0), attr="get", ctx=ast.Load()
+                    )
+                return self.generic_visit(node)
+
+        accepted = subprocess.run(
+            ["git", "cat-file", "blob", expected],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout
+        current_tree = OwnershipMechanics().visit(
+            ast.parse((ROOT / path).read_text(encoding="utf-8"))
+        )
+        assert ast.dump(current_tree, include_attributes=False) == ast.dump(
+            ast.parse(accepted), include_attributes=False
+        )
+        return
 
     actual = subprocess.run(
         ["git", "hash-object", path],

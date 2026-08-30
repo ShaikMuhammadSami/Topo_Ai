@@ -1,3 +1,10 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 import json
 from datetime import datetime
 
@@ -89,6 +96,8 @@ def _stamp_snapshot_temporal(
 def save_snapshot(
     session: Session,
     snapshot: GraphSnapshot,
+    *,
+    tenant_id: DomainTenant,
 ) -> SnapshotRecord:
     """
     Persist one complete graph snapshot.
@@ -112,10 +121,11 @@ def save_snapshot(
         scope_json=json.dumps(persisted.scope),
         payload_json=persisted.model_dump_json(),
         created_at=recorded_at.isoformat(),
+        tenant_id=tenant_value(tenant_id),
     )
 
     session.add(record)
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return record
@@ -125,9 +135,12 @@ def list_snapshots(
     session: Session,
     limit: int = 20,
     offset: int = 0,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[SnapshotRecord]:
     statement = (
         select(SnapshotRecord)
+        .where(tenant_predicate(SnapshotRecord, tenant_id))
         .order_by(SnapshotRecord.collected_at.desc())
         .limit(limit)
         .offset(offset)
@@ -141,20 +154,27 @@ def list_snapshots(
 def get_snapshot_record(
     session: Session,
     snapshot_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> SnapshotRecord | None:
-    return session.get(
+    return tenant_get(
+        session,
         SnapshotRecord,
         snapshot_id,
+        tenant_id=tenant_id,
     )
 
 
 def load_snapshot(
     session: Session,
     snapshot_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> GraphSnapshot | None:
     record = get_snapshot_record(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:

@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -62,6 +63,8 @@ def create_connector() -> GitHubConnector:
     response_model=GitHubConnectionInfo,
 )
 def check_github_connection(
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> GitHubConnectionInfo:
     connector = create_connector()
 
@@ -88,24 +91,20 @@ def check_github_connection(
     status_code=status.HTTP_201_CREATED,
 )
 def enrich_snapshot_with_github(
-    snapshot_id: str = Query(
-        description=(
-            "Stored Kubernetes snapshot "
-            "to enrich."
-        )
-    ),
+    snapshot_id: str = Query(description=("Stored Kubernetes snapshot " "to enrich.")),
     commit_limit: int = Query(
         default=50,
         ge=1,
         le=100,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> GitHubEnrichmentResult:
     snapshot = load_snapshot(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if snapshot is None:
@@ -150,6 +149,7 @@ def enrich_snapshot_with_github(
     save_snapshot(
         session=session,
         snapshot=enriched_snapshot,
+        tenant_id=tenant_context.tenant_id,
     )
 
     return GitHubEnrichmentResult(
@@ -181,11 +181,10 @@ def enrich_snapshot_with_github(
         warnings=stats.warnings,
     )
 
+
 @router.post(
     "/actions/enrich",
-    response_model=(
-        GitHubActionsEnrichmentResult
-    ),
+    response_model=(GitHubActionsEnrichmentResult),
     status_code=status.HTTP_201_CREATED,
 )
 def enrich_snapshot_with_actions(
@@ -201,13 +200,14 @@ def enrich_snapshot_with_actions(
         ge=1,
         le=100,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> GitHubActionsEnrichmentResult:
     snapshot = load_snapshot(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if snapshot is None:
@@ -251,6 +251,7 @@ def enrich_snapshot_with_actions(
                 connector=connector,
                 repository=repository,
                 workflow_runs=workflow_runs,
+                tenant_id=tenant_context.tenant_id,
             )
         )
 
@@ -263,6 +264,7 @@ def enrich_snapshot_with_actions(
     save_snapshot(
         session=session,
         snapshot=enriched_snapshot,
+        tenant_id=tenant_context.tenant_id,
     )
 
     return GitHubActionsEnrichmentResult(

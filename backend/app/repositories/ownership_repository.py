@@ -1,3 +1,10 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -47,10 +54,14 @@ def _to_view(
 def load_ownership_mapping(
     session: Session,
     ownership_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> OwnershipMappingView | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         OwnershipMappingRecord,
         ownership_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -62,12 +73,13 @@ def load_ownership_mapping(
 def get_ownership_by_fingerprint(
     session: Session,
     fingerprint: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> OwnershipMappingRecord | None:
-    statement = select(
-        OwnershipMappingRecord
-    ).where(
-        OwnershipMappingRecord.fingerprint
-        == fingerprint
+    statement = (
+        select(OwnershipMappingRecord)
+        .where(tenant_predicate(OwnershipMappingRecord, tenant_id))
+        .where(OwnershipMappingRecord.fingerprint == fingerprint)
     )
 
     return session.scalars(
@@ -85,12 +97,13 @@ def find_active_ownership_mappings(
     service_name: str | None,
     environment: str | None,
     entity_ids: list[str] | None = None,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[OwnershipMappingRecord]:
-    statement = select(
-        OwnershipMappingRecord
-    ).where(
-        OwnershipMappingRecord.active
-        .is_(True)
+    statement = (
+        select(OwnershipMappingRecord)
+        .where(tenant_predicate(OwnershipMappingRecord, tenant_id))
+        .where(OwnershipMappingRecord.active.is_(True))
     )
 
     records = list(
@@ -167,9 +180,11 @@ def list_ownership_mappings(
     namespace: str | None = None,
     active: bool | None = True,
     limit: int = 200,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[OwnershipMappingView]:
-    statement = select(
-        OwnershipMappingRecord
+    statement = select(OwnershipMappingRecord).where(
+        tenant_predicate(OwnershipMappingRecord, tenant_id)
     )
 
     if owner_team:
@@ -215,19 +230,19 @@ def list_ownership_mappings(
 def save_ownership_mapping(
     session: Session,
     record: OwnershipMappingRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> OwnershipMappingView:
-    existing = (
-        get_ownership_by_fingerprint(
-            session=session,
-            fingerprint=(
-                record.fingerprint
-            ),
-        )
+    require_record_owner(record, tenant_id=tenant_id)
+    existing = get_ownership_by_fingerprint(
+        session=session,
+        fingerprint=(record.fingerprint),
+        tenant_id=tenant_id,
     )
 
     if existing is None:
         session.add(record)
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
         session.refresh(record)
 
         return _to_view(record)
@@ -287,7 +302,7 @@ def save_ownership_mapping(
 
     existing.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(existing)
 
     return _to_view(existing)

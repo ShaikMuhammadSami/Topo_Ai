@@ -1,3 +1,11 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 import json
 from uuid import uuid4
 
@@ -72,19 +80,13 @@ def _message_to_view(
 def _message_count(
     session: Session,
     session_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> int:
     statement = (
-        select(
-            func.count(
-                CopilotMessageRecord
-                .message_id
-            )
-        )
-        .where(
-            CopilotMessageRecord
-            .session_id
-            == session_id
-        )
+        select(func.count(CopilotMessageRecord.message_id))
+        .where(tenant_predicate(CopilotMessageRecord, tenant_id))
+        .where(CopilotMessageRecord.session_id == session_id)
     )
 
     return int(
@@ -95,21 +97,21 @@ def _message_count(
 def _session_to_summary(
     session: Session,
     record: CopilotSessionRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> CopilotSessionSummary:
+    require_record_owner(record, tenant_id=tenant_id)
     return CopilotSessionSummary(
         session_id=record.session_id,
         incident_id=record.incident_id,
         title=record.title,
-        provider=ExplanationProvider(
-            record.provider
-        ),
+        provider=ExplanationProvider(record.provider),
         model_name=record.model_name,
-        status=CopilotSessionStatus(
-            record.status
-        ),
+        status=CopilotSessionStatus(record.status),
         message_count=_message_count(
             session=session,
             session_id=record.session_id,
+            tenant_id=tenant_id,
         ),
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -123,33 +125,30 @@ def create_copilot_session_record(
     title: str,
     provider: ExplanationProvider,
     model_name: str | None,
+    tenant_id: DomainTenant,
 ) -> CopilotSessionDetail:
     now = utc_now_iso()
 
     record = CopilotSessionRecord(
-        session_id=(
-            f"copilot-session:"
-            f"{uuid4().hex}"
-        ),
+        session_id=(f"copilot-session:" f"{uuid4().hex}"),
         incident_id=incident_id,
         title=title,
         provider=provider.value,
         model_name=model_name,
-        status=(
-            CopilotSessionStatus
-            .ACTIVE.value
-        ),
+        status=(CopilotSessionStatus.ACTIVE.value),
         created_at=now,
         updated_at=now,
+        tenant_id=tenant_value(tenant_id),
     )
 
     session.add(record)
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     summary = _session_to_summary(
         session=session,
         record=record,
+        tenant_id=tenant_id,
     )
 
     return CopilotSessionDetail(
@@ -161,10 +160,14 @@ def create_copilot_session_record(
 def load_copilot_session_record(
     session: Session,
     session_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> CopilotSessionRecord | None:
-    return session.get(
+    return tenant_get(
+        session,
         CopilotSessionRecord,
         session_id,
+        tenant_id=tenant_id,
     )
 
 
@@ -173,23 +176,16 @@ def list_copilot_messages(
     session_id: str,
     limit: int = 200,
     offset: int = 0,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[CopilotMessageView]:
     statement = (
-        select(
-            CopilotMessageRecord
-        )
-        .where(
-            CopilotMessageRecord
-            .session_id
-            == session_id
-        )
+        select(CopilotMessageRecord)
+        .where(tenant_predicate(CopilotMessageRecord, tenant_id))
+        .where(CopilotMessageRecord.session_id == session_id)
         .order_by(
-            CopilotMessageRecord
-            .created_at
-            .asc(),
-            CopilotMessageRecord
-            .message_id
-            .asc(),
+            CopilotMessageRecord.created_at.asc(),
+            CopilotMessageRecord.message_id.asc(),
         )
         .limit(limit)
         .offset(offset)
@@ -210,10 +206,13 @@ def list_copilot_messages(
 def load_copilot_session_detail(
     session: Session,
     session_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> CopilotSessionDetail | None:
     record = load_copilot_session_record(
         session=session,
         session_id=session_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -222,6 +221,7 @@ def load_copilot_session_detail(
     summary = _session_to_summary(
         session=session,
         record=record,
+        tenant_id=tenant_id,
     )
 
     return CopilotSessionDetail(
@@ -229,6 +229,7 @@ def load_copilot_session_detail(
         messages=list_copilot_messages(
             session=session,
             session_id=session_id,
+            tenant_id=tenant_id,
         ),
     )
 
@@ -237,22 +238,15 @@ def list_incident_copilot_sessions(
     session: Session,
     incident_id: str,
     limit: int = 50,
-    offset: int =0,
+    offset: int = 0,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[CopilotSessionSummary]:
     statement = (
-        select(
-            CopilotSessionRecord
-        )
-        .where(
-            CopilotSessionRecord
-            .incident_id
-            == incident_id
-        )
-        .order_by(
-            CopilotSessionRecord
-            .updated_at
-            .desc()
-        )
+        select(CopilotSessionRecord)
+        .where(tenant_predicate(CopilotSessionRecord, tenant_id))
+        .where(CopilotSessionRecord.incident_id == incident_id)
+        .order_by(CopilotSessionRecord.updated_at.desc())
         .limit(limit)
     )
 
@@ -266,6 +260,7 @@ def list_incident_copilot_sessions(
         _session_to_summary(
             session=session,
             record=record,
+            tenant_id=tenant_id,
         )
         for record in records
     ]
@@ -278,83 +273,48 @@ def save_copilot_message(
     incident_id: str,
     role: CopilotMessageRole,
     content: str,
-    provider: (
-        ExplanationProvider | None
-    ) = None,
-    answer_status: (
-        CopilotAnswerStatus | None
-    ) = None,
+    provider: ExplanationProvider | None = None,
+    answer_status: CopilotAnswerStatus | None = None,
     confidence: float | None = None,
-    evidence: list[
-        GroundingEvidence
-    ] | None = None,
+    evidence: list[GroundingEvidence] | None = None,
     evidence_ids: list[str] | None = None,
-    suggested_questions: (
-        list[str] | None
-    ) = None,
+    suggested_questions: list[str] | None = None,
     warning: str | None = None,
+    tenant_id: DomainTenant,
 ) -> CopilotMessageView:
     now = utc_now_iso()
 
     record = CopilotMessageRecord(
-        message_id=(
-            f"copilot-message:"
-            f"{uuid4().hex}"
-        ),
+        message_id=(f"copilot-message:" f"{uuid4().hex}"),
         session_id=session_id,
         incident_id=incident_id,
         role=role.value,
         content=content,
-        provider=(
-            provider.value
-            if provider
-            else None
-        ),
-        answer_status=(
-            answer_status.value
-            if answer_status
-            else None
-        ),
-        confidence=(
-            str(confidence)
-            if confidence is not None
-            else None
-        ),
-        evidence_ids_json=json.dumps(
-            evidence_ids or []
-        ),
+        provider=(provider.value if provider else None),
+        answer_status=(answer_status.value if answer_status else None),
+        confidence=(str(confidence) if confidence is not None else None),
+        evidence_ids_json=json.dumps(evidence_ids or []),
         evidence_json=json.dumps(
-            [
-                item.model_dump(
-                    mode="json"
-                )
-                for item in (
-                    evidence or []
-                )
-            ]
+            [item.model_dump(mode="json") for item in (evidence or [])]
         ),
-        suggested_questions_json=(
-            json.dumps(
-                suggested_questions or []
-            )
-        ),
+        suggested_questions_json=(json.dumps(suggested_questions or [])),
         warning=warning,
         created_at=now,
+        tenant_id=tenant_value(tenant_id),
     )
 
     session.add(record)
 
-    session_record = (
-        load_copilot_session_record(
-            session=session,
-            session_id=session_id,
-        )
+    session_record = load_copilot_session_record(
+        session=session,
+        session_id=session_id,
+        tenant_id=tenant_id,
     )
 
     if session_record:
         session_record.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return _message_to_view(record)

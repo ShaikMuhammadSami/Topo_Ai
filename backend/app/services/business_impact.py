@@ -1,3 +1,6 @@
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 from sqlalchemy.orm import Session
 
 from app.models.ownership import (
@@ -18,7 +21,6 @@ from app.services.blast_radius import (
 from app.services.ownership_resolver import (
     resolve_entity_ownership,
 )
-
 
 CRITICALITY_PRIORITY = {
     ServiceCriticality.TIER_1: 4,
@@ -118,10 +120,13 @@ def _routing_recommendation(
 def calculate_incident_ownership_impact(
     session: Session,
     incident_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentOwnershipImpact:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -138,9 +143,8 @@ def calculate_incident_ownership_impact(
 
     snapshot = load_topology_snapshot(
         session=session,
-        snapshot_id=(
-            incident.topology_snapshot_id
-        ),
+        snapshot_id=(incident.topology_snapshot_id),
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:
@@ -152,6 +156,7 @@ def calculate_incident_ownership_impact(
     blast_radius = calculate_blast_radius(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     entity_map = {
@@ -177,9 +182,7 @@ def calculate_incident_ownership_impact(
 
     warnings: list[str] = []
 
-    for impacted in (
-        blast_radius.affected_entities
-    ):
+    for impacted in blast_radius.affected_entities:
         entity = entity_map.get(
             impacted.entity_id
         )
@@ -192,12 +195,11 @@ def calculate_incident_ownership_impact(
             )
             continue
 
-        ownership = (
-            resolve_entity_ownership(
-                session=session,
-                snapshot=snapshot,
-                entity=entity,
-            )
+        ownership = resolve_entity_ownership(
+            session=session,
+            snapshot=snapshot,
+            entity=entity,
+            tenant_id=tenant_id,
         )
 
         if ownership.resolved:

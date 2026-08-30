@@ -7,6 +7,7 @@ inputs to this suite, not things this suite is permitted to rewrite.
 """
 
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT
 
 import json
 import os
@@ -183,7 +184,6 @@ from app.services.temporal_semantics import (
 from app.repositories import tenant_repository
 from app.services.tenant_service import create_tenant_with_creator_membership
 
-
 POSTGRES_URL = os.getenv("TOPO_TEST_POSTGRES_URL", "").strip()
 pytestmark = pytest.mark.skipif(
     not POSTGRES_URL,
@@ -345,6 +345,8 @@ def _mapped_instance(table_name: str, row: int = 1, **overrides):
         column.name: _column_value(table_name, column, row)
         for column in table.columns
     }
+    if table_name in PH3C_DOMAIN_TABLE_NAMES:
+        values["tenant_id"] = TEST_TENANT
     values.update(overrides)
     return _mapper_for(table_name).class_(**values)
 
@@ -593,18 +595,14 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
             assert current_revisions(connection) == ("0004_tenant_foundation",)
             assert "tenant_id" not in {
                 column["name"]
-                for column in inspect(connection).get_columns(
-                    "topology_snapshots"
-                )
+                for column in inspect(connection).get_columns("topology_snapshots")
             }
         with pytest.raises(SchemaAuthorityError, match="state=behind"):
             init_db(bind=engine)
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == (
-                DOMAIN_OWNERSHIP_REVISION,
-            )
+            assert current_revisions(connection) == ("0006_domain_tenant_enforcement",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -732,16 +730,14 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
                     table_name,
                     **overrides,
                 )
-                primary_key = inspect(connection).get_pk_constraint(
-                    table_name
-                )["constrained_columns"][0]
+                primary_key = inspect(connection).get_pk_constraint(table_name)[
+                    "constrained_columns"
+                ][0]
                 identities[table_name] = str(values[primary_key])
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == (
-                DOMAIN_OWNERSHIP_REVISION,
-            )
+            assert current_revisions(connection) == ("0006_domain_tenant_enforcement",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43
@@ -757,25 +753,31 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
                 ).one()
                 assert str(row[0]) == identity
                 assert row[1] == POSTGRES_TENANT_B
-                assert connection.scalar(
-                    sa.select(sa.func.count()).select_from(table).where(
-                        table.c.tenant_id.is_(None)
+                assert (
+                    connection.scalar(
+                        sa.select(sa.func.count())
+                        .select_from(table)
+                        .where(table.c.tenant_id.is_(None))
                     )
-                ) == 0
+                    == 0
+                )
 
-            assert connection.scalar(
-                text(
-                    "SELECT COUNT(*) FROM tenants WHERE tenant_id NOT IN "
-                    "(:tenant_a, :tenant_b)"
-                ),
-                {
-                    "tenant_a": POSTGRES_TENANT_A,
-                    "tenant_b": POSTGRES_TENANT_B,
-                },
-            ) == 0
-            assert connection.scalar(
-                text("SELECT COUNT(*) FROM tenant_memberships")
-            ) == 0
+            assert (
+                connection.scalar(
+                    text(
+                        "SELECT COUNT(*) FROM tenants WHERE tenant_id NOT IN "
+                        "(:tenant_a, :tenant_b)"
+                    ),
+                    {
+                        "tenant_a": POSTGRES_TENANT_A,
+                        "tenant_b": POSTGRES_TENANT_B,
+                    },
+                )
+                == 0
+            )
+            assert (
+                connection.scalar(text("SELECT COUNT(*) FROM tenant_memberships")) == 0
+            )
 
         with engine.begin() as connection:
             command.downgrade(
@@ -783,22 +785,16 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
                 TENANT_FOUNDATION_REVISION,
             )
         with engine.connect() as connection:
-            assert current_revisions(connection) == (
-                TENANT_FOUNDATION_REVISION,
-            )
+            assert current_revisions(connection) == (TENANT_FOUNDATION_REVISION,)
             assert "tenant_id" not in {
                 column["name"]
-                for column in inspect(connection).get_columns(
-                    "topology_snapshots"
-                )
+                for column in inspect(connection).get_columns("topology_snapshots")
             }
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
             row = connection.execute(
-                text(
-                    "SELECT snapshot_id, tenant_id FROM topology_snapshots"
-                )
+                text("SELECT snapshot_id, tenant_id FROM topology_snapshots")
             ).one()
             assert row == (
                 "snapshot:postgres-legacy",
@@ -1378,15 +1374,19 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
     snapshot = _snapshot()
     signal = _signal()
     with session_factory() as session:
-        save_snapshot(session, snapshot)
-        loaded_snapshot = load_snapshot(session, snapshot.snapshot_id)
-        assert loaded_snapshot == load_snapshot(session, snapshot.snapshot_id)
+        save_snapshot(session, snapshot, tenant_id=TEST_TENANT)
+        loaded_snapshot = load_snapshot(
+            session, snapshot.snapshot_id, tenant_id=TEST_TENANT
+        )
+        assert loaded_snapshot == load_snapshot(
+            session, snapshot.snapshot_id, tenant_id=TEST_TENANT
+        )
         assert loaded_snapshot is not None
         assert loaded_snapshot.scope == snapshot.scope
         assert loaded_snapshot.entities[0].properties == snapshot.entities[0].properties
 
-        save_signals(session, [signal])
-        loaded_signal = load_signal(session, signal.signal_id)
+        save_signals(session, [signal], tenant_id=TEST_TENANT)
+        loaded_signal = load_signal(session, signal.signal_id, tenant_id=TEST_TENANT)
         assert loaded_signal is not None
         assert loaded_signal.raw_payload == signal.raw_payload
         incident = upsert_incident_from_orchestration(
@@ -1394,8 +1394,11 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
             signal=loaded_signal,
             analysis=None,
             recommendations=[],
+            tenant_id=TEST_TENANT,
         )
-        loaded_incident = load_incident_record(session, incident.incident_id)
+        loaded_incident = load_incident_record(
+            session, incident.incident_id, tenant_id=TEST_TENANT
+        )
         assert loaded_incident is not None
         assert loaded_incident.topology_snapshot_id == snapshot.snapshot_id
         assert loaded_incident.affected_entity_id == signal.involved_entity_id
@@ -1423,25 +1426,28 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
             auto_correlate=False,
             source_time_trusted=True,
             observed_at=NOW,
+            tenant_id=TEST_TENANT,
         )
-        change = load_change_event(session, event_id=receipt.event_id)
+        change = load_change_event(
+            session, event_id=receipt.event_id, tenant_id=TEST_TENANT
+        )
         assert change is not None
         assert json.loads(change.metadata_json)["nested"]["run_attempt"] == 1
         assert json.loads(change.raw_payload_json)["files"] == ["runtime-mode.txt"]
 
         artifact, created = save_build_artifact_evidence(
-            session, evidence=_artifact()
+            session, evidence=_artifact(), tenant_id=TEST_TENANT
         )
         assert created is True
         listed = list_build_artifact_evidence(
-            session, repository_id=artifact.repository_id
+            session, repository_id=artifact.repository_id, tenant_id=TEST_TENANT
         )
         assert listed == [artifact]
 
         analysis = _causal_analysis(incident.incident_id, snapshot.snapshot_id)
-        saved = save_causal_analysis(session, analysis=analysis)
+        saved = save_causal_analysis(session, analysis=analysis, tenant_id=TEST_TENANT)
         loaded_analysis = load_causal_analysis(
-            session, analysis_id=analysis.analysis_id
+            session, analysis_id=analysis.analysis_id, tenant_id=TEST_TENANT
         )
         assert loaded_analysis == saved
         assert loaded_analysis is not None
@@ -1450,9 +1456,12 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
         assert loaded_analysis.top_hypothesis.evidence_ledger == (
             analysis.top_hypothesis.evidence_ledger
         )
-        assert latest_causal_analysis(
-            session, incident_id=incident.incident_id
-        ) == loaded_analysis
+        assert (
+            latest_causal_analysis(
+                session, incident_id=incident.incident_id, tenant_id=TEST_TENANT
+            )
+            == loaded_analysis
+        )
 
         ownership = create_ownership_mapping(
             session=session,
@@ -1464,8 +1473,14 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
                 repository_url="https://github.com/acme/payment-api",
                 business_capability="Checkout",
             ),
+            tenant_id=TEST_TENANT,
         )
-        assert load_ownership_mapping(session, ownership.ownership_id) == ownership
+        assert (
+            load_ownership_mapping(
+                session, ownership.ownership_id, tenant_id=TEST_TENANT
+            )
+            == ownership
+        )
 
         cloud_account = _mapped_instance(
             "cloud_accounts",
@@ -1506,12 +1521,13 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
         )
         session.add_all([cloud_account, cloud_resource])
         session.commit()
-        accounts = list_cloud_accounts(session, provider="aws")
+        accounts = list_cloud_accounts(session, provider="aws", tenant_id=TEST_TENANT)
         resources = list_cloud_resources(
             session,
             provider="aws",
             account_id="123456789012",
             region="us-east-1",
+            tenant_id=TEST_TENANT,
         )
         assert [item.cloud_account_id for item in accounts] == [
             cloud_account.cloud_account_id
@@ -1559,9 +1575,7 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
                         observation_count=3,
                         success_count=2,
                         failure_count=1,
-                        first_seen_at=(
-                            runtime_now - timedelta(seconds=20)
-                        ).isoformat(),
+                        first_seen_at=(runtime_now - timedelta(seconds=20)).isoformat(),
                         last_seen_at=runtime_now.isoformat(),
                         metadata={"probe": "tetragon", "nested": {"pid": 42}},
                     )
@@ -1572,15 +1586,16 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
                 parser_error_count=0,
                 metadata={"heartbeat_interval_seconds": 30},
             ),
+            tenant_id=TEST_TENANT,
         )
         assert runtime_receipt.dependency_count == 1
-        sensors = list_runtime_sensors(session, agent_id=agent.agent_id)
-        dependencies = list_runtime_dependencies(
-            session, agent_id=agent.agent_id, window_minutes=60
+        sensors = list_runtime_sensors(
+            session, agent_id=agent.agent_id, tenant_id=TEST_TENANT
         )
-        assert [item.sensor_id for item in sensors] == [
-            "runtime-sensor:postgres"
-        ]
+        dependencies = list_runtime_dependencies(
+            session, agent_id=agent.agent_id, window_minutes=60, tenant_id=TEST_TENANT
+        )
+        assert [item.sensor_id for item in sensors] == ["runtime-sensor:postgres"]
         assert len(dependencies) == 1
         assert dependencies[0].destination_port == 5432
         assert dependencies[0].metadata["nested"]["pid"] == 42
@@ -1594,6 +1609,7 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
                 headers={"X-Topo-Environment": "production"},
                 signing_secret="postgres-fixture-secret",
             ),
+            tenant_id=TEST_TENANT,
         )
         delivery = db_models.WebhookDeliveryRecord(
             delivery_id="webhook-delivery:postgres",
@@ -1612,10 +1628,28 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
             payload_json=json.dumps({"incident_id": incident.incident_id}),
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
-        delivered = save_delivery_result(session, delivery)
+        delivered = save_delivery_result(session, delivery, tenant_id=TEST_TENANT)
         assert delivered.status == WebhookDeliveryStatus.SUCCEEDED
-        assert load_webhook_endpoint(session, endpoint.webhook_id) == endpoint
+        assert (
+            load_webhook_endpoint(session, endpoint.webhook_id, tenant_id=TEST_TENANT)
+            == endpoint
+        )
+
+
+def _seed_execution_parents(session):
+    session.add_all(
+        [
+            _mapped_instance("incidents", incident_id="incident:postgres-execution"),
+            _mapped_instance(
+                "action_approvals",
+                approval_id="approval:postgres",
+                incident_id="incident:postgres-execution",
+            ),
+        ]
+    )
+    session.commit()
 
 
 def _execution_snapshot() -> ExecutionContractSnapshot:
@@ -1658,12 +1692,14 @@ def test_execution_repository_idempotency_and_conditional_transition(
     session_factory,
 ) -> None:
     with session_factory() as session:
+        _seed_execution_parents(session)
         record, created = create_execution_intent_record(
             session,
             snapshot=_execution_snapshot(),
             idempotency_key="f" * 64,
             creator=_principal(),
             created_at=NOW,
+            tenant_id=TEST_TENANT,
         )
         assert created is True
         repeated, repeated_created = create_execution_intent_record(
@@ -1672,6 +1708,7 @@ def test_execution_repository_idempotency_and_conditional_transition(
             idempotency_key="f" * 64,
             creator=_principal(),
             created_at=NOW,
+            tenant_id=TEST_TENANT,
         )
         assert repeated_created is False
         assert repeated.execution_id == record.execution_id
@@ -1681,6 +1718,7 @@ def test_execution_repository_idempotency_and_conditional_transition(
             actor=_principal(),
             reason="Manual operator cancellation.",
             cancelled_at=NOW + timedelta(minutes=1),
+            tenant_id=TEST_TENANT,
         )
         assert cancelled is not None
         assert cancelled.status == "cancelled"
@@ -1692,7 +1730,7 @@ def test_json_text_exact_round_trip_and_timestamp_string_semantics(
 ) -> None:
     snapshot = _snapshot("snapshot:json-text")
     with session_factory() as session:
-        saved_record = save_snapshot(session, snapshot)
+        saved_record = save_snapshot(session, snapshot, tenant_id=TEST_TENANT)
         raw_payload = session.scalar(
             select(db_models.SnapshotRecord.payload_json).where(
                 db_models.SnapshotRecord.snapshot_id == snapshot.snapshot_id
@@ -1722,18 +1760,19 @@ def test_historical_snapshot_selection_uses_only_at_or_before_boundary(
         legacy = _snapshot("snapshot:legacy-naive").model_copy(
             update={"collected_at": NOW - timedelta(minutes=10)}
         )
-        save_snapshot(session, legacy)
+        save_snapshot(session, legacy, tenant_id=TEST_TENANT)
         record = session.get(db_models.SnapshotRecord, legacy.snapshot_id)
         assert record is not None
         record.collected_at = "2026-08-28T11:50:00"
         session.commit()
-        save_snapshot(session, before)
-        save_snapshot(session, future)
+        save_snapshot(session, before, tenant_id=TEST_TENANT)
+        save_snapshot(session, future, tenant_id=TEST_TENANT)
         selected = safe_snapshot_record_at_or_before(
             session,
             cluster_name="cluster-a",
             namespace="default",
             boundary_at=NOW,
+            tenant_id=TEST_TENANT,
         )
         assert selected is not None
         assert selected.snapshot_id == before.snapshot_id
@@ -1742,6 +1781,7 @@ def test_historical_snapshot_selection_uses_only_at_or_before_boundary(
             cluster_name="cluster-a",
             namespace="default",
             boundary_at=NOW - timedelta(hours=1),
+            tenant_id=TEST_TENANT,
         )
         assert too_early is None
 
@@ -1791,15 +1831,28 @@ def test_nullable_recent_ordering_keeps_real_times_ahead_of_missing_times(
         )
         session.commit()
 
-        outcomes = list_incident_outcome_records(session, limit=2)
+        outcomes = list_incident_outcome_records(
+            session, limit=2, tenant_id=TEST_TENANT
+        )
         assert [item.outcome_id for item in outcomes] == [
             "outcome:resolved",
             "outcome:unresolved",
         ]
         lifecycle = build_lifecycle_status(
-            session, cluster_name="cluster-ordering"
+            session, cluster_name="cluster-ordering", tenant_id=TEST_TENANT
         )
-        assert lifecycle.last_successful_discovery_at == NOW.isoformat()
+        assert lifecycle.last_successful_discovery_at is None
+        # Human domain status must use owned discovery, not PH-3E agent status.
+        owned_snapshot = _snapshot("snapshot:ordering").model_copy(
+            update={"scope": {"cluster": "cluster-ordering"}}
+        )
+        save_snapshot(session, owned_snapshot, tenant_id=TEST_TENANT)
+        assert (
+            build_lifecycle_status(
+                session, cluster_name="cluster-ordering", tenant_id=TEST_TENANT
+            ).last_successful_discovery_at
+            == NOW.isoformat()
+        )
 
 
 def test_realistic_identifiers_case_equality_and_varchar_boundary(
@@ -1968,18 +2021,18 @@ def test_transaction_rollback_and_causal_immutability(session_factory) -> None:
         assert session.get(db_models.CloudAccountRecord, key) is None
 
         snapshot = _snapshot("snapshot:causal-immutable")
-        save_snapshot(session, snapshot)
+        save_snapshot(session, snapshot, tenant_id=TEST_TENANT)
         signal = _signal(snapshot.snapshot_id)
-        save_signals(session, [signal])
+        save_signals(session, [signal], tenant_id=TEST_TENANT)
         incident = upsert_incident_from_orchestration(
-            session, signal, None, []
+            session, signal, None, [], tenant_id=TEST_TENANT
         )
         analysis = _causal_analysis(incident.incident_id, snapshot.snapshot_id)
-        first = save_causal_analysis(session, analysis=analysis)
+        first = save_causal_analysis(session, analysis=analysis, tenant_id=TEST_TENANT)
         changed = analysis.model_copy(
             update={"generated_at": (NOW + timedelta(days=1)).isoformat()}
         )
-        second = save_causal_analysis(session, analysis=changed)
+        second = save_causal_analysis(session, analysis=changed, tenant_id=TEST_TENANT)
         assert second == first
         assert second.generated_at != changed.generated_at
 
@@ -2085,12 +2138,14 @@ def test_concurrent_deterministic_change_event_insert_has_one_winner(
 
 def test_concurrent_execution_transition_has_one_winner(session_factory) -> None:
     with session_factory() as session:
+        _seed_execution_parents(session)
         record, _ = create_execution_intent_record(
             session,
             snapshot=_execution_snapshot(),
             idempotency_key="9" * 64,
             creator=_principal(),
             created_at=NOW,
+            tenant_id=TEST_TENANT,
         )
         execution_id = record.execution_id
 
@@ -2102,6 +2157,7 @@ def test_concurrent_execution_transition_has_one_winner(session_factory) -> None
                 session,
                 incident_id="incident:postgres-execution",
                 execution_id=execution_id,
+                tenant_id=TEST_TENANT,
             )
             assert record is not None
             barrier.wait(timeout=10)
@@ -2111,6 +2167,7 @@ def test_concurrent_execution_transition_has_one_winner(session_factory) -> None
                 actor=_principal(f"worker:{worker}"),
                 reason=f"Concurrent cancellation {worker}",
                 cancelled_at=NOW + timedelta(minutes=worker),
+                tenant_id=TEST_TENANT,
             )
             return result is not None
 

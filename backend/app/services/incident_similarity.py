@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -33,7 +36,6 @@ from app.services.llm_client import (
     generate_openai_text,
     openai_is_configured,
 )
-
 
 SIMILARITY_WEIGHTS: dict[str, float] = {
     "root_service": 0.24,
@@ -786,9 +788,8 @@ def build_historical_incident_intelligence(
     limit: int = 5,
     min_similarity: float = 0.25,
     include_ai: bool = False,
-    current_profile: (
-        HistoricalIncidentFeatureProfile | None
-    ) = None,
+    current_profile: HistoricalIncidentFeatureProfile | None = None,
+    tenant_id: DomainTenant,
 ) -> IncidentHistoricalIntelligence:
     bounded_limit = max(1, min(limit, 20))
     bounded_minimum = max(
@@ -799,6 +800,7 @@ def build_historical_incident_intelligence(
         build_current_incident_profile(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
     warnings = list(current.warnings)
@@ -806,6 +808,7 @@ def build_historical_incident_intelligence(
         session,
         exclude_incident_id=incident_id,
         limit=MAX_HISTORY_CANDIDATES,
+        tenant_id=tenant_id,
     )
     all_matches: list[
         HistoricalIncidentMatch
@@ -813,11 +816,10 @@ def build_historical_incident_intelligence(
     excluded_count = 0
 
     for record in records:
-        profile = (
-            build_historical_incident_profile(
-                session,
-                record=record,
-            )
+        profile = build_historical_incident_profile(
+            session,
+            record=record,
+            tenant_id=tenant_id,
         )
 
         if profile is None:

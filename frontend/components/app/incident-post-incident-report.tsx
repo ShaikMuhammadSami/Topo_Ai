@@ -22,6 +22,7 @@ import {
   Button,
 } from "@/components/ui/button"
 import {
+  downloadApiFile,
   generatePostIncidentReport,
   getPostIncidentReport,
   listPostIncidentReports,
@@ -397,6 +398,15 @@ export function IncidentPostIncidentReport({
     )
   }
 
+  async function exportReport(format: "markdown" | "json") {
+    if (!report) return
+    try {
+      await downloadApiFile(exportUrl(format), `incident-report.${format === "markdown" ? "md" : "json"}`)
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Report export is unavailable.")
+    }
+  }
+
 
   return (
     <section className="overflow-hidden rounded-md border border-border bg-background">
@@ -539,23 +549,23 @@ export function IncidentPostIncidentReport({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <a
-                href={exportUrl(
-                  "markdown",
-                )}
+              <button
+                type="button"
+                onClick={() => void exportReport("markdown")}
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-xs"
               >
                 <Download className="h-4 w-4" />
                 Markdown
-              </a>
+              </button>
 
-              <a
-                href={exportUrl("json")}
+              <button
+                type="button"
+                onClick={() => void exportReport("json")}
                 className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-xs"
               >
                 <Download className="h-4 w-4" />
                 JSON
-              </a>
+              </button>
             </div>
           </div>
 

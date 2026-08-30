@@ -1,8 +1,9 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from collections import Counter
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -46,18 +47,20 @@ router = APIRouter(
 def ingest_snapshot_changes(
     from_snapshot_id: str,
     to_snapshot_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeIngestionResult:
     before = load_snapshot(
         session=session,
         snapshot_id=from_snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     after = load_snapshot(
         session=session,
         snapshot_id=to_snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if before is None:
@@ -122,19 +125,17 @@ def ingest_snapshot_changes(
         )
     )
 
-    created_count, updated_count = (
-        save_changes(
-            session=session,
-            changes=changes,
-        )
+    created_count, updated_count = save_changes(
+        session=session,
+        changes=changes,
+        tenant_id=tenant_context.tenant_id,
     )
-    event_summary = (
-     promote_normalized_changes(
-         session,
-         changes=changes,
-        )
+    event_summary = promote_normalized_changes(
+        session,
+        changes=changes,
+        tenant_id=tenant_context.tenant_id,
     )
-    
+
     type_counts = Counter(
         change.change_type.value
         for change in changes
@@ -185,9 +186,7 @@ def ingest_snapshot_changes(
 
 @router.get(
     "",
-    response_model=list[
-        ChangeSummary
-    ],
+    response_model=list[ChangeSummary],
 )
 def get_changes(
     cluster_name: str | None = None,
@@ -199,25 +198,18 @@ def get_changes(
         ge=1,
         le=500,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[ChangeSummary]:
     return list_changes(
         session=session,
         cluster_name=cluster_name,
         namespace=namespace,
-        category=(
-            category.value
-            if category
-            else None
-        ),
-        importance=(
-            importance.value
-            if importance
-            else None
-        ),
+        category=(category.value if category else None),
+        importance=(importance.value if importance else None),
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -227,13 +219,14 @@ def get_changes(
 )
 def get_change(
     change_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> NormalizedChange:
     change = load_change(
         session=session,
         change_id=change_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if change is None:

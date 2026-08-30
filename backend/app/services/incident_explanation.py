@@ -1,4 +1,9 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_value,
+    tenant_get,
+)
 
 import hashlib
 import json
@@ -48,7 +53,6 @@ from app.services.llm_client import (
     generate_openai_structured,
     resolve_configured_provider,
 )
-
 
 PROMPT_VERSION = (
     "incident-explanation-groq-0.1.0"
@@ -203,6 +207,7 @@ def _record_data(
                     None,
                 )
                 for column in table.columns
+                if column.name != "tenant_id"
             }
         )
 
@@ -221,6 +226,8 @@ def _load_optional_record(
     session: Session,
     model_name: str,
     record_id: str | None,
+    *,
+    tenant_id: DomainTenant,
 ) -> Any | None:
     if not record_id:
         return None
@@ -234,9 +241,11 @@ def _load_optional_record(
     if model is None:
         return None
 
-    return session.get(
+    return tenant_get(
+        session,
         model,
         record_id,
+        tenant_id=tenant_id,
     )
 
 
@@ -259,9 +268,12 @@ def _add_evidence(
         )
     )
 
+
 def build_incident_evidence(
     session: Session,
     incident_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> tuple[
     Any,
     list[GroundingEvidence],
@@ -270,6 +282,7 @@ def build_incident_evidence(
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -340,6 +353,7 @@ def build_incident_evidence(
         session=session,
         model_name="SignalRecord",
         record_id=primary_signal_id,
+        tenant_id=tenant_id,
     )
 
     if signal is not None:
@@ -390,10 +404,9 @@ def build_incident_evidence(
 
     analysis = _load_optional_record(
         session=session,
-        model_name=(
-            "IncidentAnalysisRecord"
-        ),
+        model_name=("IncidentAnalysisRecord"),
         record_id=analysis_id,
+        tenant_id=tenant_id,
     )
 
     if analysis is not None:
@@ -452,6 +465,7 @@ def build_incident_evidence(
         session=session,
         model_name="RecommendationRecord",
         record_id=recommendation_id,
+        tenant_id=tenant_id,
     )
 
     if recommendation is not None:
@@ -505,10 +519,9 @@ def build_incident_evidence(
 
     recovery = _load_optional_record(
         session=session,
-        model_name=(
-            "RecoveryVerificationRecord"
-        ),
+        model_name=("RecoveryVerificationRecord"),
         record_id=verification_id,
+        tenant_id=tenant_id,
     )
 
     if recovery is not None:
@@ -553,6 +566,7 @@ def build_incident_evidence(
         blast = calculate_blast_radius(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
         root_entity = next(
            (
@@ -645,11 +659,10 @@ def build_incident_evidence(
 
     # Ownership and business impact
     try:
-        ownership = (
-            calculate_incident_ownership_impact(
-                session=session,
-                incident_id=incident_id,
-            )
+        ownership = calculate_incident_ownership_impact(
+            session=session,
+            incident_id=incident_id,
+            tenant_id=tenant_id,
         )
 
         _add_evidence(
@@ -689,12 +702,11 @@ def build_incident_evidence(
 
     if snapshot_id:
         try:
-            network = (
-                analyze_network_dependencies(
-                    session=session,
-                    snapshot_id=snapshot_id,
-                    max_depth=5,
-                )
+            network = analyze_network_dependencies(
+                session=session,
+                snapshot_id=snapshot_id,
+                max_depth=5,
+                tenant_id=tenant_id,
             )
 
             _add_evidence(
@@ -751,6 +763,7 @@ def build_incident_evidence(
             )
 
     return incident, evidence, warnings
+
 
 def _grounding_hash(
     evidence: list[GroundingEvidence],
@@ -881,6 +894,7 @@ def _validate_explanation(
             "overall_confidence must be "
             "between 0 and 1."
         )
+
 
 def _evidence_by_type(
     evidence: list[GroundingEvidence],
@@ -1267,6 +1281,7 @@ def _deterministic_explanation(
         overall_confidence=confidence,
     )
 
+
 def _groq_explanation(
     *,
     evidence: list[GroundingEvidence],
@@ -1436,11 +1451,13 @@ def _openai_explanation(
 
     return explanation
 
+
 def generate_incident_explanation(
     session: Session,
     incident_id: str,
-    request:
-        IncidentExplanationGenerateRequest,
+    request: IncidentExplanationGenerateRequest,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentExplanationResponse:
     (
         incident,
@@ -1449,6 +1466,7 @@ def generate_incident_explanation(
     ) = build_incident_evidence(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     grounding_hash = _grounding_hash(
@@ -1492,6 +1510,7 @@ def generate_incident_explanation(
         cached = load_incident_explanation(
             session=session,
             explanation_id=explanation_id,
+            tenant_id=tenant_id,
         )
 
         if cached is not None:
@@ -1628,29 +1647,18 @@ def generate_incident_explanation(
         model_name=model_name,
         prompt_version=PROMPT_VERSION,
         grounding_hash=grounding_hash,
-        confidence=str(
-            explanation.overall_confidence
-        ),
+        confidence=str(explanation.overall_confidence),
         generated_at=generated_at,
-        payload_json=(
-            explanation.model_dump_json()
-        ),
-        evidence_json=json.dumps(
-            [
-                item.model_dump(
-                    mode="json"
-                )
-                for item in evidence
-            ]
-        ),
-        warnings_json=json.dumps(
-            warnings
-        ),
+        payload_json=(explanation.model_dump_json()),
+        evidence_json=json.dumps([item.model_dump(mode="json") for item in evidence]),
+        warnings_json=json.dumps(warnings),
         created_at=generated_at,
         updated_at=generated_at,
+        tenant_id=tenant_value(tenant_id),
     )
 
     return save_incident_explanation(
         session=session,
         record=record,
+        tenant_id=tenant_id,
     )

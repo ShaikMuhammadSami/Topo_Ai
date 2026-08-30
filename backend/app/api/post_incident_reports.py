@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     Response,
@@ -34,7 +35,6 @@ from app.services.post_incident_report import (
     render_post_incident_report_markdown,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/incidents",
     tags=["post-incident-reports"],
@@ -48,17 +48,17 @@ router = APIRouter(
 )
 def create_report(
     incident_id: str,
-    request:
-        PostIncidentReportGenerateRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    request: PostIncidentReportGenerateRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> PostIncidentReportDetail:
     try:
         return generate_post_incident_report(
             session=session,
             incident_id=incident_id,
             request=request,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -67,9 +67,7 @@ def create_report(
             detail=str(exc),
         ) from exc
 
-    except (
-        PostIncidentReportGenerationError
-    ) as exc:
+    except PostIncidentReportGenerationError as exc:
         raise HTTPException(
             status_code=502,
             detail=str(exc),
@@ -78,9 +76,7 @@ def create_report(
 
 @router.get(
     "/{incident_id}/reports",
-    response_model=list[
-        PostIncidentReportSummary
-    ],
+    response_model=list[PostIncidentReportSummary],
 )
 def get_reports(
     incident_id: str,
@@ -93,15 +89,16 @@ def get_reports(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[PostIncidentReportSummary]:
     return list_post_incident_reports(
         session=session,
         incident_id=incident_id,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -112,13 +109,14 @@ def get_reports(
 def get_report(
     incident_id: str,
     report_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> PostIncidentReportDetail:
     result = load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if (
@@ -144,15 +142,15 @@ def get_report(
 def patch_report(
     incident_id: str,
     report_id: str,
-    request:
-        PostIncidentReportUpdateRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    request: PostIncidentReportUpdateRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> PostIncidentReportDetail:
     existing = load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if (
@@ -173,6 +171,7 @@ def patch_report(
             session=session,
             report_id=report_id,
             request=request,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -194,25 +193,22 @@ def patch_report(
 
 
 @router.patch(
-    (
-        "/{incident_id}/reports/{report_id}/"
-        "actions/{action_item_id}"
-    ),
+    ("/{incident_id}/reports/{report_id}/" "actions/{action_item_id}"),
     response_model=PostIncidentReportDetail,
 )
 def patch_action_item(
     incident_id: str,
     report_id: str,
     action_item_id: str,
-    request:
-        ReportActionItemUpdateRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    request: ReportActionItemUpdateRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> PostIncidentReportDetail:
     existing = load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if (
@@ -233,6 +229,7 @@ def patch_action_item(
         report_id=report_id,
         action_item_id=action_item_id,
         request=request,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if result is None:
@@ -248,10 +245,7 @@ def patch_action_item(
 
 
 @router.get(
-    (
-        "/{incident_id}/reports/{report_id}/"
-        "export"
-    ),
+    ("/{incident_id}/reports/{report_id}/" "export"),
 )
 def export_report(
     incident_id: str,
@@ -260,13 +254,14 @@ def export_report(
         default=ReportExportFormat.MARKDOWN,
         alias="format",
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> Response:
     report = load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if (

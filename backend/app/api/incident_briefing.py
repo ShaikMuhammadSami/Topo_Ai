@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
 )
@@ -20,7 +21,6 @@ from app.services.lifecycle_status import (
     build_incident_lifecycle_status,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/incidents",
     tags=["incident-intelligence"],
@@ -34,11 +34,14 @@ router = APIRouter(
 def get_incident_lifecycle_status(
     incident_id: str,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentLifecycleStatusResponse:
     try:
         return build_incident_lifecycle_status(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -55,15 +58,16 @@ def get_incident_lifecycle_status(
 def get_incident_briefing(
     incident_id: str,
     include_ai: bool = Query(default=False),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentBriefing:
     try:
         return build_incident_briefing(
             session=session,
             incident_id=incident_id,
             include_ai=include_ai,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

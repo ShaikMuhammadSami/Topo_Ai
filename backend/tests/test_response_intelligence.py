@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_CONTEXT, TEST_TENANT
 
 import pytest
 from fastapi import HTTPException
@@ -342,12 +343,8 @@ def test_strong_history_preserves_human_approval(
         ),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
     action = _rollback(result)
 
@@ -386,12 +383,8 @@ def test_conflicting_history_keeps_current_action(
         history=_history(matches),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
     action = _rollback(result)
 
@@ -420,12 +413,8 @@ def test_history_cannot_create_rollback_eligibility(
         ),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert not any(
@@ -455,12 +444,8 @@ def test_single_success_is_capped_at_limited(
         history=_history([_match(0)]),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert (
@@ -487,15 +472,11 @@ def test_inconclusive_rca_has_lower_weight(
         ),
     )
 
-    support = (
-        _rollback(
-            service
-            .build_incident_response_intelligence(
-                session=object(),
-                incident_id="incident:1",
-            )
-        ).historical_support
-    )
+    support = _rollback(
+        service.build_incident_response_intelligence(
+            session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
+        )
+    ).historical_support
 
     assert support.score < 0.3
     assert support.level == (
@@ -523,15 +504,11 @@ def test_not_confirmed_history_is_negative(
         ),
     )
 
-    support = (
-        _rollback(
-            service
-            .build_incident_response_intelligence(
-                session=object(),
-                incident_id="incident:1",
-            )
-        ).historical_support
-    )
+    support = _rollback(
+        service.build_incident_response_intelligence(
+            session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
+        )
+    ).historical_support
 
     assert support.level == (
         HistoricalActionSupportLevel.CONFLICTING
@@ -596,12 +573,8 @@ def test_investigation_is_not_scored_ineffective(
         ),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
     action = next(
         item
@@ -636,10 +609,8 @@ def test_current_evidence_and_differences_are_separate(
     )
 
     action = _rollback(
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
+        service.build_incident_response_intelligence(
+            session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
         )
     )
 
@@ -670,12 +641,8 @@ def test_median_timing_is_descriptive_only(
         ),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
     timing = (
         _rollback(result)
@@ -705,12 +672,8 @@ def test_missing_history_returns_baseline(
         history=_history([]),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.baseline_response_plan == plan
@@ -737,14 +700,12 @@ def test_service_reuses_bounded_14d_query(
         captured=captured,
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-            history_limit=999,
-            min_similarity=2,
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(),
+        incident_id="incident:1",
+        history_limit=999,
+        min_similarity=2,
+        tenant_id=TEST_TENANT,
     )
 
     assert captured["limit"] == 20
@@ -782,6 +743,7 @@ def test_missing_causal_analysis_follows_14b_error(
             history_limit=5,
             min_similarity=0.5,
             session=object(),
+            tenant_context=TEST_CONTEXT,
         )
 
     assert raised.value.status_code == 404
@@ -822,13 +784,11 @@ def test_openai_summary_is_one_annotation_only(
         generate,
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-            include_ai=True,
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(),
+        incident_id="incident:1",
+        include_ai=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert len(calls) == 1
@@ -861,13 +821,11 @@ def test_missing_openai_key_keeps_structured_result(
         lambda: False,
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-            include_ai=True,
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(),
+        incident_id="incident:1",
+        include_ai=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.actions
@@ -897,13 +855,11 @@ def test_openai_failure_keeps_structured_result(
         ),
     )
 
-    result = (
-        service
-        .build_incident_response_intelligence(
-            session=object(),
-            incident_id="incident:1",
-            include_ai=True,
-        )
+    result = service.build_incident_response_intelligence(
+        session=object(),
+        incident_id="incident:1",
+        include_ai=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.actions
