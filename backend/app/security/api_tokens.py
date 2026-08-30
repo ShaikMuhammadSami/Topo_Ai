@@ -33,6 +33,12 @@ from app.services.auth_session_service import (
     resolve_auth_session,
     touch_auth_session,
 )
+from app.services.auth_api_credential_service import (
+    API_CREDENTIAL_PREFIX,
+    AuthApiCredentialPersistenceError,
+    InactiveAuthApiCredentialError,
+    authenticate_auth_api_credential,
+)
 
 
 AUTH_ENABLED_ENV = "TOPO_AUTH_ENABLED"
@@ -160,12 +166,28 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
                 return _unauthorized("A valid Bearer API token is required.")
 
             raw_token = token.strip()
-            principal = resolve_principal(
-                raw_token,
-                registry=self.configuration.token_registry,
-            )
+            if raw_token.startswith(API_CREDENTIAL_PREFIX):
+                try:
+                    with self.session_factory() as database_session:
+                        named = authenticate_auth_api_credential(
+                            database_session,
+                            raw_secret=raw_token,
+                        )
+                except InactiveAuthApiCredentialError:
+                    return _unauthorized("The supplied API token is invalid.")
+                except (SQLAlchemyError, AuthApiCredentialPersistenceError):
+                    return _authentication_unavailable()
+                principal = named.principal if named is not None else None
+            else:
+                principal = None
+
             if principal is None:
-                return _unauthorized("The supplied API token is invalid.")
+                principal = resolve_principal(
+                    raw_token,
+                    registry=self.configuration.token_registry,
+                )
+                if principal is None:
+                    return _unauthorized("The supplied API token is invalid.")
 
             request.state.principal = principal
             request.state.source_credential_digest = token_digest(raw_token)

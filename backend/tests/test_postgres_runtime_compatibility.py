@@ -38,7 +38,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import models as db_models
 from app.db.database import Base, _synchronous_database_url, init_db
-from app.db.models import AuthSessionRecord
+from app.db.models import AuthApiCredentialRecord, AuthSessionRecord
 from app.main import create_app
 from app.db.schema_management import (
     SchemaAuthorityError,
@@ -55,6 +55,7 @@ from app.models.build_artifacts import (
     BuildArtifactEvidenceType,
     BuildArtifactType,
 )
+from app.models.auth import ApiCredentialCallerType, ApiCredentialCreate
 from app.models.causal_rca import (
     CausalAnalysisResponse,
     CausalConfidenceLevel,
@@ -150,6 +151,11 @@ from app.security.api_tokens import AuthPrincipal, token_digest
 from app.security.auth_config import load_auth_configuration
 from app.security.session_auth import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.services.causal_rca import _confidence_level
+from app.services.auth_api_credential_service import (
+    authenticate_auth_api_credential,
+    create_auth_api_credential,
+    revoke_auth_api_credential,
+)
 from app.services import change_source_ingest
 from app.services.confidence_semantics import ensure_analysis_confidence_semantics
 from app.services.incident_lifecycle import upsert_incident_from_orchestration
@@ -347,12 +353,12 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert current_revisions(connection) == (expected_head(),)
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
-        assert len(_domain_table_names(connection)) == 39
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 700
+        assert len(_domain_table_names(connection)) == 40
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 715
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
-        ) == 39
-        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 296
+        ) == 40
+        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 301
         assert sum(
             1
             for table in Base.metadata.tables.values()
@@ -364,7 +370,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for table in Base.metadata.tables.values()
             for constraint in table.constraints
             if constraint.__class__.__name__ == "UniqueConstraint"
-        ) == 11
+        ) == 12
 
         database_indexes = [
             item
@@ -372,9 +378,9 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for item in inspector.get_indexes(table_name)
             if not item.get("duplicates_constraint")
         ]
-        assert len(database_indexes) == 296
+        assert len(database_indexes) == 301
         assert sum(bool(item["unique"]) for item in database_indexes) == 9
-        assert sum(not item["unique"] for item in database_indexes) == 287
+        assert sum(not item["unique"] for item in database_indexes) == 292
         assert all(
             inspector.get_pk_constraint(name).get("constrained_columns")
             for name in DOMAIN_TABLE_NAMES
@@ -417,8 +423,8 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for column in table.columns
             if column.name.endswith("_at")
         ]
-        assert len(json_columns) == 60
-        assert len(timestamp_columns) == 139
+        assert len(json_columns) == 61
+        assert len(timestamp_columns) == 144
         assert all(storage[key][0] == "text" for key in json_columns)
         assert all(storage[key] == ("character varying", 50) for key in timestamp_columns)
         assert not any(
@@ -444,7 +450,7 @@ def test_empty_postgresql_startup_fails_closed_without_creating_domain_tables() 
             assert _domain_table_names(connection) == set()
 
 
-def test_postgresql_0001_to_0002_upgrade_downgrade_and_reupgrade() -> None:
+def test_postgresql_0001_to_0002_to_0003_upgrade_downgrade_and_reupgrade() -> None:
     with _temporary_database("auth_migration") as engine:
         _upgrade(engine, "0001_current_schema")
         with engine.connect() as connection:
@@ -454,11 +460,31 @@ def test_postgresql_0001_to_0002_upgrade_downgrade_and_reupgrade() -> None:
         with pytest.raises(SchemaAuthorityError, match="state=behind"):
             init_db(bind=engine)
 
-        _upgrade(engine)
+        _upgrade(engine, "0002_auth_sessions")
         with engine.connect() as connection:
             assert current_revisions(connection) == ("0002_auth_sessions",)
+            assert "auth_sessions" in inspect(connection).get_table_names()
+            assert "auth_api_credentials" not in inspect(connection).get_table_names()
+
+        _upgrade(engine)
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0003_auth_api_credentials",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
+
+        with engine.begin() as connection:
+            command.downgrade(
+                alembic_config(connection=connection),
+                "0002_auth_sessions",
+            )
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0002_auth_sessions",)
+            assert "auth_sessions" in inspect(connection).get_table_names()
+            assert "auth_api_credentials" not in inspect(connection).get_table_names()
+
+        _upgrade(engine)
+        with engine.connect() as connection:
+            assert inspect_schema_authority(connection).ok
 
         with engine.begin() as connection:
             command.downgrade(
@@ -551,6 +577,86 @@ def test_postgresql_browser_session_survives_app_recreation_and_revokes(
         assert revoked.get("/api/v1/auth/session").status_code == 401
 
 
+def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
+    postgres_engine: Engine,
+    session_factory,
+    monkeypatch,
+) -> None:
+    now = datetime.now(UTC)
+    with session_factory() as session:
+        created = create_auth_api_credential(
+            session,
+            request=ApiCredentialCreate(
+                name="PostgreSQL operator",
+                caller_type=ApiCredentialCallerType.HUMAN_API,
+                subject="test:postgres-named-admin",
+                display_name="PostgreSQL Named Admin",
+                roles=["admin"],
+                expires_in_days=30,
+            ),
+            created_by_subject="test:bootstrap-admin",
+            now=now,
+        )
+        raw_secret = created.api_credential
+        record = session.get(AuthApiCredentialRecord, created.credential_id)
+        assert record is not None
+        assert raw_secret not in record.credential_secret_digest
+        resolved = authenticate_auth_api_credential(
+            session,
+            raw_secret=raw_secret,
+            now=now + timedelta(seconds=1),
+        )
+        assert resolved is not None
+        assert resolved.principal.authentication_type == "human_api_token"
+        assert resolved.record.last_used_at is not None
+
+    monkeypatch.setenv("TOPO_AUTH_MODE", "required")
+    monkeypatch.delenv("TOPO_AUTH_ENABLED", raising=False)
+    monkeypatch.setenv("TOPO_API_TOKEN_HASHES_JSON", "{}")
+    monkeypatch.setenv(
+        "TOPO_BROWSER_ALLOWED_ORIGINS_JSON",
+        json.dumps(["https://topo.test"]),
+    )
+    configuration = load_auth_configuration(database_url=_postgres_url())
+
+    application = create_app(
+        auth_configuration=configuration,
+        session_factory=session_factory,
+        database_initializer=lambda: init_db(bind=postgres_engine),
+    )
+    with TestClient(application, base_url="https://topo.test") as client:
+        identity = client.get(
+            "/api/v1/system/whoami",
+            headers={"Authorization": f"Bearer {raw_secret}"},
+        )
+        assert identity.status_code == 200
+        assert identity.json()["authentication_type"] == "human_api_token"
+        login = client.post(
+            "/api/v1/auth/session",
+            headers={
+                "Authorization": f"Bearer {raw_secret}",
+                "Origin": "https://topo.test",
+            },
+        )
+        assert login.status_code == 201
+        session_secret = client.cookies.get(SESSION_COOKIE_NAME)
+        with session_factory() as session:
+            record = session.get(AuthApiCredentialRecord, created.credential_id)
+            assert record is not None
+            revoke_auth_api_credential(
+                session,
+                record=record,
+                revoked_by_subject="test:postgres-named-admin",
+            )
+
+        client.cookies.set(SESSION_COOKIE_NAME, session_secret)
+        assert client.get("/api/v1/auth/session").status_code == 401
+        assert client.get(
+            "/api/v1/system/whoami",
+            headers={"Authorization": f"Bearer {raw_secret}"},
+        ).status_code == 401
+
+
 def test_exact_but_unstamped_schema_fails_closed() -> None:
     with _temporary_database("unstamped") as engine:
         Base.metadata.create_all(engine)
@@ -578,7 +684,7 @@ def test_unknown_revision_fails_closed_without_credential_disclosure() -> None:
 def test_every_mapped_table_supports_orm_write_read_and_false_booleans(
     session_factory,
 ) -> None:
-    assert len(DOMAIN_TABLE_NAMES) == 39
+    assert len(DOMAIN_TABLE_NAMES) == 40
     with session_factory() as session:
         records = [_mapped_instance(table_name) for table_name in DOMAIN_TABLE_NAMES]
         session.add_all(records)

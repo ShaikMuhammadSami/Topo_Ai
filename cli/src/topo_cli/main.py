@@ -7,6 +7,7 @@ import sys
 from topo_cli import __version__
 from topo_cli.client import TopoClient
 from topo_cli.commands import (
+    auth,
     agents,
     approvals,
     blast_radius,
@@ -69,6 +70,11 @@ app = typer.Typer(
 app.add_typer(
     profiles.app,
     name="profiles",
+)
+
+app.add_typer(
+    auth.app,
+    name="auth",
 )
 
 incidents.app.add_typer(
@@ -430,7 +436,7 @@ def logout_command(
         emit_notice(
             f"Stored token removed for "
             f"profile "
-            f"'{runtime.profile_name}'."
+            f"'{runtime.profile_name}'. Server credentials are unchanged."
         )
     else:
         emit_notice(

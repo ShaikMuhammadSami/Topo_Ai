@@ -8,7 +8,7 @@ import pytest
 from topo_cli.client import TopoClient
 import topo_cli.commands.approvals as approvals
 from topo_cli.errors import (
-    AuthenticationFailure,
+    AuthorizationFailure,
 )
 from topo_cli.output import OutputFormat
 
@@ -424,7 +424,7 @@ def test_list_human_output_shows_current_validity(
     assert records == [payload]
 
 
-def test_authorization_error_maps_to_cli_authentication_failure(
+def test_authorization_error_maps_to_cli_authorization_failure(
 ) -> None:
     client = TopoClient.__new__(TopoClient)
     response = httpx.Response(
@@ -440,5 +440,5 @@ def test_authorization_error_maps_to_cli_authentication_failure(
         ),
     )
 
-    with pytest.raises(AuthenticationFailure):
+    with pytest.raises(AuthorizationFailure):
         client._raise_for_status(response)

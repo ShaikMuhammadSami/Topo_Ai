@@ -4440,3 +4440,58 @@ class AuthSessionRecord(Base):
         String(50),
         nullable=True,
     )
+
+
+class AuthApiCredentialRecord(Base):
+    """Digest-only authority for a named human or service API caller."""
+
+    __tablename__ = "auth_api_credentials"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "credential_secret_digest",
+            name="uq_auth_api_credentials_secret_digest",
+        ),
+    )
+
+    credential_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    credential_secret_digest: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+    )
+    credential_hint: Mapped[str] = mapped_column(String(32), nullable=False)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    caller_type: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+        index=True,
+    )
+    subject: Mapped[str] = mapped_column(
+        String(500),
+        nullable=False,
+        index=True,
+    )
+    display_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    roles_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    expires_at: Mapped[str] = mapped_column(
+        String(50),
+        nullable=False,
+        index=True,
+    )
+    revoked_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+    revoked_by_subject: Mapped[str | None] = mapped_column(
+        String(500),
+        nullable=True,
+    )
+    last_used_at: Mapped[str | None] = mapped_column(
+        String(50),
+        nullable=True,
+        index=True,
+    )
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)

@@ -6,10 +6,20 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.models.auth import BrowserSessionView
+from app.models.auth import (
+    ApiCredentialCreate,
+    ApiCredentialCreated,
+    ApiCredentialView,
+    BrowserSessionView,
+)
+from app.repositories.auth_api_credential_repository import (
+    list_auth_api_credentials,
+    load_auth_api_credential,
+)
 from app.repositories.auth_session_repository import load_auth_session
 from app.security.approval_authorization import authenticated_principal
 from app.security.auth_config import AuthConfiguration
+from app.security.principals import AuthPrincipal
 from app.security.session_auth import (
     browser_origin_is_allowed,
     clear_auth_session_cookies,
@@ -20,9 +30,29 @@ from app.services.auth_session_service import (
     create_auth_session,
     revoke_auth_session,
 )
+from app.services.auth_api_credential_service import (
+    AuthApiCredentialPersistenceError,
+    create_auth_api_credential,
+    credential_view,
+    revoke_auth_api_credential,
+)
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
+
+
+def _credential_admin(request: Request) -> AuthPrincipal:
+    principal = authenticated_principal(request)
+    if principal.authentication_type not in {
+        "api_token",
+        "human_api_token",
+        "session",
+    } or "admin" not in principal.roles:
+        raise HTTPException(
+            status_code=403,
+            detail="Administrative human authority is required.",
+        )
+    return principal
 
 
 def _configuration(request: Request) -> AuthConfiguration:
@@ -86,7 +116,10 @@ def create_browser_session(
 ) -> BrowserSessionView:
     configuration = _configuration(request)
     principal = authenticated_principal(request)
-    if principal.authentication_type != "api_token":
+    if principal.authentication_type not in {
+        "api_token",
+        "human_api_token",
+    }:
         raise HTTPException(
             status_code=403,
             detail="Browser session exchange requires human API-token authority.",
@@ -183,3 +216,113 @@ def delete_browser_session(
     response = Response(status_code=status.HTTP_204_NO_CONTENT)
     clear_auth_session_cookies(response)
     return response
+
+
+@router.post(
+    "/api-credentials",
+    response_model=ApiCredentialCreated,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_api_credential(
+    value: ApiCredentialCreate,
+    request: Request,
+    session: Session = Depends(_auth_database_session),
+) -> ApiCredentialCreated:
+    principal = _credential_admin(request)
+    try:
+        return create_auth_api_credential(
+            session,
+            request=value,
+            created_by_subject=principal.subject,
+        )
+    except AuthApiCredentialPersistenceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is unavailable.",
+        ) from exc
+
+
+@router.get("/api-credentials", response_model=list[ApiCredentialView])
+def list_api_credentials(
+    request: Request,
+    limit: int = 100,
+    offset: int = 0,
+    session: Session = Depends(_auth_database_session),
+) -> list[ApiCredentialView]:
+    _credential_admin(request)
+    if not 1 <= limit <= 1000 or offset < 0:
+        raise HTTPException(status_code=422, detail="Invalid pagination.")
+    try:
+        return [
+            credential_view(record)
+            for record in list_auth_api_credentials(
+                session,
+                limit=limit,
+                offset=offset,
+            )
+        ]
+    except (SQLAlchemyError, AuthApiCredentialPersistenceError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is unavailable.",
+        ) from exc
+
+
+@router.get(
+    "/api-credentials/{credential_id}",
+    response_model=ApiCredentialView,
+)
+def get_api_credential(
+    credential_id: str,
+    request: Request,
+    session: Session = Depends(_auth_database_session),
+) -> ApiCredentialView:
+    _credential_admin(request)
+    try:
+        record = load_auth_api_credential(session, credential_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail="API credential not found.",
+            )
+        return credential_view(record)
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is unavailable.",
+        ) from exc
+
+
+@router.post(
+    "/api-credentials/{credential_id}/revoke",
+    response_model=ApiCredentialView,
+)
+def revoke_api_credential(
+    credential_id: str,
+    request: Request,
+    session: Session = Depends(_auth_database_session),
+) -> ApiCredentialView:
+    principal = _credential_admin(request)
+    try:
+        record = load_auth_api_credential(session, credential_id)
+        if record is None:
+            raise HTTPException(
+                status_code=404,
+                detail="API credential not found.",
+            )
+        revoke_auth_api_credential(
+            session,
+            record=record,
+            revoked_by_subject=principal.subject,
+        )
+        return credential_view(record)
+    except AuthApiCredentialPersistenceError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is unavailable.",
+        ) from exc
+    except SQLAlchemyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is unavailable.",
+        ) from exc

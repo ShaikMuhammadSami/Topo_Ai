@@ -18,6 +18,9 @@ from app.repositories.auth_session_repository import (
 )
 from app.security.auth_config import AuthConfiguration
 from app.security.principals import AuthPrincipal
+from app.services.auth_api_credential_service import (
+    resolve_auth_api_credential_by_digest,
+)
 
 
 SESSION_SECRET_PREFIX = "topo_session_"
@@ -83,14 +86,31 @@ def create_auth_session(
     source_credential_digest: str,
     now: datetime | None = None,
 ) -> IssuedAuthSession:
-    if source_principal.authentication_type != "api_token":
+    if source_principal.authentication_type not in {
+        "api_token",
+        "human_api_token",
+    }:
         raise ValueError("Only a human API-token principal can create a session.")
-    source_identity = configuration.token_registry.get(source_credential_digest)
-    if source_identity is None or (
-        source_identity.subject != source_principal.subject
-        or source_identity.display_name != source_principal.display_name
-        or source_identity.roles != source_principal.roles
-    ):
+    if source_principal.authentication_type == "api_token":
+        source_identity = configuration.token_registry.get(source_credential_digest)
+        source_is_valid = source_identity is not None and (
+            source_identity.subject == source_principal.subject
+            and source_identity.display_name == source_principal.display_name
+            and source_identity.roles == source_principal.roles
+        )
+    else:
+        source_named = resolve_auth_api_credential_by_digest(
+            session,
+            digest=source_credential_digest,
+            now=now,
+        )
+        source_is_valid = source_named is not None and (
+            source_named.principal.authentication_type == "human_api_token"
+            and source_named.principal.subject == source_principal.subject
+            and source_named.principal.display_name == source_principal.display_name
+            and source_named.principal.roles == source_principal.roles
+        )
+    if not source_is_valid:
         raise ValueError("The source authentication authority is unavailable.")
 
     issued_at = _as_utc(now or _utc_now())
@@ -160,16 +180,33 @@ def resolve_auth_session(
         return None
 
     roles = _roles(record)
-    if roles is None or record.source_authentication_type != "api_token":
+    if roles is None or record.source_authentication_type not in {
+        "api_token",
+        "human_api_token",
+    }:
         return None
-    source_identity = configuration.token_registry.get(
-        record.source_credential_digest
-    )
-    if source_identity is None or (
-        source_identity.subject != record.subject
-        or source_identity.display_name != record.display_name
-        or source_identity.roles != roles
-    ):
+    if record.source_authentication_type == "api_token":
+        source_identity = configuration.token_registry.get(
+            record.source_credential_digest
+        )
+        source_is_valid = source_identity is not None and (
+            source_identity.subject == record.subject
+            and source_identity.display_name == record.display_name
+            and source_identity.roles == roles
+        )
+    else:
+        source_named = resolve_auth_api_credential_by_digest(
+            session,
+            digest=record.source_credential_digest,
+            now=reference_time,
+        )
+        source_is_valid = source_named is not None and (
+            source_named.principal.authentication_type == "human_api_token"
+            and source_named.principal.subject == record.subject
+            and source_named.principal.display_name == record.display_name
+            and source_named.principal.roles == roles
+        )
+    if not source_is_valid:
         return None
 
     return ResolvedAuthSession(

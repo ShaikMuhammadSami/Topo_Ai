@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import os
+import hashlib
+import json
+import secrets
 import shutil
 import socket
 import subprocess
@@ -65,7 +68,11 @@ class ManagedTopoEnvironment:
         self.timeout_seconds = timeout_seconds
         self.root = Path(tempfile.mkdtemp(prefix="topo-eval-"))
         self.port = _free_port()
-        self.client = TopoClient(f"http://127.0.0.1:{self.port}")
+        self._bootstrap_token = "topo-eval-bootstrap-" + secrets.token_urlsafe(48)
+        self.client = TopoClient(
+            f"http://127.0.0.1:{self.port}",
+            bearer_token=self._bootstrap_token,
+        )
         self.backend: subprocess.Popen[str] | None = None
         self.agent: subprocess.Popen[str] | None = None
         self._files: list[Any] = []
@@ -79,13 +86,23 @@ class ManagedTopoEnvironment:
         self._files.append(log)
         env = os.environ.copy()
         env.pop("TOPO_AUTH_ENABLED", None)
-        env.pop("TOPO_API_TOKEN_HASHES_JSON", None)
+        bootstrap_digest = hashlib.sha256(
+            self._bootstrap_token.encode("utf-8")
+        ).hexdigest()
         env.update(
             {
                 "TOPO_DATABASE_URL": f"sqlite:///{(self.root / 'topo-eval.db').as_posix()}",
-                # Transitional PH-2B exception. PH-2E replaces this isolated
-                # SQLite development mode with ephemeral required auth.
-                "TOPO_AUTH_MODE": "development-disabled",
+                "TOPO_AUTH_MODE": "required",
+                "TOPO_API_TOKEN_HASHES_JSON": json.dumps(
+                    {
+                        bootstrap_digest: {
+                            "subject": "evaluation:bootstrap",
+                            "display_name": "Evaluation Bootstrap",
+                            "roles": ["admin"],
+                        }
+                    },
+                    separators=(",", ":"),
+                ),
                 "PYTHONUNBUFFERED": "1",
             }
         )
@@ -104,6 +121,39 @@ class ManagedTopoEnvironment:
                 timeout_seconds=45,
                 interval_seconds=1,
             )
+            created = self.client.post(
+                "/api/v1/auth/api-credentials",
+                {
+                    "name": "isolated-evaluation",
+                    "caller_type": "human_api",
+                    "subject": "evaluation:runner",
+                    "display_name": "Topo Evaluation Runner",
+                    "roles": ["admin"],
+                    "expires_in_days": 1,
+                },
+            )
+            if created.status != 201 or not isinstance(created.body, dict):
+                raise RuntimeError(
+                    "Isolated named API credential creation failed "
+                    f"(status={created.status})."
+                )
+            named_token = created.body.get("api_credential")
+            if not isinstance(named_token, str) or not named_token:
+                raise RuntimeError(
+                    "Isolated named API credential response was invalid."
+                )
+            self.client.set_bearer_token(named_token)
+            self._bootstrap_token = ""
+            named_identity = self.client.get("/api/v1/system/whoami")
+            if (
+                named_identity.status != 200
+                or not isinstance(named_identity.body, dict)
+                or named_identity.body.get("authentication_type")
+                != "human_api_token"
+            ):
+                raise RuntimeError(
+                    "Isolated named API credential authentication failed."
+                )
         except Exception as exc:
             raise RuntimeError(f"Isolated backend did not start.\n{_tail(log_path)}") from exc
 

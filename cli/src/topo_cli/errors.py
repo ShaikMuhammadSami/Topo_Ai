@@ -18,6 +18,7 @@ class ExitCode:
     API_ERROR = 6
     VALIDATION = 7
     FILE_ERROR = 8
+    AUTHORIZATION = 9
 
 
 @dataclass
@@ -50,6 +51,14 @@ class AuthenticationFailure(TopoCliError):
         super().__init__(
             message=message,
             exit_code=ExitCode.AUTHENTICATION,
+        )
+
+
+class AuthorizationFailure(TopoCliError):
+    def __init__(self, message: str) -> None:
+        super().__init__(
+            message=message,
+            exit_code=ExitCode.AUTHORIZATION,
         )
 
 

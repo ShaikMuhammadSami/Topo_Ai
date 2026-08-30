@@ -16,9 +16,18 @@ class HttpObservation:
 
 
 class TopoClient:
-    def __init__(self, base_url: str, timeout: float = 15.0):
+    def __init__(
+        self,
+        base_url: str,
+        timeout: float = 15.0,
+        bearer_token: str | None = None,
+    ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self._bearer_token = bearer_token
+
+    def set_bearer_token(self, bearer_token: str) -> None:
+        self._bearer_token = bearer_token
 
     def request(
         self,
@@ -28,6 +37,8 @@ class TopoClient:
     ) -> HttpObservation:
         payload = None
         headers = {"Accept": "application/json"}
+        if self._bearer_token:
+            headers["Authorization"] = f"Bearer {self._bearer_token}"
         if body is not None:
             payload = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"

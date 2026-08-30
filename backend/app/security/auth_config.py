@@ -317,15 +317,6 @@ def load_auth_configuration(
         load_session_ttls()
     )
 
-    if mode is AuthMode.REQUIRED and not registry:
-        raise AuthConfigurationError(
-            AuthConfigurationFailure.EMPTY_REQUIRED_AUTHORITY,
-            (
-                "required mode needs at least one valid transitional "
-                "API-token mapping."
-            ),
-        )
-
     if mode is AuthMode.DEVELOPMENT_DISABLED:
         _validate_development_database(database_url)
         operator_warnings = operator_warnings + (
