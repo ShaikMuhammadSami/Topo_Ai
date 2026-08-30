@@ -1,8 +1,9 @@
 from __future__ import annotations
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     Request,
@@ -29,7 +30,6 @@ from app.services.execution_transaction import (
     get_execution_intent,
     list_execution_intents,
 )
-
 
 router = APIRouter(
     prefix="/api/v1/incidents",
@@ -63,6 +63,8 @@ def create_intent(
     request_body: ExecutionIntentCreateRequest,
     request: Request,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ExecutionIntentDetail:
     principal = approval_control_principal(
         request
@@ -74,6 +76,7 @@ def create_intent(
             incident_id=incident_id,
             approval_id=request_body.approval_id,
             creator=principal,
+            tenant_id=tenant_context.tenant_id,
         )
     except (
         ExecutionIntentNotFoundError,
@@ -109,6 +112,8 @@ def list_intents(
         ge=0,
     ),
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[ExecutionIntentView]:
     authenticated_principal(request)
     return list_execution_intents(
@@ -119,6 +124,7 @@ def list_intents(
         action_id=action_id,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -131,6 +137,8 @@ def get_intent(
     execution_id: str,
     request: Request,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ExecutionIntentDetail:
     authenticated_principal(request)
 
@@ -139,6 +147,7 @@ def get_intent(
             session,
             incident_id=incident_id,
             execution_id=execution_id,
+            tenant_id=tenant_context.tenant_id,
         )
     except ExecutionIntentNotFoundError as exc:
         _raise_controlled_error(exc)
@@ -146,10 +155,7 @@ def get_intent(
 
 
 @router.post(
-    (
-        "/{incident_id}/execution-intents/"
-        "{execution_id}/cancel"
-    ),
+    ("/{incident_id}/execution-intents/" "{execution_id}/cancel"),
     response_model=ExecutionIntentDetail,
 )
 def cancel_intent(
@@ -158,6 +164,8 @@ def cancel_intent(
     request_body: ExecutionIntentCancelRequest,
     request: Request,
     session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ExecutionIntentDetail:
     principal = approval_control_principal(
         request
@@ -170,6 +178,7 @@ def cancel_intent(
             execution_id=execution_id,
             actor=principal,
             reason=request_body.reason,
+            tenant_id=tenant_context.tenant_id,
         )
     except (
         ExecutionIntentNotFoundError,

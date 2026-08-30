@@ -1,3 +1,5 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from collections import Counter
 
 from fastapi import APIRouter
@@ -7,7 +9,6 @@ from app.models.topology import (
     SnapshotValidationResult,
 )
 from app.services.sample_topology import build_sample_snapshot
-
 
 router = APIRouter(
     prefix="/api/v1/topology",
@@ -42,6 +43,8 @@ def get_sample_topology() -> GraphSnapshot:
 )
 def validate_snapshot(
     snapshot: GraphSnapshot,
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> SnapshotValidationResult:
     """
     Validate entity references and graph integrity.

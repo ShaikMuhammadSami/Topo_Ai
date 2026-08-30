@@ -1,3 +1,10 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 from datetime import datetime
 from typing import Iterable
 
@@ -44,11 +51,12 @@ def _new_signal_temporal(
         source_field="NormalizedSignal.first_observed_at",
     )
 
+
 def save_signals(
     session: Session,
-    signals: Iterable[
-        NormalizedSignal
-    ],
+    signals: Iterable[NormalizedSignal],
+    *,
+    tenant_id: DomainTenant,
 ) -> tuple[int, int]:
     created_count = 0
     updated_count = 0
@@ -56,9 +64,11 @@ def save_signals(
     now = utc_now_iso()
 
     for signal in signals:
-        record = session.get(
+        record = tenant_get(
+            session,
             SignalRecord,
             signal.signal_id,
+            tenant_id=tenant_id,
         )
 
         if record is None:
@@ -71,68 +81,29 @@ def save_signals(
                 }
             )
             record = SignalRecord(
-                signal_id=(
-                    signal.signal_id
-                ),
-                fingerprint=(
-                    signal.fingerprint
-                ),
-                signal_type=(
-                    signal.signal_type.value
-                ),
-                severity=(
-                    signal.severity.value
-                ),
-                category=(
-                    signal.category.value
-                ),
-                source_system=(
-                    signal.source_system
-                ),
+                signal_id=(signal.signal_id),
+                fingerprint=(signal.fingerprint),
+                signal_type=(signal.signal_type.value),
+                severity=(signal.severity.value),
+                category=(signal.category.value),
+                source_system=(signal.source_system),
                 title=signal.title,
                 summary=signal.summary,
                 reason=signal.reason,
                 action=signal.action,
-                first_observed_at=(
-                    signal
-                    .first_observed_at
-                    .isoformat()
-                ),
-                last_observed_at=(
-                    signal
-                    .last_observed_at
-                    .isoformat()
-                ),
-                occurrence_count=(
-                    signal.occurrence_count
-                ),
-                cluster_name=(
-                    signal.cluster_name
-                ),
-                namespace=(
-                    signal.namespace
-                ),
-                involved_entity_id=(
-                    signal
-                    .involved_entity_id
-                ),
-                involved_object_uid=(
-                    signal
-                    .involved_object_uid
-                ),
-                involved_object_kind=(
-                    signal
-                    .involved_object_kind
-                ),
-                involved_object_name=(
-                    signal
-                    .involved_object_name
-                ),
-                payload_json=(
-                    signal.model_dump_json()
-                ),
+                first_observed_at=(signal.first_observed_at.isoformat()),
+                last_observed_at=(signal.last_observed_at.isoformat()),
+                occurrence_count=(signal.occurrence_count),
+                cluster_name=(signal.cluster_name),
+                namespace=(signal.namespace),
+                involved_entity_id=(signal.involved_entity_id),
+                involved_object_uid=(signal.involved_object_uid),
+                involved_object_kind=(signal.involved_object_kind),
+                involved_object_name=(signal.involved_object_name),
+                payload_json=(signal.model_dump_json()),
                 created_at=now,
                 updated_at=now,
+                tenant_id=tenant_value(tenant_id),
             )
 
             session.add(record)
@@ -224,7 +195,7 @@ def save_signals(
 
             updated_count += 1
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return (
         created_count,
@@ -288,10 +259,10 @@ def list_signals(
     namespace: str | None = None,
     severity: str | None = None,
     limit: int = 100,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[SignalSummary]:
-    statement = select(
-        SignalRecord
-    )
+    statement = select(SignalRecord).where(tenant_predicate(SignalRecord, tenant_id))
 
     if cluster_name:
         statement = statement.where(
@@ -332,18 +303,22 @@ def list_signals(
         for record in records
     ]
 
+
 def list_signals_by_incident_fingerprint(
     session: Session,
     cluster_name: str,
     namespace: str | None,
     fingerprint: str,
     limit: int = 200,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[SignalSummary]:
-    statement = select(
-        SignalRecord
-    ).where(
-        SignalRecord.cluster_name
-        == cluster_name,
+    statement = (
+        select(SignalRecord)
+        .where(tenant_predicate(SignalRecord, tenant_id))
+        .where(
+            SignalRecord.cluster_name == cluster_name,
+        )
     )
 
     if namespace:
@@ -390,14 +365,19 @@ def list_signals_by_incident_fingerprint(
             break
 
     return matched
-    
+
+
 def load_signal(
     session: Session,
     signal_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> NormalizedSignal | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         SignalRecord,
         signal_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -410,20 +390,23 @@ def load_signal(
         )
     )
 
+
 def find_signals_after(
     session: Session,
     cluster_name: str,
     namespace: str | None,
     start_at: datetime,
     limit: int = 500,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[NormalizedSignal]:
-    statement = select(
-        SignalRecord
-    ).where(
-        SignalRecord.cluster_name
-        == cluster_name,
-        SignalRecord.last_observed_at
-        >= start_at.isoformat(),
+    statement = (
+        select(SignalRecord)
+        .where(tenant_predicate(SignalRecord, tenant_id))
+        .where(
+            SignalRecord.cluster_name == cluster_name,
+            SignalRecord.last_observed_at >= start_at.isoformat(),
+        )
     )
 
     if namespace:

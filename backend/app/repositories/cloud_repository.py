@@ -1,4 +1,11 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 
 import hashlib
 import json
@@ -60,8 +67,8 @@ def persist_cloud_inventory(
     session: Session,
     *,
     agent: TopoAgentRecord,
-    submission:
-        AgentSnapshotSubmission,
+    submission: AgentSnapshotSubmission,
+    tenant_id: DomainTenant,
 ) -> None:
     inventory = submission.inventory
 
@@ -127,18 +134,17 @@ def persist_cloud_inventory(
             ):
                 properties = {}
 
-            if (
-                resource_type
-                in account_resource_types
-            ):
+            if resource_type in account_resource_types:
                 record_id = (
                     f"{provider}:"
                     f"{account_id}"
                 )
 
-                record = session.get(
+                record = tenant_get(
+                    session,
                     CloudAccountRecord,
                     record_id,
+                    tenant_id=tenant_id,
                 )
 
                 metadata = {
@@ -163,38 +169,17 @@ def persist_cloud_inventory(
                 )
 
                 if record is None:
-                    record = (
-                        CloudAccountRecord(
-                            cloud_account_id=(
-                                record_id
-                            ),
-                            provider=provider,
-                            account_number=(
-                                account_id
-                            ),
-                            display_name=str(
-                                value.get(
-                                    "name"
-                                )
-                                or account_id
-                            ),
-                            principal_arn=(
-                                str(principal)
-                                if principal
-                                else None
-                            ),
-                            metadata_json=(
-                                json.dumps(
-                                    metadata
-                                )
-                            ),
-                            last_seen_at=(
-                                submission
-                                .collected_at
-                            ),
-                            created_at=now,
-                            updated_at=now,
-                        )
+                    record = CloudAccountRecord(
+                        cloud_account_id=(record_id),
+                        provider=provider,
+                        account_number=(account_id),
+                        display_name=str(value.get("name") or account_id),
+                        principal_arn=(str(principal) if principal else None),
+                        metadata_json=(json.dumps(metadata)),
+                        last_seen_at=(submission.collected_at),
+                        created_at=now,
+                        updated_at=now,
+                        tenant_id=tenant_value(tenant_id),
                     )
 
                     session.add(record)
@@ -262,9 +247,11 @@ def persist_cloud_inventory(
                 )
             )
 
-            record = session.get(
+            record = tenant_get(
+                session,
                 CloudResourceRecord,
                 record_id,
+                tenant_id=tenant_id,
             )
 
             raw_properties = value.get(
@@ -332,14 +319,11 @@ def persist_cloud_inventory(
             }
 
             if record is None:
-                record = (
-                    CloudResourceRecord(
-                        cloud_resource_id=(
-                            record_id
-                        ),
-                        created_at=now,
-                        **fields,
-                    )
+                record = CloudResourceRecord(
+                    cloud_resource_id=(record_id),
+                    created_at=now,
+                    **fields,
+                    tenant_id=tenant_value(tenant_id),
                 )
 
                 session.add(record)
@@ -355,7 +339,7 @@ def persist_cloud_inventory(
                         field_value,
                     )
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
 
 def _account_view(
@@ -390,9 +374,10 @@ def list_cloud_accounts(
     session: Session,
     *,
     provider: str | None = None,
+    tenant_id: DomainTenant,
 ) -> list[CloudAccountView]:
-    statement = select(
-        CloudAccountRecord
+    statement = select(CloudAccountRecord).where(
+        tenant_predicate(CloudAccountRecord, tenant_id)
     )
 
     if provider:
@@ -464,9 +449,10 @@ def list_cloud_resources(
     tag_value: str | None = None,
     limit: int = 500,
     offset: int = 0,
+    tenant_id: DomainTenant,
 ) -> list[CloudResourceView]:
-    statement = select(
-        CloudResourceRecord
+    statement = select(CloudResourceRecord).where(
+        tenant_predicate(CloudResourceRecord, tenant_id)
     )
 
     if provider:
@@ -535,14 +521,12 @@ def latest_cloud_topology(
     provider: str = "aws",
     account_id: str | None = None,
     region: str | None = None,
+    tenant_id: DomainTenant,
 ) -> CloudTopologyResponse:
     statement = (
         select(SnapshotRecord)
-        .order_by(
-            SnapshotRecord
-            .created_at
-            .desc()
-        )
+        .where(tenant_predicate(SnapshotRecord, tenant_id))
+        .order_by(SnapshotRecord.created_at.desc())
         .limit(100)
     )
 

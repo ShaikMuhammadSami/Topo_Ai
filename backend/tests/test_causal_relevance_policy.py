@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 import json
@@ -47,7 +48,6 @@ from app.models.topology import (
 )
 from app.repositories.causal_analysis_repository import latest_causal_analysis
 from app.services.blast_impact_policy import BLAST_POLICY_VERSION
-
 
 NOW = datetime(2026, 8, 24, 12, 0, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[2]
@@ -426,6 +426,7 @@ def _candidate(event_id: str, entity_id: str) -> IncidentChangeCandidate:
 def _session_with_pinned_snapshot(snapshot: GraphSnapshot) -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     session = Session(engine)
     session.add(
         SnapshotRecord(
@@ -442,6 +443,7 @@ def _session_with_pinned_snapshot(snapshot: GraphSnapshot) -> Session:
             scope_json=json.dumps(snapshot.scope),
             payload_json=snapshot.model_dump_json(),
             created_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.add(
@@ -462,6 +464,7 @@ def _session_with_pinned_snapshot(snapshot: GraphSnapshot) -> Session:
             last_observed_at=NOW.isoformat(),
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -480,7 +483,9 @@ def _analysis_response(candidates) -> IncidentChangeAnalysisResponse:
     )
 
 
-def test_integrated_sentinel_b_shape_ranks_victim_without_score_change(monkeypatch) -> None:
+def test_integrated_sentinel_b_shape_ranks_victim_without_score_change(
+    monkeypatch,
+) -> None:
     snapshot = _ownership_and_contains()
     snapshot.relationships.extend(
         [
@@ -501,6 +506,7 @@ def test_integrated_sentinel_b_shape_ranks_victim_without_score_change(monkeypat
         session,
         incident_id="incident:cr1",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
 
     assert analysis.top_hypothesis.target_event_id == "event:z-victim"
@@ -533,6 +539,7 @@ def test_integrated_sentinel_a_path_contains_only_ownership(monkeypatch) -> None
         session,
         incident_id="incident:cr1",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     audit = analysis.candidate_relevance_audit[0]
     assert audit.path_entity_ids == ["deployment", "replicaset", "pod"]
@@ -556,12 +563,20 @@ def test_new_analysis_persists_version_audit_and_is_idempotent(monkeypatch) -> N
         lambda *args, **kwargs: _analysis_response([victim]),
     )
     first = causal_service.analyze_causal_rca(
-        session, incident_id="incident:cr1", request=CausalAnalysisRequest()
+        session,
+        incident_id="incident:cr1",
+        request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     second = causal_service.analyze_causal_rca(
-        session, incident_id="incident:cr1", request=CausalAnalysisRequest()
+        session,
+        incident_id="incident:cr1",
+        request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
-    loaded = latest_causal_analysis(session, incident_id="incident:cr1")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:cr1", tenant_id=TEST_TENANT
+    )
     assert second.model_dump_json() == first.model_dump_json()
     assert loaded.causal_relevance_policy_version == CAUSAL_RELEVANCE_POLICY_VERSION
     assert loaded.candidate_relevance_audit[0].path_predicates == ["owns", "owns"]
@@ -577,7 +592,11 @@ def test_legacy_analysis_loads_without_relevance_claim(monkeypatch) -> None:
         lambda *args, **kwargs: _analysis_response([victim]),
     )
     current = causal_service.analyze_causal_rca(
-        session, incident_id="incident:cr1", request=CausalAnalysisRequest(), persist=False
+        session,
+        incident_id="incident:cr1",
+        request=CausalAnalysisRequest(),
+        persist=False,
+        tenant_id=TEST_TENANT,
     )
     payload = current.model_dump(mode="json")
     payload.pop("causal_relevance_policy_version")
@@ -597,10 +616,13 @@ def test_legacy_analysis_loads_without_relevance_claim(monkeypatch) -> None:
             payload_json=legacy_json,
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
-    loaded = latest_causal_analysis(session, incident_id="incident:legacy-cr1")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:legacy-cr1", tenant_id=TEST_TENANT
+    )
     assert loaded.causal_relevance_policy_version is None
     assert loaded.candidate_relevance_audit == []
     assert session.get(CausalAnalysisRecord, "causal-analysis:legacy-cr1").payload_json == legacy_json
@@ -628,6 +650,7 @@ def test_historical_pin_ignores_a_later_unrelated_snapshot(monkeypatch) -> None:
             scope_json=json.dumps(later.scope),
             payload_json=later.model_dump_json(),
             created_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -638,7 +661,11 @@ def test_historical_pin_ignores_a_later_unrelated_snapshot(monkeypatch) -> None:
         lambda *args, **kwargs: _analysis_response([distractor]),
     )
     analysis = causal_service.analyze_causal_rca(
-        session, incident_id="incident:cr1", request=CausalAnalysisRequest(), persist=False
+        session,
+        incident_id="incident:cr1",
+        request=CausalAnalysisRequest(),
+        persist=False,
+        tenant_id=TEST_TENANT,
     )
     assert analysis.topology_snapshot_id == "snapshot:pinned"
     assert analysis.candidate_relevance_audit[0].relevance_status == CausalRelevanceStatus.IDENTITY_UNRESOLVED

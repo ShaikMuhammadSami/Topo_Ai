@@ -1,4 +1,11 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -20,11 +27,14 @@ def save_causal_analysis(
     *,
     analysis: CausalAnalysisResponse,
     commit: bool = True,
+    tenant_id: DomainTenant,
 ) -> CausalAnalysisResponse:
     analysis = ensure_analysis_confidence_semantics(analysis)
-    record = session.get(
+    record = tenant_get(
+        session,
         CausalAnalysisRecord,
         analysis.analysis_id,
+        tenant_id=tenant_id,
     )
 
     now = utc_now_iso()
@@ -33,39 +43,18 @@ def save_causal_analysis(
 
     if record is None:
         record = CausalAnalysisRecord(
-            analysis_id=(
-                analysis.analysis_id
-            ),
-            incident_id=(
-                analysis.incident_id
-            ),
-            generated_at=(
-                analysis.generated_at
-            ),
-            algorithm_version=(
-                analysis.algorithm_version
-            ),
-            candidate_count=(
-                analysis.candidate_count
-            ),
-            hypothesis_count=(
-                analysis.hypothesis_count
-            ),
-            top_hypothesis_score=(
-                top.score
-                if top
-                else None
-            ),
-            top_root_event_id=(
-                top.root_event_id
-                if top
-                else None
-            ),
-            payload_json=(
-                analysis.model_dump_json()
-            ),
+            analysis_id=(analysis.analysis_id),
+            incident_id=(analysis.incident_id),
+            generated_at=(analysis.generated_at),
+            algorithm_version=(analysis.algorithm_version),
+            candidate_count=(analysis.candidate_count),
+            hypothesis_count=(analysis.hypothesis_count),
+            top_hypothesis_score=(top.score if top else None),
+            top_root_event_id=(top.root_event_id if top else None),
+            payload_json=(analysis.model_dump_json()),
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -80,7 +69,7 @@ def save_causal_analysis(
         )
 
     if commit:
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
 
     return analysis
 
@@ -89,10 +78,13 @@ def load_causal_analysis(
     session: Session,
     *,
     analysis_id: str,
+    tenant_id: DomainTenant,
 ) -> CausalAnalysisResponse | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         CausalAnalysisRecord,
         analysis_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -107,19 +99,13 @@ def latest_causal_analysis(
     session: Session,
     *,
     incident_id: str,
+    tenant_id: DomainTenant,
 ) -> CausalAnalysisResponse | None:
     statement = (
         select(CausalAnalysisRecord)
-        .where(
-            CausalAnalysisRecord
-            .incident_id
-            == incident_id
-        )
-        .order_by(
-            CausalAnalysisRecord
-            .generated_at
-            .desc()
-        )
+        .where(tenant_predicate(CausalAnalysisRecord, tenant_id))
+        .where(CausalAnalysisRecord.incident_id == incident_id)
+        .order_by(CausalAnalysisRecord.generated_at.desc())
         .limit(1)
     )
 

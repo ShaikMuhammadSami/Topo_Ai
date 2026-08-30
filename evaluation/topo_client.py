@@ -21,10 +21,15 @@ class TopoClient:
         base_url: str,
         timeout: float = 15.0,
         bearer_token: str | None = None,
+        tenant_id: str | None = None,
     ):
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self._bearer_token = bearer_token
+        self._tenant_id = tenant_id
+
+    def set_tenant(self, tenant_id: str) -> None:
+        self._tenant_id = tenant_id
 
     def set_bearer_token(self, bearer_token: str) -> None:
         self._bearer_token = bearer_token
@@ -39,6 +44,8 @@ class TopoClient:
         headers = {"Accept": "application/json"}
         if self._bearer_token:
             headers["Authorization"] = f"Bearer {self._bearer_token}"
+        if self._tenant_id:
+            headers["X-Topo-Tenant-ID"] = self._tenant_id
         if body is not None:
             payload = json.dumps(body).encode("utf-8")
             headers["Content-Type"] = "application/json"

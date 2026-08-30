@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 from datetime import datetime, timedelta, timezone
@@ -23,7 +24,6 @@ from app.services.change_normalizer import normalize_snapshot_changes
 from app.services.snapshot_diff import compare_snapshots
 from app.services.topology_checkpoint import persist_topology_checkpoint
 
-
 NOW = datetime(2026, 8, 23, 10, 0, tzinfo=timezone.utc)
 CLUSTER = "production"
 NAMESPACE = "payments"
@@ -32,6 +32,7 @@ NAMESPACE = "payments"
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -346,6 +347,7 @@ def test_identity_only_checkpoint_creates_no_change_record_or_event() -> None:
             observed_at=NOW,
         ),
         reason=TopologyCheckpointReason.PERIODIC_RECONCILE,
+        tenant_id=TEST_TENANT,
     )
     result = persist_topology_checkpoint(
         session,
@@ -355,6 +357,7 @@ def test_identity_only_checkpoint_creates_no_change_record_or_event() -> None:
             observed_at=NOW + timedelta(minutes=1),
         ),
         reason=TopologyCheckpointReason.AUTOMATIC_CHANGE,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.created is True
@@ -374,6 +377,7 @@ def test_material_transition_reaches_durable_change_intelligence() -> None:
             image="registry.example/payment:v1",
         ),
         reason=TopologyCheckpointReason.PERIODIC_RECONCILE,
+        tenant_id=TEST_TENANT,
     )
     result = persist_topology_checkpoint(
         session,
@@ -384,6 +388,7 @@ def test_material_transition_reaches_durable_change_intelligence() -> None:
             image="registry.example/payment:v2",
         ),
         reason=TopologyCheckpointReason.AUTOMATIC_CHANGE,
+        tenant_id=TEST_TENANT,
     )
 
     records = list(session.scalars(select(ChangeRecord)).all())

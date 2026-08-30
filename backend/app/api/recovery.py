@@ -1,8 +1,9 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from datetime import timedelta
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -61,17 +62,14 @@ router = APIRouter(
 def verify_applied_recommendation(
     recommendation_id: str,
     post_snapshot_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> RecoveryVerification:
-    recommendation = (
-        load_recommendation(
-            session=session,
-            recommendation_id=(
-                recommendation_id
-            ),
-        )
+    recommendation = load_recommendation(
+        session=session,
+        recommendation_id=(recommendation_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if recommendation is None:
@@ -107,9 +105,8 @@ def verify_applied_recommendation(
 
     analysis = load_incident_analysis(
         session=session,
-        analysis_id=(
-            recommendation.analysis_id
-        ),
+        analysis_id=(recommendation.analysis_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if analysis is None:
@@ -123,9 +120,8 @@ def verify_applied_recommendation(
 
     original_signal = load_signal(
         session=session,
-        signal_id=(
-            recommendation.signal_id
-        ),
+        signal_id=(recommendation.signal_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if original_signal is None:
@@ -139,9 +135,8 @@ def verify_applied_recommendation(
 
     pre_snapshot = load_snapshot(
         session=session,
-        snapshot_id=(
-            analysis.topology_snapshot_id
-        ),
+        snapshot_id=(analysis.topology_snapshot_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if pre_snapshot is None:
@@ -156,6 +151,7 @@ def verify_applied_recommendation(
     post_snapshot = load_snapshot(
         session=session,
         snapshot_id=post_snapshot_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if post_snapshot is None:
@@ -205,22 +201,13 @@ def verify_applied_recommendation(
             ),
         )
 
-    signals_after_action = (
-        find_signals_after(
-            session=session,
-            cluster_name=(
-                recommendation
-                .cluster_name
-            ),
-            namespace=(
-                recommendation.namespace
-            ),
-            start_at=(
-                recommendation.applied_at
-                - timedelta(seconds=1)
-            ),
-            limit=500,
-        )
+    signals_after_action = find_signals_after(
+        session=session,
+        cluster_name=(recommendation.cluster_name),
+        namespace=(recommendation.namespace),
+        start_at=(recommendation.applied_at - timedelta(seconds=1)),
+        limit=500,
+        tenant_id=tenant_context.tenant_id,
     )
 
     try:
@@ -252,6 +239,7 @@ def verify_applied_recommendation(
     save_recovery_verification(
         session=session,
         verification=verification,
+        tenant_id=tenant_context.tenant_id,
     )
     event_type_by_status = {
      "verified": (
@@ -328,19 +316,17 @@ def verify_applied_recommendation(
     )
 
     publish_event_safely(
-       session=session,
-       event=recovery_event,
+        session=session,
+        event=recovery_event,
+        tenant_id=tenant_context.tenant_id,
     )
-     
 
     return verification
 
 
 @router.get(
     "",
-    response_model=list[
-        RecoveryVerificationSummary
-    ],
+    response_model=list[RecoveryVerificationSummary],
 )
 def get_recovery_verifications(
     recommendation_id: str | None = None,
@@ -353,23 +339,16 @@ def get_recovery_verifications(
         ge=1,
         le=500,
     ),
-    session: Session = Depends(
-        get_session
-    ),
-) -> list[
-    RecoveryVerificationSummary
-]:
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> list[RecoveryVerificationSummary]:
     return list_recovery_verifications(
         session=session,
-        recommendation_id=(
-            recommendation_id
-        ),
-        status=(
-            status_filter.value
-            if status_filter
-            else None
-        ),
+        recommendation_id=(recommendation_id),
+        status=(status_filter.value if status_filter else None),
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -379,17 +358,14 @@ def get_recovery_verifications(
 )
 def get_recovery_verification(
     verification_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> RecoveryVerification:
-    verification = (
-        load_recovery_verification(
-            session=session,
-            verification_id=(
-                verification_id
-            ),
-        )
+    verification = load_recovery_verification(
+        session=session,
+        verification_id=(verification_id),
+        tenant_id=tenant_context.tenant_id,
     )
 
     if verification is None:

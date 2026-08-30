@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 from datetime import datetime, timezone
@@ -32,7 +33,6 @@ from app.services.container_image_identity import (
     parse_container_image_observation,
 )
 from app.services.incident_change_analysis import analyze_incident_change_events
-
 
 NOW = datetime(2026, 8, 25, 12, 0, tzinfo=timezone.utc)
 DIGEST_X = "sha256:" + "1" * 64
@@ -466,9 +466,14 @@ def test_sc3_relationship_provenance_keeps_all_semantic_sources():
 def test_snapshot_round_trip_preserves_requested_and_runtime_distinctions():
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     with Session(engine) as session:
-        save_snapshot(session, augment_snapshot_with_container_images(_snapshot()))
-        loaded = load_snapshot(session, "snapshot:sc3")
+        save_snapshot(
+            session,
+            augment_snapshot_with_container_images(_snapshot()),
+            tenant_id=TEST_TENANT,
+        )
+        loaded = load_snapshot(session, "snapshot:sc3", tenant_id=TEST_TENANT)
     assert loaded is not None
     pod = next(item for item in loaded.entities if item.id == "pod:app")
     identity = _identity(pod.properties["containers"][0])

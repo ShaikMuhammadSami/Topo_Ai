@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 import json
@@ -65,7 +66,6 @@ from app.models.topology import (
     RelationshipType,
 )
 from app.repositories.causal_analysis_repository import latest_causal_analysis
-
 
 NOW = datetime(2026, 8, 26, 12, 0, tzinfo=timezone.utc)
 EVENT = "change-event:source-a"
@@ -782,6 +782,7 @@ def _temporal_candidate(index: int = 0, *, score: float = 90.0):
 def _session(snapshot: GraphSnapshot) -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     session = Session(engine)
     session.add(
         SnapshotRecord(
@@ -798,6 +799,7 @@ def _session(snapshot: GraphSnapshot) -> Session:
             scope_json=json.dumps(snapshot.scope),
             payload_json=snapshot.model_dump_json(),
             created_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.add(
@@ -818,6 +820,7 @@ def _session(snapshot: GraphSnapshot) -> Session:
             last_observed_at=NOW.isoformat(),
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -848,9 +851,12 @@ def test_lineage_relevance_persists_and_loads_in_fresh_session(monkeypatch) -> N
         session,
         incident_id="incident:sc4",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     session.expunge_all()
-    loaded = latest_causal_analysis(session, incident_id="incident:sc4")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:sc4", tenant_id=TEST_TENANT
+    )
 
     assert analysis.causal_relevance_policy_version == "causal-relevance-v2"
     assert loaded is not None
@@ -898,6 +904,7 @@ def test_ar2_mixed_temporal_distractor_and_lineage_cause_separates_surfaces(
         incident_id="incident:sc4",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
 
     by_target = {item.target_event_id: item for item in analysis.hypotheses}
@@ -946,9 +953,12 @@ def test_ar3_count_fifty_shape_preserves_supported_cause_beyond_diagnostic_cap(
         session,
         incident_id="incident:sc4",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     session.expunge_all()
-    loaded = latest_causal_analysis(session, incident_id="incident:sc4")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:sc4", tenant_id=TEST_TENANT
+    )
 
     assert loaded is not None
     assert loaded.model_dump_json() == analysis.model_dump_json()
@@ -1027,6 +1037,7 @@ def test_lineage_anchor_and_path_present_only_in_latest_snapshot_are_ignored(
             scope_json=json.dumps(later.scope),
             payload_json=later.model_dump_json(),
             created_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -1041,6 +1052,7 @@ def test_lineage_anchor_and_path_present_only_in_latest_snapshot_are_ignored(
         incident_id="incident:sc4",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
 
     assert analysis.topology_snapshot_id == "snapshot:pinned"
@@ -1064,6 +1076,7 @@ def test_distractor_ranking_is_not_overridden_by_lineage_bridge(monkeypatch) -> 
         incident_id="incident:sc4",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
 
     assert analysis.top_hypothesis is not None
@@ -1092,6 +1105,7 @@ def test_tc4_claim_types_and_graph_entities_are_not_expanded(monkeypatch) -> Non
         incident_id="incident:sc4",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
 
     claims = {

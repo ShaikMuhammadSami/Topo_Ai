@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    UNOWNED_MACHINE,
+)
 
 import hashlib
 from typing import Any
@@ -60,6 +63,7 @@ from app.services.relationship_provenance import (
     relationship_provenance,
     source_reference,
 )
+
 
 def _enum_member(
     enum_type: type,
@@ -897,13 +901,12 @@ def persist_agent_snapshot(
       agent=agent,
       submission=submission,
     )
-    snapshot = (
-     enrich_snapshot_with_runtime_dependencies(
-         session=session,
-         agent=agent,
-         snapshot=snapshot,
-         window_minutes=30,
-        )
+    snapshot = enrich_snapshot_with_runtime_dependencies(
+        session=session,
+        agent=agent,
+        snapshot=snapshot,
+        window_minutes=30,
+        tenant_id=UNOWNED_MACHINE,
     )
     snapshot = enrich_snapshot_with_aws(
      snapshot=snapshot,
@@ -921,11 +924,11 @@ def persist_agent_snapshot(
      submission=submission,
     )
 
-
     persist_cloud_inventory(
-     session=session,
-     agent=agent,
-     submission=submission,
+        session=session,
+        agent=agent,
+        submission=submission,
+        tenant_id=UNOWNED_MACHINE,
     )
 
     requested_reason = str(
@@ -993,15 +996,11 @@ def persist_agent_snapshot(
         reason=reason,
         trigger_event_ids=trigger_event_ids,
         trigger_signal_ids=trigger_signal_ids,
-        trigger_signal_observations=(
-            trigger_signal_observations
-        ),
+        trigger_signal_observations=(trigger_signal_observations),
         agent_id=agent.agent_id,
         derive_changes=True,
-        force=(
-            reason
-            == TopologyCheckpointReason.MANUAL
-        ),
+        force=(reason == TopologyCheckpointReason.MANUAL),
+        tenant_id=UNOWNED_MACHINE,
     )
 
     checkpoint_snapshot = snapshot.model_copy(
@@ -1016,20 +1015,18 @@ def persist_agent_snapshot(
     )
     lifecycle_result = None
     warnings: list[str] = []
-    reconciled_results = (
-        reconcile_pending_incidents_for_checkpoint(
-            session,
-            snapshot_id=checkpoint.snapshot_id,
-        )
+    reconciled_results = reconcile_pending_incidents_for_checkpoint(
+        session,
+        snapshot_id=checkpoint.snapshot_id,
+        tenant_id=UNOWNED_MACHINE,
     )
 
     if failure_signals:
         try:
-            lifecycle_result = (
-                ingest_failure_signal_batch(
-                    session=session,
-                    signals=failure_signals,
-                )
+            lifecycle_result = ingest_failure_signal_batch(
+                session=session,
+                signals=failure_signals,
+                tenant_id=UNOWNED_MACHINE,
             )
 
         except Exception as exc:

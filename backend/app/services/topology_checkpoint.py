@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_predicate,
+)
 
 import hashlib
 import json
@@ -36,7 +40,6 @@ from app.services.change_normalizer import (
 from app.services.temporal_semantics import (
     safe_snapshot_record_at_or_before,
 )
-
 
 CHECKPOINT_DEBOUNCE_SECONDS = max(
     int(
@@ -148,8 +151,11 @@ def latest_checkpoint_record(
     *,
     cluster_name: str | None,
     namespace: str | None = None,
+    tenant_id: DomainTenant,
 ) -> SnapshotRecord | None:
-    statement = select(SnapshotRecord)
+    statement = select(SnapshotRecord).where(
+        tenant_predicate(SnapshotRecord, tenant_id)
+    )
 
     if cluster_name:
         statement = statement.where(
@@ -179,12 +185,14 @@ def latest_checkpoint_at_or_before(
     cluster_name: str,
     observed_at: str,
     namespace: str | None = None,
+    tenant_id: DomainTenant,
 ) -> GraphSnapshot | None:
     record = safe_snapshot_record_at_or_before(
         session,
         cluster_name=cluster_name,
         namespace=namespace,
         boundary_at=observed_at,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -217,12 +225,11 @@ def persist_topology_checkpoint(
     reason: TopologyCheckpointReason,
     trigger_event_ids: list[str] | None = None,
     trigger_signal_ids: list[str] | None = None,
-    trigger_signal_observations: (
-        dict[str, str] | None
-    ) = None,
+    trigger_signal_observations: dict[str, str] | None = None,
     agent_id: str | None = None,
     derive_changes: bool = True,
     force: bool = False,
+    tenant_id: DomainTenant,
 ) -> TopologyCheckpointResult:
     trigger_ids = list(
         dict.fromkeys(trigger_event_ids or [])
@@ -241,6 +248,7 @@ def persist_topology_checkpoint(
     existing_submission = load_snapshot(
         session,
         snapshot.snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if existing_submission is not None:
@@ -275,11 +283,13 @@ def persist_topology_checkpoint(
         session,
         cluster_name=cluster_name,
         namespace=namespace,
+        tenant_id=tenant_id,
     )
     previous = (
         load_snapshot(
             session,
             previous_record.snapshot_id,
+            tenant_id=tenant_id,
         )
         if previous_record is not None
         else None
@@ -401,6 +411,7 @@ def persist_topology_checkpoint(
     save_snapshot(
         session=session,
         snapshot=checkpoint,
+        tenant_id=tenant_id,
     )
 
     detected_change_count = 0
@@ -416,11 +427,13 @@ def persist_topology_checkpoint(
             save_changes(
                 session=session,
                 changes=changes,
+                tenant_id=tenant_id,
             )
             promote_normalized_changes(
                 session,
                 changes=changes,
                 agent_id=agent_id,
+                tenant_id=tenant_id,
             )
 
     return TopologyCheckpointResult(

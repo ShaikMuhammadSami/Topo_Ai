@@ -1,4 +1,11 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 
 import hashlib
 import json
@@ -226,12 +233,15 @@ def _touch_sensor(
     metadata: dict,
     heartbeat: bool,
     batch: bool,
+    tenant_id: DomainTenant,
 ) -> RuntimeSensorRecord:
     now = utc_now_iso()
 
-    record = session.get(
+    record = tenant_get(
+        session,
         RuntimeSensorRecord,
         sensor_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -242,48 +252,24 @@ def _touch_sensor(
             cluster_name=cluster_name,
             source=source,
             version=version,
-            status=(
-                RuntimeSensorStatus
-                .ONLINE.value
-            ),
-            heartbeat_interval_seconds=(
-                heartbeat_interval_seconds
-            ),
-            processed_event_count=(
-                processed_event_count
-            ),
-            dropped_event_count=(
-                dropped_event_count
-            ),
-            parser_error_count=(
-                parser_error_count
-            ),
-            buffered_batch_count=(
-                buffered_batch_count
-            ),
-            submitted_batch_count=(
-                1 if batch else 0
-            ),
+            status=(RuntimeSensorStatus.ONLINE.value),
+            heartbeat_interval_seconds=(heartbeat_interval_seconds),
+            processed_event_count=(processed_event_count),
+            dropped_event_count=(dropped_event_count),
+            parser_error_count=(parser_error_count),
+            buffered_batch_count=(buffered_batch_count),
+            submitted_batch_count=(1 if batch else 0),
             source_file=source_file,
-            source_file_offset=(
-                source_file_offset
-            ),
+            source_file_offset=(source_file_offset),
             last_error=last_error,
-            capabilities_json=json.dumps(
-                capabilities
-            ),
-            metadata_json=json.dumps(
-                metadata
-            ),
+            capabilities_json=json.dumps(capabilities),
+            metadata_json=json.dumps(metadata),
             last_seen_at=now,
-            last_heartbeat_at=(
-                now if heartbeat else None
-            ),
-            last_batch_at=(
-                now if batch else None
-            ),
+            last_heartbeat_at=(now if heartbeat else None),
+            last_batch_at=(now if batch else None),
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -358,8 +344,8 @@ def record_sensor_heartbeat(
     session: Session,
     *,
     agent: TopoAgentRecord,
-    request:
-        RuntimeSensorHeartbeatRequest,
+    request: RuntimeSensorHeartbeatRequest,
+    tenant_id: DomainTenant,
 ) -> RuntimeSensorHeartbeatResponse:
     _touch_sensor(
         session=session,
@@ -369,36 +355,22 @@ def record_sensor_heartbeat(
         cluster_name=request.cluster_name,
         source=request.source,
         version=request.version,
-        heartbeat_interval_seconds=(
-            request
-            .heartbeat_interval_seconds
-        ),
-        processed_event_count=(
-            request.processed_event_count
-        ),
-        dropped_event_count=(
-            request.dropped_event_count
-        ),
-        parser_error_count=(
-            request.parser_error_count
-        ),
-        buffered_batch_count=(
-            request.buffered_batch_count
-        ),
+        heartbeat_interval_seconds=(request.heartbeat_interval_seconds),
+        processed_event_count=(request.processed_event_count),
+        dropped_event_count=(request.dropped_event_count),
+        parser_error_count=(request.parser_error_count),
+        buffered_batch_count=(request.buffered_batch_count),
         source_file=request.source_file,
-        source_file_offset=(
-            request.source_file_offset
-        ),
+        source_file_offset=(request.source_file_offset),
         last_error=request.last_error,
-        capabilities=(
-            request.capabilities
-        ),
+        capabilities=(request.capabilities),
         metadata=request.metadata,
         heartbeat=True,
         batch=False,
+        tenant_id=tenant_id,
     )
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return RuntimeSensorHeartbeatResponse(
         sensor_id=request.sensor_id,
@@ -415,8 +387,8 @@ def _upsert_dependency(
     sensor_id: str,
     node_name: str,
     cluster_name: str,
-    observation:
-        RuntimeDependencyObservation,
+    observation: RuntimeDependencyObservation,
+    tenant_id: DomainTenant,
 ) -> None:
     dependency_id = _dependency_id(
         agent_id=agent.agent_id,
@@ -424,9 +396,11 @@ def _upsert_dependency(
         observation=observation,
     )
 
-    record = session.get(
+    record = tenant_get(
+        session,
         RuntimeDependencyRecord,
         dependency_id,
+        tenant_id=tenant_id,
     )
 
     now = utc_now_iso()
@@ -442,79 +416,32 @@ def _upsert_dependency(
             source_origin=TimeOrigin.RUNTIME_OBSERVED,
         ).model_dump(mode="json")
         record = RuntimeDependencyRecord(
-            runtime_dependency_id=(
-                dependency_id
-            ),
+            runtime_dependency_id=(dependency_id),
             agent_id=agent.agent_id,
             sensor_id=sensor_id,
             cluster_name=cluster_name,
             node_name=node_name,
-            source_namespace=(
-                observation
-                .source.namespace
-            ),
-            source_pod_name=(
-                observation
-                .source.pod_name
-            ),
-            source_pod_uid=(
-                observation
-                .source.pod_uid
-            ),
-            source_workload_name=(
-                observation
-                .source.workload_name
-            ),
-            source_container_id=(
-                observation
-                .source.container_id
-            ),
-            source_binary=(
-                observation
-                .source.binary
-            ),
-            source_pid=(
-                observation.source.pid
-            ),
-            destination_name=(
-                observation
-                .destination.name
-            ),
-            destination_address=(
-                observation
-                .destination.address
-            ),
-            destination_port=(
-                observation
-                .destination.port
-            ),
-            protocol=(
-                observation
-                .protocol.lower()
-            ),
-            direction=(
-                observation
-                .direction.lower()
-            ),
-            observation_count=(
-                observation
-                .observation_count
-            ),
-            success_count=(
-                observation.success_count
-            ),
-            failure_count=(
-                observation.failure_count
-            ),
-            first_seen_at=(
-                observation.first_seen_at
-            ),
-            last_seen_at=(
-                observation.last_seen_at
-            ),
+            source_namespace=(observation.source.namespace),
+            source_pod_name=(observation.source.pod_name),
+            source_pod_uid=(observation.source.pod_uid),
+            source_workload_name=(observation.source.workload_name),
+            source_container_id=(observation.source.container_id),
+            source_binary=(observation.source.binary),
+            source_pid=(observation.source.pid),
+            destination_name=(observation.destination.name),
+            destination_address=(observation.destination.address),
+            destination_port=(observation.destination.port),
+            protocol=(observation.protocol.lower()),
+            direction=(observation.direction.lower()),
+            observation_count=(observation.observation_count),
+            success_count=(observation.success_count),
+            failure_count=(observation.failure_count),
+            first_seen_at=(observation.first_seen_at),
+            last_seen_at=(observation.last_seen_at),
             metadata_json=json.dumps(metadata),
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -568,8 +495,8 @@ def _upsert_process(
     sensor_id: str,
     node_name: str,
     cluster_name: str,
-    observation:
-        RuntimeProcessObservation,
+    observation: RuntimeProcessObservation,
+    tenant_id: DomainTenant,
 ) -> None:
     process_id = _process_id(
         agent_id=agent.agent_id,
@@ -577,9 +504,11 @@ def _upsert_process(
         observation=observation,
     )
 
-    record = session.get(
+    record = tenant_get(
+        session,
         RuntimeProcessRecord,
         process_id,
+        tenant_id=tenant_id,
     )
 
     now = utc_now_iso()
@@ -603,42 +532,21 @@ def _upsert_process(
             exec_id=observation.exec_id,
             pid=observation.pid,
             binary=observation.binary,
-            namespace=(
-                observation.namespace
-            ),
-            pod_name=(
-                observation.pod_name
-            ),
-            pod_uid=(
-                observation.pod_uid
-            ),
-            container_id=(
-                observation.container_id
-            ),
-            parent_exec_id=(
-                observation.parent_exec_id
-            ),
-            exec_count=(
-                observation.exec_count
-            ),
-            exit_count=(
-                observation.exit_count
-            ),
-            last_exit_code=(
-                observation.last_exit_code
-            ),
-            last_signal=(
-                observation.last_signal
-            ),
-            first_seen_at=(
-                observation.first_seen_at
-            ),
-            last_seen_at=(
-                observation.last_seen_at
-            ),
+            namespace=(observation.namespace),
+            pod_name=(observation.pod_name),
+            pod_uid=(observation.pod_uid),
+            container_id=(observation.container_id),
+            parent_exec_id=(observation.parent_exec_id),
+            exec_count=(observation.exec_count),
+            exit_count=(observation.exit_count),
+            last_exit_code=(observation.last_exit_code),
+            last_signal=(observation.last_signal),
+            first_seen_at=(observation.first_seen_at),
+            last_seen_at=(observation.last_seen_at),
             metadata_json=json.dumps(metadata),
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -678,8 +586,8 @@ def ingest_runtime_event_batch(
     session: Session,
     *,
     agent: TopoAgentRecord,
-    request:
-        RuntimeEventBatchRequest,
+    request: RuntimeEventBatchRequest,
+    tenant_id: DomainTenant,
 ) -> RuntimeEventBatchReceipt:
     if (
         request.cluster_name
@@ -706,22 +614,12 @@ def ingest_runtime_event_batch(
                 )
             )
         ),
-        processed_event_count=(
-            request.processed_event_count
-        ),
-        dropped_event_count=(
-            request.dropped_event_count
-        ),
-        parser_error_count=(
-            request.parser_error_count
-        ),
-        buffered_batch_count=(
-            request.buffered_batch_count
-        ),
+        processed_event_count=(request.processed_event_count),
+        dropped_event_count=(request.dropped_event_count),
+        parser_error_count=(request.parser_error_count),
+        buffered_batch_count=(request.buffered_batch_count),
         source_file=request.source_file,
-        source_file_offset=(
-            request.source_file_offset
-        ),
+        source_file_offset=(request.source_file_offset),
         last_error=None,
         capabilities=[
             "ebpf.process.lifecycle",
@@ -732,20 +630,18 @@ def ingest_runtime_event_batch(
         metadata=request.metadata,
         heartbeat=False,
         batch=True,
+        tenant_id=tenant_id,
     )
 
-    for observation in (
-        request.dependencies
-    ):
+    for observation in request.dependencies:
         _upsert_dependency(
             session=session,
             agent=agent,
             sensor_id=request.sensor_id,
             node_name=request.node_name,
-            cluster_name=(
-                request.cluster_name
-            ),
+            cluster_name=(request.cluster_name),
             observation=observation,
+            tenant_id=tenant_id,
         )
 
     for observation in request.processes:
@@ -754,13 +650,12 @@ def ingest_runtime_event_batch(
             agent=agent,
             sensor_id=request.sensor_id,
             node_name=request.node_name,
-            cluster_name=(
-                request.cluster_name
-            ),
+            cluster_name=(request.cluster_name),
             observation=observation,
+            tenant_id=tenant_id,
         )
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return RuntimeEventBatchReceipt(
         batch_id=request.batch_id,
@@ -780,18 +675,13 @@ def list_runtime_sensors(
     session: Session,
     *,
     agent_id: str,
+    tenant_id: DomainTenant,
 ) -> list[RuntimeSensorView]:
     statement = (
         select(RuntimeSensorRecord)
-        .where(
-            RuntimeSensorRecord.agent_id
-            == agent_id
-        )
-        .order_by(
-            RuntimeSensorRecord
-            .node_name
-            .asc()
-        )
+        .where(tenant_predicate(RuntimeSensorRecord, tenant_id))
+        .where(RuntimeSensorRecord.agent_id == agent_id)
+        .order_by(RuntimeSensorRecord.node_name.asc())
     )
 
     return [
@@ -871,6 +761,7 @@ def list_runtime_dependencies(
     window_minutes: int = 15,
     limit: int = 1000,
     offset: int = 0,
+    tenant_id: DomainTenant,
 ) -> list[RuntimeDependencyView]:
     cutoff = (
         datetime.now(timezone.utc)
@@ -881,18 +772,12 @@ def list_runtime_dependencies(
 
     statement = (
         select(RuntimeDependencyRecord)
+        .where(tenant_predicate(RuntimeDependencyRecord, tenant_id))
         .where(
-            RuntimeDependencyRecord.agent_id
-            == agent_id,
-            RuntimeDependencyRecord
-            .last_seen_at
-            >= cutoff,
+            RuntimeDependencyRecord.agent_id == agent_id,
+            RuntimeDependencyRecord.last_seen_at >= cutoff,
         )
-        .order_by(
-            RuntimeDependencyRecord
-            .last_seen_at
-            .desc()
-        )
+        .order_by(RuntimeDependencyRecord.last_seen_at.desc())
         .offset(offset)
         .limit(limit)
     )

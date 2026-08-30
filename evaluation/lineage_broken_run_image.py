@@ -15,6 +15,7 @@ from evaluation.artifact_integrity import (
     write_integrity_manifest,
 )
 from evaluation.lineage_distractor_robustness import (
+    DISPOSABLE_EVALUATION_TENANT_ID,
     copy_seed_database,
     deterministic_json_bytes,
     sha256_file,
@@ -980,6 +981,7 @@ def run_fresh_analysis(database_path: Path) -> tuple[dict[str, Any], dict[str, A
             )
             analysis = analyze_causal_rca(
                 session,
+                tenant_id=DISPOSABLE_EVALUATION_TENANT_ID,
                 incident_id=GOLDEN_INCIDENT_ID,
                 request=CausalAnalysisRequest(),
                 persist=True,

@@ -1,4 +1,6 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import UNOWNED_MACHINE
+from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT, seed_domain_tenant
 
 import inspect
 from datetime import (
@@ -74,7 +76,6 @@ from app.services.topology_checkpoint import (
     persist_topology_checkpoint,
 )
 
-
 NOW = datetime(
     2026,
     8,
@@ -90,6 +91,7 @@ def _session() -> Session:
         "sqlite+pysqlite:///:memory:"
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -211,32 +213,25 @@ def _count(session: Session, model) -> int:
     )
 
 
-def test_material_topology_change_checkpoints_and_promotes_change(
-) -> None:
+def test_material_topology_change_checkpoints_and_promotes_change() -> None:
     session = _session()
 
     first = persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
     second = persist_topology_checkpoint(
         session,
         snapshot=_snapshot(
             "snapshot:two",
-            observed_at=(
-                NOW + timedelta(seconds=45)
-            ),
+            observed_at=(NOW + timedelta(seconds=45)),
             image="payment:v2",
         ),
-        reason=(
-            TopologyCheckpointReason
-            .AUTOMATIC_CHANGE
-        ),
+        reason=(TopologyCheckpointReason.AUTOMATIC_CHANGE),
         trigger_event_ids=["event:deploy"],
+        tenant_id=TEST_TENANT,
     )
 
     assert first.created is True
@@ -250,34 +245,27 @@ def test_material_topology_change_checkpoints_and_promotes_change(
     assert _count(session, ChangeEventRecord) > 0
 
 
-def test_identical_automatic_burst_reuses_checkpoint(
-) -> None:
+def test_identical_automatic_burst_reuses_checkpoint() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .AUTOMATIC_CHANGE
-        ),
+        reason=(TopologyCheckpointReason.AUTOMATIC_CHANGE),
         trigger_event_ids=["event:one"],
+        tenant_id=TEST_TENANT,
     )
     result = persist_topology_checkpoint(
         session,
         snapshot=_snapshot(
             "snapshot:duplicate",
-            observed_at=(
-                NOW + timedelta(seconds=5)
-            ),
+            observed_at=(NOW + timedelta(seconds=5)),
         ),
-        reason=(
-            TopologyCheckpointReason
-            .AUTOMATIC_CHANGE
-        ),
+        reason=(TopologyCheckpointReason.AUTOMATIC_CHANGE),
         trigger_event_ids=[
             "event:one",
             "event:two",
         ],
+        tenant_id=TEST_TENANT,
     )
 
     assert result.reused is True
@@ -286,20 +274,15 @@ def test_identical_automatic_burst_reuses_checkpoint(
     assert _count(session, SnapshotRecord) == 1
 
 
-def test_correlated_failure_burst_reuses_safe_boundary_checkpoint(
-) -> None:
+def test_correlated_failure_burst_reuses_safe_boundary_checkpoint() -> None:
     session = _session()
     first = persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:boundary-one"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
         trigger_signal_ids=["signal:one"],
-        trigger_signal_observations={
-            "signal:one": NOW.isoformat()
-        },
+        trigger_signal_observations={"signal:one": NOW.isoformat()},
+        tenant_id=TEST_TENANT,
     )
     second = persist_topology_checkpoint(
         session,
@@ -307,16 +290,12 @@ def test_correlated_failure_burst_reuses_safe_boundary_checkpoint(
             "snapshot:boundary-two",
             observed_at=NOW + timedelta(seconds=10),
         ),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
         trigger_signal_ids=["signal:two"],
         trigger_signal_observations={
-            "signal:two": (
-                NOW + timedelta(seconds=5)
-            ).isoformat()
+            "signal:two": (NOW + timedelta(seconds=5)).isoformat()
         },
+        tenant_id=TEST_TENANT,
     )
 
     assert first.created is True
@@ -339,16 +318,13 @@ def test_non_topology_change_does_not_request_checkpoint(
     ) is False
 
 
-def test_periodic_reconcile_and_manual_fallback_are_preserved(
-) -> None:
+def test_periodic_reconcile_and_manual_fallback_are_preserved() -> None:
     session = _session()
     periodic = persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:periodic"),
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
     manual = persist_topology_checkpoint(
         session,
@@ -359,6 +335,7 @@ def test_periodic_reconcile_and_manual_fallback_are_preserved(
         reason=TopologyCheckpointReason.MANUAL,
         derive_changes=False,
         force=True,
+        tenant_id=TEST_TENANT,
     )
 
     assert periodic.reason.value == (
@@ -369,16 +346,13 @@ def test_periodic_reconcile_and_manual_fallback_are_preserved(
     assert _count(session, SnapshotRecord) == 2
 
 
-def test_healthy_deployment_change_does_not_create_incident(
-) -> None:
+def test_healthy_deployment_change_does_not_create_incident() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
     persist_topology_checkpoint(
         session,
@@ -387,17 +361,14 @@ def test_healthy_deployment_change_does_not_create_incident(
             image="payment:v2",
             observed_at=NOW + timedelta(minutes=1),
         ),
-        reason=(
-            TopologyCheckpointReason
-            .AUTOMATIC_CHANGE
-        ),
+        reason=(TopologyCheckpointReason.AUTOMATIC_CHANGE),
+        tenant_id=TEST_TENANT,
     )
 
     assert _count(session, IncidentRecord) == 0
 
 
-def test_supported_failure_state_creates_internal_incident_and_rca(
-) -> None:
+def test_supported_failure_state_creates_internal_incident_and_rca() -> None:
     session = _session()
     snapshot = _snapshot(
         "snapshot:one",
@@ -406,17 +377,14 @@ def test_supported_failure_state_creates_internal_incident_and_rca(
     persist_topology_checkpoint(
         session,
         snapshot=snapshot,
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     signals = failure_signals_from_snapshot(
         snapshot
     )
     result = ingest_failure_signal_batch(
-        session,
-        signals=signals,
+        session, signals=signals, tenant_id=TEST_TENANT
     )
 
     assert len(signals) == 1
@@ -430,32 +398,27 @@ def test_supported_failure_state_creates_internal_incident_and_rca(
     }
 
 
-def test_repeated_equivalent_failure_correlates_without_duplicate(
-) -> None:
+def test_repeated_equivalent_failure_correlates_without_duplicate() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     first = ingest_failure_signal_batch(
-        session,
-        signals=[_signal("signal:one")],
+        session, signals=[_signal("signal:one")], tenant_id=TEST_TENANT
     )
     second = ingest_failure_signal_batch(
         session,
         signals=[
             _signal(
                 "signal:two",
-                observed_at=(
-                    NOW + timedelta(minutes=2)
-                ),
+                observed_at=(NOW + timedelta(minutes=2)),
                 reason="BackOff",
             )
         ],
+        tenant_id=TEST_TENANT,
     )
 
     assert first.results[0].incident_created
@@ -473,16 +436,13 @@ def test_repeated_equivalent_failure_correlates_without_duplicate(
     assert incident.occurrence_count == 2
 
 
-def test_unrelated_failure_creates_separate_incident(
-) -> None:
+def test_unrelated_failure_creates_separate_incident() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     first = _signal("signal:one")
     second = _signal(
@@ -490,28 +450,21 @@ def test_unrelated_failure_creates_separate_incident(
         pod_name="ledger-api-def-456",
         pod_uid="pod-uid-2",
     )
-    ingest_failure_signal_batch(
-        session,
-        signals=[first, second],
-    )
+    ingest_failure_signal_batch(session, signals=[first, second], tenant_id=TEST_TENANT)
 
     assert _count(session, IncidentRecord) == 2
 
 
-def test_resolved_incident_does_not_absorb_later_recurrence(
-) -> None:
+def test_resolved_incident_does_not_absorb_later_recurrence() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     first = ingest_failure_signal_batch(
-        session,
-        signals=[_signal("signal:first")],
+        session, signals=[_signal("signal:first")], tenant_id=TEST_TENANT
     )
     first_id = first.results[0].incident_id
     assert first_id is not None
@@ -520,17 +473,17 @@ def test_resolved_incident_does_not_absorb_later_recurrence(
         incident_id=first_id,
         status=IncidentStatus.RESOLVED,
         note="Recovered",
+        tenant_id=TEST_TENANT,
     )
     later = ingest_failure_signal_batch(
         session,
         signals=[
             _signal(
                 "signal:recurrence",
-                observed_at=(
-                    NOW + timedelta(hours=8)
-                ),
+                observed_at=(NOW + timedelta(hours=8)),
             )
         ],
+        tenant_id=TEST_TENANT,
     )
 
     assert later.results[0].incident_created
@@ -538,21 +491,17 @@ def test_resolved_incident_does_not_absorb_later_recurrence(
     assert _count(session, IncidentRecord) == 2
 
 
-def test_resolved_incident_replay_does_not_create_recurrence(
-) -> None:
+def test_resolved_incident_replay_does_not_create_recurrence() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     signal = _signal("signal:replayed")
     first = ingest_failure_signal_batch(
-        session,
-        signals=[signal],
+        session, signals=[signal], tenant_id=TEST_TENANT
     )
     incident_id = first.results[0].incident_id
     assert incident_id is not None
@@ -561,10 +510,10 @@ def test_resolved_incident_replay_does_not_create_recurrence(
         incident_id=incident_id,
         status=IncidentStatus.RESOLVED,
         note="Recovered",
+        tenant_id=TEST_TENANT,
     )
     replay = ingest_failure_signal_batch(
-        session,
-        signals=[signal],
+        session, signals=[signal], tenant_id=TEST_TENANT
     )
 
     assert replay.results[0].incident_created is False
@@ -572,40 +521,31 @@ def test_resolved_incident_replay_does_not_create_recurrence(
     assert _count(session, IncidentRecord) == 1
 
 
-def test_first_observed_and_signal_evidence_are_preserved(
-) -> None:
+def test_first_observed_and_signal_evidence_are_preserved() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     first = ingest_failure_signal_batch(
-        session,
-        signals=[_signal("signal:stable")],
+        session, signals=[_signal("signal:stable")], tenant_id=TEST_TENANT
     )
     ingest_failure_signal_batch(
         session,
         signals=[
             _signal(
                 "signal:stable",
-                observed_at=(
-                    NOW + timedelta(minutes=3)
-                ),
+                observed_at=(NOW + timedelta(minutes=3)),
             )
         ],
+        tenant_id=TEST_TENANT,
     )
     incident = load_incident_record(
-        session,
-        first.results[0].incident_id or "",
+        session, first.results[0].incident_id or "", tenant_id=TEST_TENANT
     )
-    stored_signal = load_signal(
-        session,
-        "signal:stable",
-    )
+    stored_signal = load_signal(session, "signal:stable", tenant_id=TEST_TENANT)
 
     assert incident is not None
     assert incident.first_observed_at == NOW
@@ -617,8 +557,7 @@ def test_first_observed_and_signal_evidence_are_preserved(
     assert _count(session, SignalRecord) == 1
 
 
-def test_repeated_checkpoint_failure_increments_evidence_count(
-) -> None:
+def test_repeated_checkpoint_failure_increments_evidence_count() -> None:
     session = _session()
     snapshot = _snapshot(
         "snapshot:one",
@@ -627,38 +566,26 @@ def test_repeated_checkpoint_failure_increments_evidence_count(
     persist_topology_checkpoint(
         session,
         snapshot=snapshot,
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     signals = failure_signals_from_snapshot(snapshot)
-    first = ingest_failure_signal_batch(
-        session,
-        signals=signals,
-    )
+    first = ingest_failure_signal_batch(session, signals=signals, tenant_id=TEST_TENANT)
     second = ingest_failure_signal_batch(
         session,
         signals=[
             signals[0].model_copy(
                 update={
-                    "first_observed_at": (
-                        NOW + timedelta(minutes=2)
-                    ),
-                    "last_observed_at": (
-                        NOW + timedelta(minutes=2)
-                    ),
+                    "first_observed_at": (NOW + timedelta(minutes=2)),
+                    "last_observed_at": (NOW + timedelta(minutes=2)),
                 }
             )
         ],
+        tenant_id=TEST_TENANT,
     )
-    stored = load_signal(
-        session,
-        signals[0].signal_id,
-    )
+    stored = load_signal(session, signals[0].signal_id, tenant_id=TEST_TENANT)
     incident = load_incident_record(
-        session,
-        first.results[0].incident_id or "",
+        session, first.results[0].incident_id or "", tenant_id=TEST_TENANT
     )
 
     assert second.results[0].incident_correlated
@@ -668,31 +595,26 @@ def test_repeated_checkpoint_failure_increments_evidence_count(
     assert incident.occurrence_count == 2
 
 
-def test_stale_open_incident_is_not_reused_outside_window(
-) -> None:
+def test_stale_open_incident_is_not_reused_outside_window() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     first = ingest_failure_signal_batch(
-        session,
-        signals=[_signal("signal:first")],
+        session, signals=[_signal("signal:first")], tenant_id=TEST_TENANT
     )
     later = ingest_failure_signal_batch(
         session,
         signals=[
             _signal(
                 "signal:later",
-                observed_at=(
-                    NOW + timedelta(hours=8)
-                ),
+                observed_at=(NOW + timedelta(hours=8)),
             )
         ],
+        tenant_id=TEST_TENANT,
     )
 
     assert later.results[0].incident_created
@@ -703,16 +625,13 @@ def test_stale_open_incident_is_not_reused_outside_window(
     assert _count(session, IncidentRecord) == 2
 
 
-def test_incident_pins_historical_snapshot_not_newest(
-) -> None:
+def test_incident_pins_historical_snapshot_not_newest() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:incident"),
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     persist_topology_checkpoint(
         session,
@@ -721,10 +640,8 @@ def test_incident_pins_historical_snapshot_not_newest(
             image="payment:v9",
             observed_at=NOW + timedelta(hours=1),
         ),
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
     result = ingest_failure_signal_batch(
         session,
@@ -734,11 +651,11 @@ def test_incident_pins_historical_snapshot_not_newest(
                 snapshot_id="snapshot:incident",
             )
         ],
+        tenant_id=TEST_TENANT,
     )
     incident_id = result.results[0].incident_id
     analysis = latest_causal_analysis(
-        session,
-        incident_id=incident_id or "",
+        session, incident_id=incident_id or "", tenant_id=TEST_TENANT
     )
 
     assert analysis is not None
@@ -747,16 +664,13 @@ def test_incident_pins_historical_snapshot_not_newest(
     )
 
 
-def test_invalid_pinned_snapshot_degrades_without_latest_fallback(
-) -> None:
+def test_invalid_pinned_snapshot_degrades_without_latest_fallback() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:newest"),
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
     result = ingest_failure_signal_batch(
         session,
@@ -766,6 +680,7 @@ def test_invalid_pinned_snapshot_degrades_without_latest_fallback(
                 snapshot_id="snapshot:missing",
             )
         ],
+        tenant_id=TEST_TENANT,
     )
 
     assert result.results[0].action == (
@@ -777,8 +692,7 @@ def test_invalid_pinned_snapshot_degrades_without_latest_fallback(
     )
 
 
-def test_cross_cluster_snapshot_is_never_used_for_incident(
-) -> None:
+def test_cross_cluster_snapshot_is_never_used_for_incident() -> None:
     session = _session()
     foreign = _snapshot("snapshot:foreign").model_copy(
         update={
@@ -791,10 +705,8 @@ def test_cross_cluster_snapshot_is_never_used_for_incident(
     persist_topology_checkpoint(
         session,
         snapshot=foreign,
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
     result = ingest_failure_signal_batch(
         session,
@@ -804,6 +716,7 @@ def test_cross_cluster_snapshot_is_never_used_for_incident(
                 snapshot_id="snapshot:foreign",
             )
         ],
+        tenant_id=TEST_TENANT,
     )
 
     assert result.results[0].topology_snapshot_id is None
@@ -812,16 +725,13 @@ def test_cross_cluster_snapshot_is_never_used_for_incident(
     )
 
 
-def test_info_signal_is_stored_but_never_creates_incident(
-) -> None:
+def test_info_signal_is_stored_but_never_creates_incident() -> None:
     session = _session()
     persist_topology_checkpoint(
         session,
         snapshot=_snapshot("snapshot:one"),
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
     result = ingest_failure_signal_batch(
         session,
@@ -832,6 +742,7 @@ def test_info_signal_is_stored_but_never_creates_incident(
                 severity=SignalSeverity.INFO,
             )
         ],
+        tenant_id=TEST_TENANT,
     )
 
     assert result.ignored_non_failure_count == 1
@@ -855,10 +766,8 @@ def test_automatic_lifecycle_has_no_llm_or_execution_dependency(
 def test_automation_status_endpoint_uses_standard_authentication(
     required_auth_app,
 ) -> None:
-    with TestClient(required_auth_app) as client:
-        automation_response = client.get(
-            "/api/v1/automation/status"
-        )
+    with TestClient(required_auth_app, headers=TEST_HEADERS) as client:
+        automation_response = client.get("/api/v1/automation/status")
         incident_response = client.get(
             "/api/v1/incidents/incident%3Atest/lifecycle-status"
         )
@@ -977,8 +886,7 @@ def _agent_submission(
     )
 
 
-def test_pending_topology_reconciles_only_with_safe_checkpoint(
-) -> None:
+def test_pending_topology_reconciles_only_with_safe_checkpoint() -> None:
     session = _session()
     pending = ingest_failure_signal_batch(
         session,
@@ -988,6 +896,7 @@ def test_pending_topology_reconciles_only_with_safe_checkpoint(
                 snapshot_id=None,
             )
         ],
+        tenant_id=TEST_TENANT,
     )
     incident_id = pending.results[0].incident_id
     assert incident_id is not None
@@ -1004,11 +913,14 @@ def test_pending_topology_reconciles_only_with_safe_checkpoint(
         snapshot=future_manual,
         reason=TopologyCheckpointReason.MANUAL,
         force=True,
+        tenant_id=TEST_TENANT,
     )
-    assert reconcile_pending_incidents_for_checkpoint(
-        session,
-        snapshot_id=future_manual.snapshot_id,
-    ) == []
+    assert (
+        reconcile_pending_incidents_for_checkpoint(
+            session, snapshot_id=future_manual.snapshot_id, tenant_id=TEST_TENANT
+        )
+        == []
+    )
     incident = session.get(IncidentRecord, incident_id)
     assert incident is not None
     assert incident.topology_snapshot_id is None
@@ -1020,16 +932,11 @@ def test_pending_topology_reconciles_only_with_safe_checkpoint(
     persist_topology_checkpoint(
         session,
         snapshot=safe,
-        reason=(
-            TopologyCheckpointReason
-            .PERIODIC_RECONCILE
-        ),
+        reason=(TopologyCheckpointReason.PERIODIC_RECONCILE),
+        tenant_id=TEST_TENANT,
     )
-    reconciled = (
-        reconcile_pending_incidents_for_checkpoint(
-            session,
-            snapshot_id=safe.snapshot_id,
-        )
+    reconciled = reconcile_pending_incidents_for_checkpoint(
+        session, snapshot_id=safe.snapshot_id, tenant_id=TEST_TENANT
     )
     session.refresh(incident)
 
@@ -1038,22 +945,20 @@ def test_pending_topology_reconciles_only_with_safe_checkpoint(
     assert incident.affected_entity_id == (
         "entity:pod:pod-uid-1"
     )
-    assert latest_causal_analysis(
-        session,
-        incident_id=incident_id,
-    ) is not None
+    assert (
+        latest_causal_analysis(session, incident_id=incident_id, tenant_id=TEST_TENANT)
+        is not None
+    )
 
 
-def test_explicit_incident_boundary_reconciles_after_failure(
-) -> None:
+def test_explicit_incident_boundary_reconciles_after_failure() -> None:
     session = _session()
     signal = _signal(
         "signal:explicit-boundary",
         snapshot_id=None,
     )
     result = ingest_failure_signal_batch(
-        session,
-        signals=[signal],
+        session, signals=[signal], tenant_id=TEST_TENANT
     )
     incident_id = result.results[0].incident_id
     assert incident_id is not None
@@ -1064,19 +969,14 @@ def test_explicit_incident_boundary_reconciles_after_failure(
     persist_topology_checkpoint(
         session,
         snapshot=boundary,
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
         trigger_signal_ids=[signal.signal_id],
         force=True,
+        tenant_id=TEST_TENANT,
     )
 
-    reconciled = (
-        reconcile_pending_incidents_for_checkpoint(
-            session,
-            snapshot_id=boundary.snapshot_id,
-        )
+    reconciled = reconcile_pending_incidents_for_checkpoint(
+        session, snapshot_id=boundary.snapshot_id, tenant_id=TEST_TENANT
     )
     incident = session.get(IncidentRecord, incident_id)
 
@@ -1090,8 +990,7 @@ def test_explicit_incident_boundary_reconciles_after_failure(
     )
 
 
-def test_future_automatic_checkpoint_without_signal_link_is_rejected(
-) -> None:
+def test_future_automatic_checkpoint_without_signal_link_is_rejected() -> None:
     session = _session()
     result = ingest_failure_signal_batch(
         session,
@@ -1101,6 +1000,7 @@ def test_future_automatic_checkpoint_without_signal_link_is_rejected(
                 snapshot_id=None,
             )
         ],
+        tenant_id=TEST_TENANT,
     )
     incident_id = result.results[0].incident_id
     future = _snapshot(
@@ -1110,23 +1010,22 @@ def test_future_automatic_checkpoint_without_signal_link_is_rejected(
     persist_topology_checkpoint(
         session,
         snapshot=future,
-        reason=(
-            TopologyCheckpointReason
-            .AUTOMATIC_CHANGE
-        ),
+        reason=(TopologyCheckpointReason.AUTOMATIC_CHANGE),
+        tenant_id=TEST_TENANT,
     )
 
-    assert reconcile_pending_incidents_for_checkpoint(
-        session,
-        snapshot_id=future.snapshot_id,
-    ) == []
+    assert (
+        reconcile_pending_incidents_for_checkpoint(
+            session, snapshot_id=future.snapshot_id, tenant_id=TEST_TENANT
+        )
+        == []
+    )
     incident = session.get(IncidentRecord, incident_id)
     assert incident is not None
     assert incident.topology_snapshot_id is None
 
 
-def test_ephemeral_pod_resolves_by_uid_not_name_guessing(
-) -> None:
+def test_ephemeral_pod_resolves_by_uid_not_name_guessing() -> None:
     session = _session()
     snapshot = _snapshot(
         "snapshot:ephemeral",
@@ -1136,10 +1035,8 @@ def test_ephemeral_pod_resolves_by_uid_not_name_guessing(
     persist_topology_checkpoint(
         session,
         snapshot=snapshot,
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     signal = _signal(
         "signal:ephemeral",
@@ -1152,8 +1049,7 @@ def test_ephemeral_pod_resolves_by_uid_not_name_guessing(
         }
     )
     result = ingest_failure_signal_batch(
-        session,
-        signals=[signal],
+        session, signals=[signal], tenant_id=TEST_TENANT
     )
     incident = session.get(
         IncidentRecord,
@@ -1166,17 +1062,14 @@ def test_ephemeral_pod_resolves_by_uid_not_name_guessing(
     )
 
 
-def test_pinned_snapshot_never_moves_on_later_correlated_signal(
-) -> None:
+def test_pinned_snapshot_never_moves_on_later_correlated_signal() -> None:
     session = _session()
     first_snapshot = _snapshot("snapshot:first-pin")
     persist_topology_checkpoint(
         session,
         snapshot=first_snapshot,
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     first = ingest_failure_signal_batch(
         session,
@@ -1186,6 +1079,7 @@ def test_pinned_snapshot_never_moves_on_later_correlated_signal(
                 snapshot_id=first_snapshot.snapshot_id,
             )
         ],
+        tenant_id=TEST_TENANT,
     )
     later_snapshot = _snapshot(
         "snapshot:later-pin",
@@ -1195,12 +1089,10 @@ def test_pinned_snapshot_never_moves_on_later_correlated_signal(
     persist_topology_checkpoint(
         session,
         snapshot=later_snapshot,
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
         trigger_signal_ids=["signal:later-pin"],
         force=True,
+        tenant_id=TEST_TENANT,
     )
     ingest_failure_signal_batch(
         session,
@@ -1211,6 +1103,7 @@ def test_pinned_snapshot_never_moves_on_later_correlated_signal(
                 snapshot_id=later_snapshot.snapshot_id,
             )
         ],
+        tenant_id=TEST_TENANT,
     )
     incident = session.get(
         IncidentRecord,
@@ -1223,8 +1116,7 @@ def test_pinned_snapshot_never_moves_on_later_correlated_signal(
     )
 
 
-def test_real_agent_checkpoint_to_briefing_pipeline(
-) -> None:
+def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
     session = _session()
     agent = _agent(session)
     persist_agent_snapshot(
@@ -1266,15 +1158,13 @@ def test_real_agent_checkpoint_to_briefing_pipeline(
         update={"category": SignalCategory.IMAGE}
     )
     watcher_result = ingest_failure_signal_batch(
-        session,
-        signals=[watcher_signal],
+        session, signals=[watcher_signal], tenant_id=UNOWNED_MACHINE
     )
     incident_id = watcher_result.results[0].incident_id
     assert incident_id is not None
     incident = session.get(IncidentRecord, incident_id)
     analysis = latest_causal_analysis(
-        session,
-        incident_id=incident_id,
+        session, incident_id=incident_id, tenant_id=UNOWNED_MACHINE
     )
 
     assert incident is not None
@@ -1288,12 +1178,10 @@ def test_real_agent_checkpoint_to_briefing_pipeline(
     assert _count(session, CausalAnalysisRecord) == 1
 
     second = ingest_failure_signal_batch(
-        session,
-        signals=[watcher_signal],
+        session, signals=[watcher_signal], tenant_id=UNOWNED_MACHINE
     )
     reused = latest_causal_analysis(
-        session,
-        incident_id=incident_id,
+        session, incident_id=incident_id, tenant_id=UNOWNED_MACHINE
     )
     assert second.results[0].automatic_analysis_state == (
         AutomaticAnalysisState.REUSED
@@ -1303,9 +1191,7 @@ def test_real_agent_checkpoint_to_briefing_pipeline(
     assert _count(session, CausalAnalysisRecord) == 1
 
     briefing = build_incident_briefing(
-        session,
-        incident_id=incident_id,
-        include_ai=False,
+        session, incident_id=incident_id, include_ai=False, tenant_id=UNOWNED_MACHINE
     )
     assert briefing.incident.incident_id == incident_id
     assert briefing.root_cause.causal_analysis_id == (
@@ -1316,17 +1202,14 @@ def test_real_agent_checkpoint_to_briefing_pipeline(
     )
 
 
-def test_no_hypothesis_has_controlled_terminal_lifecycle_state(
-) -> None:
+def test_no_hypothesis_has_controlled_terminal_lifecycle_state() -> None:
     session = _session()
     snapshot = _snapshot("snapshot:no-hypothesis")
     persist_topology_checkpoint(
         session,
         snapshot=snapshot,
-        reason=(
-            TopologyCheckpointReason
-            .INCIDENT_BOUNDARY
-        ),
+        reason=(TopologyCheckpointReason.INCIDENT_BOUNDARY),
+        tenant_id=TEST_TENANT,
     )
     result = ingest_failure_signal_batch(
         session,
@@ -1336,12 +1219,12 @@ def test_no_hypothesis_has_controlled_terminal_lifecycle_state(
                 snapshot_id=snapshot.snapshot_id,
             )
         ],
+        tenant_id=TEST_TENANT,
     )
     incident_id = result.results[0].incident_id
     assert incident_id is not None
     status = build_incident_lifecycle_status(
-        session,
-        incident_id=incident_id,
+        session, incident_id=incident_id, tenant_id=TEST_TENANT
     )
 
     assert status.automatic_analysis_state == (

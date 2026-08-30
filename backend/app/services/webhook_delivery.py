@@ -1,4 +1,9 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_value,
+    require_record_owner,
+)
 
 import hashlib
 import hmac
@@ -113,7 +118,10 @@ def deliver_event_to_endpoint(
     session: Session,
     endpoint: WebhookEndpointRecord,
     event: WebhookEvent,
+    *,
+    tenant_id: DomainTenant,
 ) -> WebhookDeliveryView:
+    require_record_owner(endpoint, tenant_id=tenant_id)
     body = _event_body(event)
 
     requested_at = utc_now_iso()
@@ -232,18 +240,11 @@ def deliver_event_to_endpoint(
     ).hexdigest()[:32]
 
     record = WebhookDeliveryRecord(
-        delivery_id=(
-            f"delivery:"
-            f"{delivery_digest}"
-        ),
+        delivery_id=(f"delivery:" f"{delivery_digest}"),
         webhook_id=endpoint.webhook_id,
         event_id=event.event_id,
-        event_type=(
-            event.event_type.value
-        ),
-        resource_type=(
-            event.resource_type
-        ),
+        event_type=(event.event_type.value),
+        resource_type=(event.resource_type),
         resource_id=event.resource_id,
         status=delivery_status.value,
         attempt_count=attempt_count,
@@ -255,27 +256,30 @@ def deliver_event_to_endpoint(
         payload_json=body,
         created_at=requested_at,
         updated_at=completed_at,
+        tenant_id=tenant_value(tenant_id),
     )
 
     return save_delivery_result(
         session=session,
         record=record,
+        tenant_id=tenant_id,
     )
 
 
 def publish_event(
     session: Session,
     event: WebhookEvent,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[WebhookDeliveryView]:
     deliveries: list[
         WebhookDeliveryView
     ] = []
 
-    endpoints = (
-        list_webhook_endpoint_records(
-            session=session,
-            active=True,
-        )
+    endpoints = list_webhook_endpoint_records(
+        session=session,
+        active=True,
+        tenant_id=tenant_id,
     )
 
     for endpoint in endpoints:
@@ -287,10 +291,9 @@ def publish_event(
 
         existing = find_delivery_record(
             session=session,
-            webhook_id=(
-                endpoint.webhook_id
-            ),
+            webhook_id=(endpoint.webhook_id),
             event_id=event.event_id,
+            tenant_id=tenant_id,
         )
 
         if (
@@ -301,12 +304,11 @@ def publish_event(
         ):
             continue
 
-        delivery = (
-            deliver_event_to_endpoint(
-                session=session,
-                endpoint=endpoint,
-                event=event,
-            )
+        delivery = deliver_event_to_endpoint(
+            session=session,
+            endpoint=endpoint,
+            event=event,
+            tenant_id=tenant_id,
         )
 
         deliveries.append(delivery)
@@ -317,11 +319,14 @@ def publish_event(
 def publish_event_safely(
     session: Session,
     event: WebhookEvent,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[str]:
     try:
         deliveries = publish_event(
             session=session,
             event=event,
+            tenant_id=tenant_id,
         )
 
         return [
@@ -337,12 +342,7 @@ def publish_event_safely(
     except Exception as exc:
         session.rollback()
 
-        return [
-            (
-                "Webhook publication failed: "
-                f"{type(exc).__name__}: {exc}"
-            )
-        ]
+        return ["Webhook publication failed: " f"{type(exc).__name__}: {exc}"]
 
 
 def create_test_event(

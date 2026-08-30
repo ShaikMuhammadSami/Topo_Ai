@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
 )
 from sqlalchemy.orm import Session
@@ -12,7 +13,6 @@ from app.models.response_plan import (
 from app.services.response_plan import (
     build_incident_response_plan,
 )
-
 
 router = APIRouter(
     prefix="/api/v1/incidents",
@@ -26,14 +26,15 @@ router = APIRouter(
 )
 def get_incident_response_plan(
     incident_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentResponsePlan:
     try:
         return build_incident_response_plan(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

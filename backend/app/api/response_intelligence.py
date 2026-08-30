@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
 )
@@ -13,7 +14,6 @@ from app.models.response_intelligence import (
 from app.services.response_intelligence import (
     build_incident_response_intelligence,
 )
-
 
 router = APIRouter(
     prefix="/api/v1/incidents",
@@ -38,9 +38,9 @@ def get_incident_response_intelligence(
         ge=0.0,
         le=1.0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentResponseIntelligence:
     try:
         return build_incident_response_intelligence(
@@ -49,6 +49,7 @@ def get_incident_response_intelligence(
             history_limit=history_limit,
             min_similarity=min_similarity,
             include_ai=include_ai,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

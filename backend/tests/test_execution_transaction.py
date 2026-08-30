@@ -1,4 +1,7 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT, seed_domain_tenant
+from domain_tenant_fixtures import seed_domain_parents
+from test_tenant_foundation import tenant_app
 
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -49,7 +52,6 @@ from app.security.approval_authorization import (
     approval_control_principal,
 )
 
-
 NOW = datetime(2026, 8, 16, 13, 0, tzinfo=UTC)
 
 
@@ -84,6 +86,10 @@ WORKER_B = service.ExecutionWorkerIdentity(
 def session():
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
+    seed_domain_parents(
+        engine, ("incidents", "incident:1"), ("action_approvals", "approval:1")
+    )
     Session = sessionmaker(
         bind=engine,
         expire_on_commit=False,
@@ -228,13 +234,7 @@ def _wire_approval(
     monkeypatch,
     holder: dict,
 ) -> None:
-    def get_approval(
-        session,
-        *,
-        incident_id,
-        approval_id,
-        now=None,
-    ):
+    def get_approval(session, *, incident_id, approval_id, now=None, tenant_id=None):
         assert incident_id == "incident:1"
         assert approval_id == "approval:1"
         return holder["approval"]
@@ -259,6 +259,7 @@ def _create(
         approval_id="approval:1",
         creator=CREATOR,
         now=NOW,
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -305,15 +306,14 @@ def test_non_valid_approval_cannot_create_intent(
     }
     _wire_approval(monkeypatch, holder)
 
-    with pytest.raises(
-        service.ExecutionIntentConflictError
-    ):
+    with pytest.raises(service.ExecutionIntentConflictError):
         service.create_execution_intent(
             session,
             incident_id="incident:1",
             approval_id="approval:1",
             creator=CREATOR,
             now=NOW,
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -330,15 +330,14 @@ def test_stale_approval_fingerprint_blocks_creation(
     }
     _wire_approval(monkeypatch, holder)
 
-    with pytest.raises(
-        service.ExecutionIntentConflictError
-    ):
+    with pytest.raises(service.ExecutionIntentConflictError):
         service.create_execution_intent(
             session,
             incident_id="incident:1",
             approval_id="approval:1",
             creator=CREATOR,
             now=NOW,
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -370,6 +369,7 @@ def test_duplicate_creation_returns_one_logical_intent(
         approval_id="approval:1",
         creator=CREATOR,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
     third = service.create_execution_intent(
         session,
@@ -377,6 +377,7 @@ def test_duplicate_creation_returns_one_logical_intent(
         approval_id="approval:1",
         creator=CREATOR,
         now=NOW + timedelta(seconds=2),
+        tenant_id=TEST_TENANT,
     )
     count = session.scalar(
         select(func.count())
@@ -403,6 +404,7 @@ def test_cancelled_intent_is_still_the_same_logical_intent(
         actor=CREATOR,
         reason="Cancel the logical operation.",
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
     repeated = service.create_execution_intent(
         session,
@@ -410,6 +412,7 @@ def test_cancelled_intent_is_still_the_same_logical_intent(
         approval_id="approval:1",
         creator=CREATOR,
         now=NOW + timedelta(seconds=2),
+        tenant_id=TEST_TENANT,
     )
 
     assert repeated.execution_id == first.execution_id
@@ -429,6 +432,10 @@ def test_database_idempotency_uniqueness_handles_creation_race(
         },
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
+    seed_domain_parents(
+        engine, ("incidents", "incident:1"), ("action_approvals", "approval:1")
+    )
     Session = sessionmaker(
         bind=engine,
         expire_on_commit=False,
@@ -445,14 +452,13 @@ def test_database_idempotency_uniqueness_handles_creation_race(
     def create_once():
         with Session() as thread_session:
             barrier.wait(timeout=10)
-            record, _ = (
-                repository.create_execution_intent_record(
-                    thread_session,
-                    snapshot=snapshot,
-                    idempotency_key=key,
-                    creator=CREATOR,
-                    created_at=NOW,
-                )
+            record, _ = repository.create_execution_intent_record(
+                thread_session,
+                snapshot=snapshot,
+                idempotency_key=key,
+                creator=CREATOR,
+                created_at=NOW,
+                tenant_id=TEST_TENANT,
             )
             return record.execution_id
 
@@ -513,6 +519,10 @@ def test_two_session_atomic_claim_allows_exactly_one_worker(
         },
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
+    seed_domain_parents(
+        engine, ("incidents", "incident:1"), ("action_approvals", "approval:1")
+    )
     Session = sessionmaker(
         bind=engine,
         expire_on_commit=False,
@@ -527,6 +537,7 @@ def test_two_session_atomic_claim_allows_exactly_one_worker(
             approval_id="approval:1",
             creator=CREATOR,
             now=NOW,
+            tenant_id=TEST_TENANT,
         )
 
     barrier = Barrier(2)
@@ -553,6 +564,7 @@ def test_two_session_atomic_claim_allows_exactly_one_worker(
                     execution_id=intent.execution_id,
                     worker=worker,
                     now=NOW + timedelta(seconds=1),
+                    tenant_id=TEST_TENANT,
                 )
                 return ("won", receipt.execution_intent.claimed_by)
             except service.ExecutionIntentConflictError:
@@ -603,6 +615,7 @@ def test_claim_lease_expiry_reclaims_with_new_generation(
         execution_id=intent.execution_id,
         worker=WORKER_A,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
     second = service.claim_execution_intent(
         session,
@@ -610,6 +623,7 @@ def test_claim_lease_expiry_reclaims_with_new_generation(
         execution_id=intent.execution_id,
         worker=WORKER_B,
         now=NOW + timedelta(seconds=17),
+        tenant_id=TEST_TENANT,
     )
 
     assert first.claim_generation == 1
@@ -642,6 +656,7 @@ def test_stale_worker_cannot_release_reclaimed_generation(
         execution_id=intent.execution_id,
         worker=WORKER_A,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
     second = service.claim_execution_intent(
         session,
@@ -649,11 +664,10 @@ def test_stale_worker_cannot_release_reclaimed_generation(
         execution_id=intent.execution_id,
         worker=WORKER_B,
         now=NOW + timedelta(seconds=17),
+        tenant_id=TEST_TENANT,
     )
 
-    with pytest.raises(
-        service.ExecutionIntentConflictError
-    ):
+    with pytest.raises(service.ExecutionIntentConflictError):
         service.release_execution_claim(
             session,
             incident_id="incident:1",
@@ -662,6 +676,7 @@ def test_stale_worker_cannot_release_reclaimed_generation(
             claim_generation=first.claim_generation,
             claim_token=first.claim_token,
             now=NOW + timedelta(seconds=18),
+            tenant_id=TEST_TENANT,
         )
 
     current = service.get_execution_intent(
@@ -669,6 +684,7 @@ def test_stale_worker_cannot_release_reclaimed_generation(
         incident_id="incident:1",
         execution_id=intent.execution_id,
         now=NOW + timedelta(seconds=18),
+        tenant_id=TEST_TENANT,
     )
     assert current.claimed_by == WORKER_B.subject
     assert current.claim_generation == second.claim_generation
@@ -685,17 +701,17 @@ def test_attempt_count_increments_only_on_successful_claims(
         execution_id=intent.execution_id,
         worker=WORKER_A,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
-    with pytest.raises(
-        service.ExecutionIntentConflictError
-    ):
+    with pytest.raises(service.ExecutionIntentConflictError):
         service.claim_execution_intent(
             session,
             incident_id="incident:1",
             execution_id=intent.execution_id,
             worker=WORKER_B,
             now=NOW + timedelta(seconds=2),
+            tenant_id=TEST_TENANT,
         )
 
     released = service.release_execution_claim(
@@ -706,12 +722,14 @@ def test_attempt_count_increments_only_on_successful_claims(
         claim_generation=first.claim_generation,
         claim_token=first.claim_token,
         now=NOW + timedelta(seconds=3),
+        tenant_id=TEST_TENANT,
     )
     viewed = service.get_execution_intent(
         session,
         incident_id="incident:1",
         execution_id=intent.execution_id,
         now=NOW + timedelta(seconds=4),
+        tenant_id=TEST_TENANT,
     )
 
     assert released.attempt_count == 1
@@ -755,15 +773,14 @@ def test_invalid_approval_before_claim_makes_intent_non_claimable(
     intent = _create(session, monkeypatch, holder)
     holder["approval"] = approval
 
-    with pytest.raises(
-        service.ExecutionIntentConflictError
-    ):
+    with pytest.raises(service.ExecutionIntentConflictError):
         service.claim_execution_intent(
             session,
             incident_id="incident:1",
             execution_id=intent.execution_id,
             worker=WORKER_A,
             now=NOW + timedelta(seconds=1),
+            tenant_id=TEST_TENANT,
         )
 
     record = session.get(
@@ -777,6 +794,7 @@ def test_invalid_approval_before_claim_makes_intent_non_claimable(
         incident_id="incident:1",
         execution_id=intent.execution_id,
         now=NOW + timedelta(seconds=2),
+        tenant_id=TEST_TENANT,
     )
     assert detail.audit_events[-1].event_type.value == (
         "expired"
@@ -807,6 +825,7 @@ def test_target_policy_or_readiness_evidence_change_invalidates_intent(
         incident_id="incident:1",
         execution_id=intent.execution_id,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert result.status == ExecutionIntentStatus.INVALIDATED
@@ -826,12 +845,14 @@ def test_cancel_pending_intent_is_durable_and_non_claimable(
         actor=CREATOR,
         reason="Operational window closed.",
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
     loaded = service.get_execution_intent(
         session,
         incident_id="incident:1",
         execution_id=intent.execution_id,
         now=NOW + timedelta(seconds=2),
+        tenant_id=TEST_TENANT,
     )
 
     assert cancelled.status == ExecutionIntentStatus.CANCELLED
@@ -839,15 +860,14 @@ def test_cancel_pending_intent_is_durable_and_non_claimable(
     assert loaded.cancellation_reason == "Operational window closed."
     assert loaded.currently_claimable is False
 
-    with pytest.raises(
-        service.ExecutionIntentConflictError
-    ):
+    with pytest.raises(service.ExecutionIntentConflictError):
         service.claim_execution_intent(
             session,
             incident_id="incident:1",
             execution_id=intent.execution_id,
             worker=WORKER_A,
             now=NOW + timedelta(seconds=3),
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -862,11 +882,10 @@ def test_claimed_intent_cannot_be_cancelled(
         execution_id=intent.execution_id,
         worker=WORKER_A,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
-    with pytest.raises(
-        service.ExecutionIntentConflictError
-    ):
+    with pytest.raises(service.ExecutionIntentConflictError):
         service.cancel_execution_intent(
             session,
             incident_id="incident:1",
@@ -874,6 +893,7 @@ def test_claimed_intent_cannot_be_cancelled(
             actor=CREATOR,
             reason="Do not pretend an active claim was undone.",
             now=NOW + timedelta(seconds=2),
+            tenant_id=TEST_TENANT,
         )
 
 
@@ -890,6 +910,7 @@ def test_execution_snapshot_is_immutable_across_returned_model_changes(
         incident_id="incident:1",
         execution_id=intent.execution_id,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert reloaded.target.entity_ids == ["entity:payments"]
@@ -959,6 +980,7 @@ def test_no_recovery_or_infrastructure_execution_is_called(
         execution_id=intent.execution_id,
         worker=WORKER_A,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert claim.execution_intent.execution_performed is False
@@ -979,6 +1001,7 @@ def test_audit_events_preserve_claim_release_and_cancel(
         execution_id=intent.execution_id,
         worker=WORKER_A,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
     service.release_execution_claim(
         session,
@@ -988,6 +1011,7 @@ def test_audit_events_preserve_claim_release_and_cancel(
         claim_generation=claim.claim_generation,
         claim_token=claim.claim_token,
         now=NOW + timedelta(seconds=2),
+        tenant_id=TEST_TENANT,
     )
     cancelled = service.cancel_execution_intent(
         session,
@@ -996,6 +1020,7 @@ def test_audit_events_preserve_claim_release_and_cancel(
         actor=CREATOR,
         reason="Stop before adapter processing.",
         now=NOW + timedelta(seconds=3),
+        tenant_id=TEST_TENANT,
     )
 
     assert [
@@ -1027,6 +1052,7 @@ def test_listing_is_bounded_and_filterable(
         limit=1000,
         offset=0,
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert [item.execution_id for item in result] == [
@@ -1117,6 +1143,7 @@ def test_secret_shaped_cancellation_reason_is_redacted(
         actor=CREATOR,
         reason="Cancel with token=supersecretvalue",
         now=NOW + timedelta(seconds=1),
+        tenant_id=TEST_TENANT,
     )
 
     assert result.cancellation_reason == (
@@ -1130,7 +1157,7 @@ def test_secret_shaped_cancellation_reason_is_redacted(
 def test_new_execution_intent_routes_require_authentication(
     required_auth_app,
 ) -> None:
-    client = TestClient(required_auth_app)
+    client = TestClient(required_auth_app, headers=TEST_HEADERS)
     response = client.post(
         (
             "/api/v1/incidents/incident%3A1/"
@@ -1143,14 +1170,16 @@ def test_new_execution_intent_routes_require_authentication(
 
 
 def test_execution_intent_list_limit_is_enforced_by_api(
+    tenant_app,
 ) -> None:
-    from app.main import app
-    client = TestClient(app)
+    from test_tenant_foundation import _bearer, _create_tenant
+
+    application, _, tokens = tenant_app
+    client = TestClient(application)
+    tenant = _create_tenant(client, tokens["bootstrap"])
     response = client.get(
-        (
-            "/api/v1/incidents/incident%3A1/"
-            "execution-intents?limit=101"
-        )
+        ("/api/v1/incidents/incident%3A1/" "execution-intents?limit=101"),
+        headers=_bearer(tokens["bootstrap"], tenant["tenant_id"]),
     )
 
     assert response.status_code == 422

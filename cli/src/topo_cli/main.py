@@ -153,6 +153,11 @@ app.add_typer(
 @app.callback()
 def initialize(
     context: typer.Context,
+    tenant: str | None = typer.Option(
+        None,
+        "--tenant",
+        help="Explicit tenant selection; server membership or service binding remains authoritative.",
+    ),
     profile: str | None = typer.Option(
         None,
         "--profile",
@@ -274,6 +279,7 @@ def initialize(
     )
 
     client = TopoClient(
+        tenant_id=tenant if tenant is not None else resolved_profile.tenant_id,
         api_url=(
             resolved_profile.api_url
         ),

@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -26,7 +27,6 @@ from app.services.investigation_planner import (
     generate_investigation_plan,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/incidents",
     tags=["investigation-plans"],
@@ -40,17 +40,17 @@ router = APIRouter(
 )
 def create_plan(
     incident_id: str,
-    request:
-        InvestigationPlanGenerateRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    request: InvestigationPlanGenerateRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> InvestigationPlanDetail:
     try:
         return generate_investigation_plan(
             session=session,
             incident_id=incident_id,
             request=request,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -59,9 +59,7 @@ def create_plan(
             detail=str(exc),
         ) from exc
 
-    except (
-        InvestigationPlanGenerationError
-    ) as exc:
+    except InvestigationPlanGenerationError as exc:
         raise HTTPException(
             status_code=502,
             detail=str(exc),
@@ -70,9 +68,7 @@ def create_plan(
 
 @router.get(
     "/{incident_id}/investigation-plans",
-    response_model=list[
-        InvestigationPlanSummary
-    ],
+    response_model=list[InvestigationPlanSummary],
 )
 def get_plans(
     incident_id: str,
@@ -85,17 +81,16 @@ def get_plans(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[InvestigationPlanSummary]:
-    return (
-        list_incident_investigation_plans(
-            session=session,
-            incident_id=incident_id,
-            limit=limit,
-            offset=offset
-        )
+    return list_incident_investigation_plans(
+        session=session,
+        incident_id=incident_id,
+        limit=limit,
+        offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -106,13 +101,14 @@ def get_plans(
 def get_plan(
     incident_id: str,
     plan_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> InvestigationPlanDetail:
     result = load_investigation_plan(
         session=session,
         plan_id=plan_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if (
@@ -131,28 +127,24 @@ def get_plan(
 
 
 @router.patch(
-    (
-        "/{incident_id}/"
-        "investigation-plans/{plan_id}/"
-        "steps/{step_id}"
-    ),
+    ("/{incident_id}/" "investigation-plans/{plan_id}/" "steps/{step_id}"),
     response_model=InvestigationPlanDetail,
 )
 def patch_step(
     incident_id: str,
     plan_id: str,
     step_id: str,
-    request:
-        InvestigationStepUpdateRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    request: InvestigationStepUpdateRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> InvestigationPlanDetail:
     result = update_investigation_step(
         session=session,
         plan_id=plan_id,
         step_id=step_id,
         request=request,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if (

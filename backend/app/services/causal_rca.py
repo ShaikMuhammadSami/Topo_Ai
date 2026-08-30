@@ -1,4 +1,9 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_get,
+    require_record_owner,
+)
 
 import hashlib
 import json
@@ -77,7 +82,6 @@ from app.services.temporal_semantics import (
     safe_snapshot_record_at_or_before,
 )
 
-
 ALGORITHM_VERSION = "13c-causal-v1"
 
 
@@ -150,10 +154,12 @@ def _snapshot_for_incident(
     *,
     incident: IncidentRecord,
     incident_time: datetime,
+    tenant_id: DomainTenant,
 ) -> tuple[
     SnapshotRecord | None,
     GraphSnapshot | None,
 ]:
+    require_record_owner(incident, tenant_id=tenant_id)
     snapshot_id = getattr(
         incident,
         "topology_snapshot_id",
@@ -161,9 +167,11 @@ def _snapshot_for_incident(
     )
 
     if snapshot_id:
-        record = session.get(
+        record = tenant_get(
+            session,
             SnapshotRecord,
             str(snapshot_id),
+            tenant_id=tenant_id,
         )
 
         if record is not None:
@@ -188,6 +196,7 @@ def _snapshot_for_incident(
         cluster_name=str(cluster_name),
         namespace=getattr(incident, "namespace", None),
         boundary_at=incident_time,
+        tenant_id=tenant_id,
     )
     if record is None:
         return None, None
@@ -661,10 +670,13 @@ def analyze_causal_rca(
     incident_id: str,
     request: CausalAnalysisRequest,
     persist: bool = True,
+    tenant_id: DomainTenant,
 ) -> CausalAnalysisResponse:
-    incident = session.get(
+    incident = tenant_get(
+        session,
         IncidentRecord,
         incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -672,35 +684,25 @@ def analyze_causal_rca(
             "Incident not found."
         )
 
-    change_analysis = (
-        analyze_incident_change_events(
-            session,
-            incident_id=incident_id,
-            lookback_minutes=(
-                request.lookback_minutes
-            ),
-            after_minutes=(
-                request.after_minutes
-            ),
-            minimum_score=(
-                request.minimum_change_score
-            ),
-            limit=500,
-        )
+    change_analysis = analyze_incident_change_events(
+        session,
+        incident_id=incident_id,
+        lookback_minutes=(request.lookback_minutes),
+        after_minutes=(request.after_minutes),
+        minimum_score=(request.minimum_change_score),
+        limit=500,
+        tenant_id=tenant_id,
     )
 
     incident_time = _parse_time(
         change_analysis.incident_time
     )
 
-    snapshot_record, snapshot = (
-        _snapshot_for_incident(
-            session,
-            incident=incident,
-            incident_time=(
-                incident_time
-            ),
-        )
+    snapshot_record, snapshot = _snapshot_for_incident(
+        session,
+        incident=incident,
+        incident_time=(incident_time),
+        tenant_id=tenant_id,
     )
 
     entity_by_id = _entity_index(
@@ -1672,6 +1674,7 @@ def analyze_causal_rca(
         primary_signal = load_signal(
             session,
             str(primary_signal_id),
+            tenant_id=tenant_id,
         )
 
     for candidate in candidates:
@@ -2351,6 +2354,7 @@ def analyze_causal_rca(
         analysis = save_causal_analysis(
             session,
             analysis=analysis,
+            tenant_id=tenant_id,
         )
 
     return analysis

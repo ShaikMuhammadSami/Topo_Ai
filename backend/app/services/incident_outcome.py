@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 import hashlib
 from datetime import (
@@ -65,7 +68,6 @@ from app.repositories.topology_snapshot_repository import (
 from app.services.response_plan import (
     build_incident_response_plan,
 )
-
 
 RECOVERY_ATTRIBUTION_SECONDS = 1800
 
@@ -339,6 +341,7 @@ def _analysis_and_plan(
     incident_id: str,
     source: dict[str, Any],
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> tuple[
     CausalAnalysisResponse | None,
     dict[str, Any] | None,
@@ -353,6 +356,7 @@ def _analysis_and_plan(
         analysis = load_causal_analysis(
             session,
             analysis_id=stored_analysis_id,
+            tenant_id=tenant_id,
         )
 
         if analysis is None:
@@ -366,6 +370,7 @@ def _analysis_and_plan(
         analysis = latest_causal_analysis(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
 
     plan_snapshot = source.get(
@@ -394,13 +399,11 @@ def _analysis_and_plan(
             plan = build_incident_response_plan(
                 session=session,
                 incident_id=incident_id,
+                tenant_id=tenant_id,
             )
 
         except ValueError as exc:
-            warnings.append(
-                "No response plan available: "
-                f"{exc}"
-            )
+            warnings.append("No response plan available: " f"{exc}")
 
         else:
             if (
@@ -465,6 +468,7 @@ def _historical_topology_warnings(
     *,
     analysis: CausalAnalysisResponse | None,
     root_entity_id: str | None,
+    tenant_id: DomainTenant,
 ) -> list[str]:
     if analysis is None:
         return []
@@ -478,9 +482,8 @@ def _historical_topology_warnings(
 
     snapshot = load_topology_snapshot(
         session=session,
-        snapshot_id=(
-            analysis.topology_snapshot_id
-        ),
+        snapshot_id=(analysis.topology_snapshot_id),
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:
@@ -507,6 +510,7 @@ def _change_event_for_action(
     session: Session,
     *,
     event_id: str | None,
+    tenant_id: DomainTenant,
 ) -> ChangeEventView | None:
     if not event_id:
         return None
@@ -514,6 +518,7 @@ def _change_event_for_action(
     record = load_change_event(
         session,
         event_id=event_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -522,6 +527,7 @@ def _change_event_for_action(
     return change_event_view(
         session,
         record=record,
+        tenant_id=tenant_id,
     )
 
 
@@ -570,10 +576,12 @@ def _manual_observation(
     incident_id: str,
     item: ResponseActionObservationInput,
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> IncidentResponseActionObservation:
     event = _change_event_for_action(
         session,
         event_id=item.change_event_id,
+        tenant_id=tenant_id,
     )
 
     if item.change_event_id and event is None:
@@ -692,6 +700,7 @@ def _auto_change_observations(
     plan: dict[str, Any] | None,
     root_entity_id: str | None,
     end_at: datetime,
+    tenant_id: DomainTenant,
 ) -> list[IncidentResponseActionObservation]:
     plan_action_ids = {
         str(item.get("action_id"))
@@ -708,13 +717,10 @@ def _auto_change_observations(
         session,
         cluster_name=incident.cluster_name,
         namespace=incident.namespace,
-        occurred_after=(
-            _as_utc(
-                incident.first_observed_at
-            ).isoformat()
-        ),
+        occurred_after=(_as_utc(incident.first_observed_at).isoformat()),
         occurred_before=end_at.isoformat(),
         limit=500,
+        tenant_id=tenant_id,
     )
 
     result: list[
@@ -832,6 +838,7 @@ def _legacy_observation(
     session: Session,
     *,
     incident,
+    tenant_id: DomainTenant,
 ) -> tuple[
     IncidentResponseActionObservation | None,
     datetime | None,
@@ -845,9 +852,8 @@ def _legacy_observation(
 
     recommendation = load_recommendation(
         session=session,
-        recommendation_id=(
-            recommendation_id
-        ),
+        recommendation_id=(recommendation_id),
+        tenant_id=tenant_id,
     )
 
     if (
@@ -860,10 +866,9 @@ def _legacy_observation(
 
     verifications = list_recovery_verifications(
         session=session,
-        recommendation_id=(
-            recommendation_id
-        ),
+        recommendation_id=(recommendation_id),
         limit=100,
+        tenant_id=tenant_id,
     )
     latest = (
         verifications[0]
@@ -1006,12 +1011,11 @@ def _plan_action_map(
 def _match_plan_actions(
     session: Session,
     *,
-    actions: list[
-        IncidentResponseActionObservation
-    ],
+    actions: list[IncidentResponseActionObservation],
     plan: dict[str, Any] | None,
     original: OutcomeRootCause | None,
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> list[IncidentResponseActionObservation]:
     action_map = _plan_action_map(plan)
     rollback_ids = [
@@ -1048,14 +1052,11 @@ def _match_plan_actions(
             )
             plan_id = None
 
-        if (
-            plan_id is None
-            and len(rollback_ids) == 1
-            and _is_rollback(action)
-        ):
+        if plan_id is None and len(rollback_ids) == 1 and _is_rollback(action):
             event = _change_event_for_action(
                 session,
                 event_id=action.change_event_id,
+                tenant_id=tenant_id,
             )
             reversal = _reversal_target(event)
             entity_overlap = bool(
@@ -1087,13 +1088,12 @@ def _match_plan_actions(
 def _attribute_recovery(
     session: Session,
     *,
-    actions: list[
-        IncidentResponseActionObservation
-    ],
+    actions: list[IncidentResponseActionObservation],
     mitigated_at: datetime | None,
     original: OutcomeRootCause | None,
     plan: dict[str, Any] | None,
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> list[IncidentResponseActionObservation]:
     if mitigated_at is None:
         return actions
@@ -1137,6 +1137,7 @@ def _attribute_recovery(
         event = _change_event_for_action(
             session,
             event_id=action.change_event_id,
+            tenant_id=tenant_id,
         )
         reversal = _reversal_target(event)
         entity_overlap = bool(
@@ -1407,11 +1408,9 @@ def _verdict(
     *,
     manual: IncidentOutcomeUpdate,
     original: OutcomeRootCause | None,
-    primary: (
-        IncidentResponseActionObservation
-        | None
-    ),
+    primary: IncidentResponseActionObservation | None,
     plan: dict[str, Any] | None,
+    tenant_id: DomainTenant,
 ) -> tuple[
     RcaVerdict,
     float,
@@ -1524,6 +1523,7 @@ def _verdict(
     event = _change_event_for_action(
         session,
         event_id=primary.change_event_id,
+        tenant_id=tenant_id,
     )
     reversal = _reversal_target(event)
     target_event_id = None
@@ -1633,10 +1633,12 @@ def _derive_outcome(
     incident_id: str,
     manual: IncidentOutcomeUpdate,
     source: dict[str, Any],
+    tenant_id: DomainTenant,
 ) -> IncidentOutcome:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -1650,6 +1652,7 @@ def _derive_outcome(
         incident_id=incident_id,
         source=source,
         warnings=warnings,
+        tenant_id=tenant_id,
     )
     original = _original_root_cause(
         analysis,
@@ -1660,11 +1663,8 @@ def _derive_outcome(
         _historical_topology_warnings(
             session,
             analysis=analysis,
-            root_entity_id=(
-                original.entity_id
-                if original
-                else None
-            ),
+            root_entity_id=(original.entity_id if original else None),
+            tenant_id=tenant_id,
         )
     )
 
@@ -1683,6 +1683,7 @@ def _derive_outcome(
             incident_id=incident_id,
             item=item,
             warnings=warnings,
+            tenant_id=tenant_id,
         )
         for item in manual.actions
     ]
@@ -1693,20 +1694,16 @@ def _derive_outcome(
             incident=incident,
             incident_id=incident_id,
             plan=plan,
-            root_entity_id=(
-                original.entity_id
-                if original
-                else None
-            ),
+            root_entity_id=(original.entity_id if original else None),
             end_at=end_at,
+            tenant_id=tenant_id,
         )
     )
 
-    legacy, legacy_mitigated_at = (
-        _legacy_observation(
-            session,
-            incident=incident,
-        )
+    legacy, legacy_mitigated_at = _legacy_observation(
+        session,
+        incident=incident,
+        tenant_id=tenant_id,
     )
 
     if legacy is not None:
@@ -1757,6 +1754,7 @@ def _derive_outcome(
         plan=plan,
         original=original,
         warnings=warnings,
+        tenant_id=tenant_id,
     )
     actions = _attribute_recovery(
         session,
@@ -1765,6 +1763,7 @@ def _derive_outcome(
         original=original,
         plan=plan,
         warnings=warnings,
+        tenant_id=tenant_id,
     )
 
     primary = None
@@ -1812,14 +1811,13 @@ def _derive_outcome(
         manual=manual,
         warnings=warnings,
     )
-    verdict, verdict_confidence, final = (
-        _verdict(
-            session,
-            manual=manual,
-            original=original,
-            primary=primary,
-            plan=plan,
-        )
+    verdict, verdict_confidence, final = _verdict(
+        session,
+        manual=manual,
+        original=original,
+        primary=primary,
+        plan=plan,
+        tenant_id=tenant_id,
     )
 
     mitigation_seconds = _duration(
@@ -1998,6 +1996,7 @@ def analyze_incident_outcome(
     session: Session,
     *,
     incident_id: str,
+    tenant_id: DomainTenant,
 ) -> IncidentOutcome:
     source: dict[str, Any] = {}
     manual = IncidentOutcomeUpdate()
@@ -2007,6 +2006,7 @@ def analyze_incident_outcome(
         incident_id=incident_id,
         manual=manual,
         source=source,
+        tenant_id=tenant_id,
     )
 
 
@@ -2014,10 +2014,12 @@ def get_incident_outcome(
     session: Session,
     *,
     incident_id: str,
+    tenant_id: DomainTenant,
 ) -> IncidentOutcome:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -2028,6 +2030,7 @@ def get_incident_outcome(
     stored = load_incident_outcome(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if stored is not None:
@@ -2036,6 +2039,7 @@ def get_incident_outcome(
     return analyze_incident_outcome(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
 
@@ -2044,10 +2048,12 @@ def record_incident_outcome(
     *,
     incident_id: str,
     update: IncidentOutcomeUpdate,
+    tenant_id: DomainTenant,
 ) -> IncidentOutcome:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -2058,6 +2064,7 @@ def record_incident_outcome(
     record = load_incident_outcome_record(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
     source = (
         outcome_source(record)
@@ -2085,12 +2092,14 @@ def record_incident_outcome(
         incident_id=incident_id,
         manual=merged,
         source=source,
+        tenant_id=tenant_id,
     )
 
     save_incident_outcome(
         session,
         outcome=outcome,
         source=source,
+        tenant_id=tenant_id,
     )
 
     return outcome

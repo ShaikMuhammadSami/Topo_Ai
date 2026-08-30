@@ -1,4 +1,12 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    tenant_flush,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 
 import json
 
@@ -62,8 +70,11 @@ def save_build_artifact_evidence(
     *,
     evidence: BuildArtifactEvidence,
     commit: bool = True,
+    tenant_id: DomainTenant,
 ) -> tuple[BuildArtifactEvidence, bool]:
-    existing = session.get(BuildArtifactEvidenceRecord, evidence.evidence_id)
+    existing = tenant_get(
+        session, BuildArtifactEvidenceRecord, evidence.evidence_id, tenant_id=tenant_id
+    )
     if existing is not None:
         view = _view(existing)
         if _immutable_fact(view) != _immutable_fact(evidence):
@@ -110,11 +121,12 @@ def save_build_artifact_evidence(
         completeness=evidence.completeness.value,
         created_at=now,
         updated_at=now,
+        tenant_id=tenant_value(tenant_id),
     )
     session.add(record)
-    session.flush()
+    tenant_flush(session, tenant_id=tenant_id)
     if commit:
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
     return evidence, True
 
 
@@ -124,9 +136,12 @@ def list_build_artifact_evidence(
     repository_id: str,
     run_ids: set[str] | None = None,
     limit: int = 1000,
+    tenant_id: DomainTenant,
 ) -> list[BuildArtifactEvidence]:
-    statement = select(BuildArtifactEvidenceRecord).where(
-        BuildArtifactEvidenceRecord.repository_id == str(repository_id)
+    statement = (
+        select(BuildArtifactEvidenceRecord)
+        .where(tenant_predicate(BuildArtifactEvidenceRecord, tenant_id))
+        .where(BuildArtifactEvidenceRecord.repository_id == str(repository_id))
     )
     if run_ids:
         statement = statement.where(
@@ -146,6 +161,7 @@ def list_build_artifact_evidence_for_image_digest(
     *,
     image_digest: str,
     limit: int = 33,
+    tenant_id: DomainTenant,
 ) -> list[BuildArtifactEvidence]:
     """Return a bounded exact-digest provider lineage lookup.
 
@@ -155,10 +171,8 @@ def list_build_artifact_evidence_for_image_digest(
 
     statement = (
         select(BuildArtifactEvidenceRecord)
-        .where(
-            BuildArtifactEvidenceRecord.image_digest
-            == image_digest.strip().lower()
-        )
+        .where(tenant_predicate(BuildArtifactEvidenceRecord, tenant_id))
+        .where(BuildArtifactEvidenceRecord.image_digest == image_digest.strip().lower())
         .order_by(
             BuildArtifactEvidenceRecord.repository_id,
             BuildArtifactEvidenceRecord.commit_sha,
@@ -170,4 +184,3 @@ def list_build_artifact_evidence_for_image_digest(
         .limit(max(1, min(limit, 1000)))
     )
     return [_view(record) for record in session.scalars(statement).all()]
-

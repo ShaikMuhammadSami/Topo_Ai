@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    require_record_owner,
+)
 
 import hashlib
 import json
@@ -53,7 +57,6 @@ from app.services.ownership_resolver import (
     resolve_entity_ownership,
     stable_service_name,
 )
-
 
 FEATURE_SCHEMA_VERSION = (
     "14d-structured-v1"
@@ -207,6 +210,7 @@ def _snapshot_for_profile(
     analysis: CausalAnalysisResponse | None,
     historical_snapshot_id: str | None,
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> tuple[str | None, GraphSnapshot | None]:
     snapshot_id = (
         historical_snapshot_id
@@ -233,6 +237,7 @@ def _snapshot_for_profile(
     snapshot = load_topology_snapshot(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:
@@ -358,6 +363,7 @@ def _historical_analysis(
     *,
     outcome: IncidentOutcome,
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> CausalAnalysisResponse | None:
     if outcome.causal_analysis_id is None:
         warnings.append(
@@ -369,6 +375,7 @@ def _historical_analysis(
     analysis = load_causal_analysis(
         session,
         analysis_id=outcome.causal_analysis_id,
+        tenant_id=tenant_id,
     )
 
     if analysis is None:
@@ -393,9 +400,8 @@ def build_incident_feature_profile(
     outcome: IncidentOutcome | None = None,
     outcome_source_data: dict[str, Any] | None = None,
     historical: bool = False,
-    operational_impact: (
-        IncidentOwnershipImpact | None
-    ) = None,
+    operational_impact: IncidentOwnershipImpact | None = None,
+    tenant_id: DomainTenant,
 ) -> HistoricalIncidentFeatureProfile:
     warnings: list[str] = []
 
@@ -410,16 +416,13 @@ def build_incident_feature_profile(
         if historical and outcome is not None
         else None
     )
-    snapshot_id, snapshot = (
-        _snapshot_for_profile(
-            session,
-            incident=incident,
-            analysis=analysis,
-            historical_snapshot_id=(
-                historical_snapshot_id
-            ),
-            warnings=warnings,
-        )
+    snapshot_id, snapshot = _snapshot_for_profile(
+        session,
+        incident=incident,
+        analysis=analysis,
+        historical_snapshot_id=(historical_snapshot_id),
+        warnings=warnings,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -482,13 +485,11 @@ def build_incident_feature_profile(
                 session=session,
                 snapshot=snapshot,
                 entity=root_entity,
+                tenant_id=tenant_id,
             )
 
         except ValueError as exc:
-            warnings.append(
-                "Root ownership resolution was "
-                f"unavailable: {exc}"
-            )
+            warnings.append("Root ownership resolution was " f"unavailable: {exc}")
 
         else:
             if ownership.resolved:
@@ -512,22 +513,15 @@ def build_incident_feature_profile(
     # Reuse Block 14A when its incident snapshot is
     # the exact snapshot selected above. Never ask it
     # to evaluate a different historical graph.
-    if (
-        snapshot_id is not None
-        and incident.topology_snapshot_id
-        == snapshot_id
-    ):
+    if snapshot_id is not None and incident.topology_snapshot_id == snapshot_id:
         impact = operational_impact
 
         if impact is None:
             try:
-                impact = (
-                    calculate_incident_ownership_impact(
-                        session=session,
-                        incident_id=(
-                            incident.incident_id
-                        ),
-                    )
+                impact = calculate_incident_ownership_impact(
+                    session=session,
+                    incident_id=(incident.incident_id),
+                    tenant_id=tenant_id,
                 )
 
             except ValueError as exc:
@@ -766,20 +760,16 @@ def build_current_incident_profile(
     session: Session,
     *,
     incident_id: str,
-    incident_record: (
-        IncidentRecordView | None
-    ) = None,
-    causal_analysis: (
-        CausalAnalysisResponse | None
-    ) = None,
-    operational_impact: (
-        IncidentOwnershipImpact | None
-    ) = None,
+    incident_record: IncidentRecordView | None = None,
+    causal_analysis: CausalAnalysisResponse | None = None,
+    operational_impact: IncidentOwnershipImpact | None = None,
+    tenant_id: DomainTenant,
 ) -> HistoricalIncidentFeatureProfile:
     incident = incident_record or (
         load_incident_record(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
 
@@ -792,6 +782,7 @@ def build_current_incident_profile(
         latest_causal_analysis(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_id,
         )
     )
 
@@ -800,6 +791,7 @@ def build_current_incident_profile(
         incident=incident,
         analysis=analysis,
         operational_impact=operational_impact,
+        tenant_id=tenant_id,
     )
 
 
@@ -807,7 +799,9 @@ def build_historical_incident_profile(
     session: Session,
     *,
     record: IncidentOutcomeRecord,
+    tenant_id: DomainTenant,
 ) -> HistoricalIncidentFeatureProfile | None:
+    require_record_owner(record, tenant_id=tenant_id)
     completed = completed_historical_outcome(
         record
     )
@@ -819,6 +813,7 @@ def build_historical_incident_profile(
     incident = load_incident_record(
         session=session,
         incident_id=outcome.incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -829,6 +824,7 @@ def build_historical_incident_profile(
         session,
         outcome=outcome,
         warnings=warnings,
+        tenant_id=tenant_id,
     )
     profile = build_incident_feature_profile(
         session,
@@ -837,6 +833,7 @@ def build_historical_incident_profile(
         outcome=outcome,
         outcome_source_data=source,
         historical=True,
+        tenant_id=tenant_id,
     )
 
     return profile.model_copy(

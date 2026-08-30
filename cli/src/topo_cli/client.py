@@ -34,6 +34,7 @@ class TopoClient:
         *,
         api_url: str,
         token: str | None,
+        tenant_id: str | None = None,
         timeout: float,
         verify_tls: bool,
         snapshot_capture_path: str,
@@ -52,6 +53,9 @@ class TopoClient:
 
         if token:
             headers["Authorization"] = f"Bearer {token}"
+
+        if tenant_id:
+            headers["X-Topo-Tenant-ID"] = tenant_id
 
         self._client = httpx.Client(
             base_url=self.api_url,
@@ -127,8 +131,11 @@ class TopoClient:
             )
 
         if response.status_code >= 400:
+            message = self._error_message(response)
+            if response.status_code == 400 and "TENANT_CONTEXT_REQUIRED" in message:
+                message += " Select a tenant with --tenant <tenant-id> or your profile's tenant_id."
             raise ApiFailure(
-                self._error_message(response),
+                message,
                 status_code=response.status_code,
             )
 

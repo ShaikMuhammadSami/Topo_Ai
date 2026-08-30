@@ -1,4 +1,11 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    require_record_owner,
+)
 
 import json
 from datetime import datetime
@@ -22,7 +29,6 @@ from app.security.api_tokens import (
     AuthPrincipal,
 )
 
-
 ACTIVE_APPROVAL_STATUSES = {
     ActionApprovalStatus.PENDING.value,
     ActionApprovalStatus.APPROVED.value,
@@ -34,14 +40,14 @@ def load_action_approval_record(
     *,
     incident_id: str,
     approval_id: str,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalRecord | None:
     statement = (
         select(ActionApprovalRecord)
+        .where(tenant_predicate(ActionApprovalRecord, tenant_id))
         .where(
-            ActionApprovalRecord.incident_id
-            == incident_id,
-            ActionApprovalRecord.approval_id
-            == approval_id,
+            ActionApprovalRecord.incident_id == incident_id,
+            ActionApprovalRecord.approval_id == approval_id,
         )
         .limit(1)
     )
@@ -57,12 +63,12 @@ def list_action_approval_records(
     action_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    tenant_id: DomainTenant,
 ) -> list[ActionApprovalRecord]:
-    statement = select(
-        ActionApprovalRecord
-    ).where(
-        ActionApprovalRecord.incident_id
-        == incident_id
+    statement = (
+        select(ActionApprovalRecord)
+        .where(tenant_predicate(ActionApprovalRecord, tenant_id))
+        .where(ActionApprovalRecord.incident_id == incident_id)
     )
 
     if status is not None:
@@ -97,17 +103,15 @@ def list_active_action_approval_records(
     *,
     incident_id: str,
     action_id: str,
+    tenant_id: DomainTenant,
 ) -> list[ActionApprovalRecord]:
     statement = (
         select(ActionApprovalRecord)
+        .where(tenant_predicate(ActionApprovalRecord, tenant_id))
         .where(
-            ActionApprovalRecord.incident_id
-            == incident_id,
-            ActionApprovalRecord.action_id
-            == action_id,
-            ActionApprovalRecord.status.in_(
-                ACTIVE_APPROVAL_STATUSES
-            ),
+            ActionApprovalRecord.incident_id == incident_id,
+            ActionApprovalRecord.action_id == action_id,
+            ActionApprovalRecord.status.in_(ACTIVE_APPROVAL_STATUSES),
         )
         .order_by(
             ActionApprovalRecord.requested_at.asc(),
@@ -124,14 +128,14 @@ def find_pending_action_approval_record(
     session: Session,
     *,
     pending_key: str,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalRecord | None:
     statement = (
         select(ActionApprovalRecord)
+        .where(tenant_predicate(ActionApprovalRecord, tenant_id))
         .where(
-            ActionApprovalRecord.pending_key
-            == pending_key,
-            ActionApprovalRecord.status
-            == ActionApprovalStatus.PENDING.value,
+            ActionApprovalRecord.pending_key == pending_key,
+            ActionApprovalRecord.status == ActionApprovalStatus.PENDING.value,
         )
         .limit(1)
     )
@@ -160,39 +164,29 @@ def _event_record(
     actor: AuthPrincipal,
     reason: str | None,
     occurred_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalEventRecord:
+    require_record_owner(record, tenant_id=tenant_id)
     return ActionApprovalEventRecord(
-        event_id=(
-            "approval-event:"
-            f"{uuid4().hex}"
-        ),
+        event_id=("approval-event:" f"{uuid4().hex}"),
         sequence=sequence,
         approval_id=record.approval_id,
         incident_id=record.incident_id,
         action_id=record.action_id,
         event_type=event_type.value,
-        from_status=(
-            from_status.value
-            if from_status is not None
-            else None
-        ),
+        from_status=(from_status.value if from_status is not None else None),
         to_status=to_status.value,
         actor_subject=actor.subject,
-        actor_display_name=(
-            actor.display_name
-        ),
+        actor_display_name=(actor.display_name),
         actor_roles_json=json.dumps(
             list(actor.roles),
             sort_keys=True,
         ),
-        authentication_type=(
-            actor.authentication_type
-        ),
+        authentication_type=(actor.authentication_type),
         reason=reason,
-        evidence_fingerprint=(
-            record.evidence_fingerprint
-        ),
+        evidence_fingerprint=(record.evidence_fingerprint),
         occurred_at=occurred_at.isoformat(),
+        tenant_id=tenant_value(tenant_id),
     )
 
 
@@ -207,12 +201,12 @@ def create_action_approval_record(
     request_reason: str | None,
     requested_at: datetime,
     expires_at: datetime,
+    tenant_id: DomainTenant,
 ) -> tuple[ActionApprovalRecord, bool]:
-    existing = (
-        find_pending_action_approval_record(
-            session,
-            pending_key=pending_key,
-        )
+    existing = find_pending_action_approval_record(
+        session,
+        pending_key=pending_key,
+        tenant_id=tenant_id,
     )
 
     if existing is not None:
@@ -220,49 +214,26 @@ def create_action_approval_record(
 
     timestamp = requested_at.isoformat()
     record = ActionApprovalRecord(
-        approval_id=(
-            "approval:"
-            f"{uuid4().hex}"
-        ),
+        approval_id=("approval:" f"{uuid4().hex}"),
         incident_id=incident_id,
         action_id=snapshot.action_id,
-        action_family=(
-            snapshot.action_family.value
-        ),
-        status=(
-            ActionApprovalStatus.PENDING.value
-        ),
+        action_family=(snapshot.action_family.value),
+        status=(ActionApprovalStatus.PENDING.value),
         risk=snapshot.risk.value,
-        requires_human_approval=(
-            snapshot.requires_human_approval
-        ),
-        policy_version=(
-            snapshot.policy_version
-        ),
-        readiness_status_at_request=(
-            snapshot.readiness_status.value
-        ),
-        evidence_fingerprint=(
-            evidence_fingerprint
-        ),
+        requires_human_approval=(snapshot.requires_human_approval),
+        policy_version=(snapshot.policy_version),
+        readiness_status_at_request=(snapshot.readiness_status.value),
+        evidence_fingerprint=(evidence_fingerprint),
         target_entity_ids_json=json.dumps(
             snapshot.target.entity_ids,
             sort_keys=True,
         ),
-        target_change_event_id=(
-            snapshot.target.change_event_id
-        ),
-        readiness_snapshot_json=(
-            snapshot.model_dump_json()
-        ),
+        target_change_event_id=(snapshot.target.change_event_id),
+        readiness_snapshot_json=(snapshot.model_dump_json()),
         pending_key=pending_key,
         request_reason=request_reason,
-        requested_by_subject=(
-            requester.subject
-        ),
-        requested_by_display_name=(
-            requester.display_name
-        ),
+        requested_by_subject=(requester.subject),
+        requested_by_display_name=(requester.display_name),
         requested_by_roles_json=json.dumps(
             list(requester.roles),
             sort_keys=True,
@@ -271,35 +242,31 @@ def create_action_approval_record(
         expires_at=expires_at.isoformat(),
         created_at=timestamp,
         updated_at=timestamp,
+        tenant_id=tenant_value(tenant_id),
     )
     session.add(record)
     session.add(
         _event_record(
             record=record,
             sequence=1,
-            event_type=(
-                ActionApprovalEventType
-                .REQUESTED
-            ),
+            event_type=(ActionApprovalEventType.REQUESTED),
             from_status=None,
-            to_status=(
-                ActionApprovalStatus.PENDING
-            ),
+            to_status=(ActionApprovalStatus.PENDING),
             actor=requester,
             reason=request_reason,
             occurred_at=requested_at,
+            tenant_id=tenant_id,
         )
     )
 
     try:
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
     except IntegrityError:
         session.rollback()
-        existing = (
-            find_pending_action_approval_record(
-                session,
-                pending_key=pending_key,
-            )
+        existing = find_pending_action_approval_record(
+            session,
+            pending_key=pending_key,
+            tenant_id=tenant_id,
         )
 
         if existing is not None:
@@ -321,23 +288,18 @@ def transition_action_approval_record(
     actor: AuthPrincipal,
     reason: str | None,
     occurred_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalRecord:
+    require_record_owner(record, tenant_id=tenant_id)
     old_status = ActionApprovalStatus(
         record.status
     )
     timestamp = occurred_at.isoformat()
     sequence = (
         session.scalar(
-            select(
-                func.max(
-                    ActionApprovalEventRecord
-                    .sequence
-                )
-            ).where(
-                ActionApprovalEventRecord
-                .approval_id
-                == record.approval_id
-            )
+            select(func.max(ActionApprovalEventRecord.sequence))
+            .where(tenant_predicate(ActionApprovalEventRecord, tenant_id))
+            .where(ActionApprovalEventRecord.approval_id == record.approval_id)
         )
         or 0
     ) + 1
@@ -395,9 +357,10 @@ def transition_action_approval_record(
             actor=actor,
             reason=reason,
             occurred_at=occurred_at,
+            tenant_id=tenant_id,
         )
     )
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return record
@@ -407,16 +370,14 @@ def list_action_approval_events(
     session: Session,
     *,
     approval_id: str,
+    tenant_id: DomainTenant,
 ) -> list[ActionApprovalAuditEvent]:
     statement = (
         select(ActionApprovalEventRecord)
-        .where(
-            ActionApprovalEventRecord.approval_id
-            == approval_id
-        )
+        .where(tenant_predicate(ActionApprovalEventRecord, tenant_id))
+        .where(ActionApprovalEventRecord.approval_id == approval_id)
         .order_by(
-            ActionApprovalEventRecord
-            .sequence.asc(),
+            ActionApprovalEventRecord.sequence.asc(),
         )
     )
     records = list(

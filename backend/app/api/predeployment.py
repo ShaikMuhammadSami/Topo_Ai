@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
 )
 from sqlalchemy.orm import Session
@@ -28,7 +29,6 @@ from app.services.webhook_delivery import (
     publish_event_safely,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/predeployment",
     tags=["predeployment"],
@@ -37,20 +37,19 @@ router = APIRouter(
 
 @router.post(
     "/analyze",
-    response_model=(
-        PreDeploymentImpactResponse
-    ),
+    response_model=(PreDeploymentImpactResponse),
 )
 def analyze_planned_change(
     request: PreDeploymentImpactRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> PreDeploymentImpactResponse:
     try:
         result = analyze_predeployment_impact(
             session=session,
             request=request,
+            tenant_id=tenant_context.tenant_id,
         )
         if result.risk_level in {ChangeRiskLevel.HIGH,ChangeRiskLevel.CRITICAL,}:
 
@@ -115,24 +114,18 @@ def analyze_planned_change(
         )
 
         publish_event_safely(
-          session=session,
-          event=event,
+            session=session,
+            event=event,
+            tenant_id=tenant_context.tenant_id,
         )
 
-
-       
-
-    except (
-        PreDeploymentNotFoundError
-    ) as exc:
+    except PreDeploymentNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
-    except (
-        PreDeploymentValidationError
-    ) as exc:
+    except PreDeploymentValidationError as exc:
         raise HTTPException(
             status_code=422,
             detail=str(exc),

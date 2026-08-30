@@ -1,4 +1,13 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    tenant_flush,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 
 import hashlib
 import json
@@ -267,6 +276,7 @@ def _upsert_link(
     confidence: float,
     reason: str,
     snapshot_id: str | None,
+    tenant_id: DomainTenant,
 ) -> ChangeEntityLinkRecord:
     link_id = _link_id(
         event_id=event_id,
@@ -290,10 +300,10 @@ def _upsert_link(
             continue
 
         if (
-            pending.event_id == event_id
+            pending.tenant_id == tenant_value(tenant_id)
+            and pending.event_id == event_id
             and pending.entity_id == entity_id
-            and pending.link_type
-            == link_type.value
+            and pending.link_type == link_type.value
         ):
             record = pending
             break
@@ -303,21 +313,12 @@ def _upsert_link(
     # actual composite uniqueness fields.
     if record is None:
         statement = (
-            select(
-                ChangeEntityLinkRecord
-            )
+            select(ChangeEntityLinkRecord)
+            .where(tenant_predicate(ChangeEntityLinkRecord, tenant_id))
             .where(
-                ChangeEntityLinkRecord
-                .event_id
-                == event_id,
-
-                ChangeEntityLinkRecord
-                .entity_id
-                == entity_id,
-
-                ChangeEntityLinkRecord
-                .link_type
-                == link_type.value,
+                ChangeEntityLinkRecord.event_id == event_id,
+                ChangeEntityLinkRecord.entity_id == entity_id,
+                ChangeEntityLinkRecord.link_type == link_type.value,
             )
             .limit(1)
         )
@@ -337,14 +338,13 @@ def _upsert_link(
             link_id=link_id,
             event_id=event_id,
             entity_id=entity_id,
-            link_type=(
-                link_type.value
-            ),
+            link_type=(link_type.value),
             confidence=confidence,
             reason=reason,
             snapshot_id=snapshot_id,
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
@@ -369,27 +369,18 @@ def _upsert_link(
 
     return record
 
+
 def _links(
     session: Session,
     *,
     event_id: str,
-) -> list[
-    ChangeEntityLinkRecord
-]:
+    tenant_id: DomainTenant,
+) -> list[ChangeEntityLinkRecord]:
     statement = (
-        select(
-            ChangeEntityLinkRecord
-        )
-        .where(
-            ChangeEntityLinkRecord
-            .event_id
-            == event_id
-        )
-        .order_by(
-            ChangeEntityLinkRecord
-            .confidence
-            .desc()
-        )
+        select(ChangeEntityLinkRecord)
+        .where(tenant_predicate(ChangeEntityLinkRecord, tenant_id))
+        .where(ChangeEntityLinkRecord.event_id == event_id)
+        .order_by(ChangeEntityLinkRecord.confidence.desc())
     )
 
     return list(
@@ -423,18 +414,16 @@ def change_event_view(
     session: Session,
     *,
     record: ChangeEventRecord,
+    tenant_id: DomainTenant,
 ) -> ChangeEventView:
+    require_record_owner(record, tenant_id=tenant_id)
     return ChangeEventView(
         event_id=record.event_id,
-        event_fingerprint=(
-            record.event_fingerprint
-        ),
+        event_fingerprint=(record.event_fingerprint),
         source=record.source,
         kind=record.kind,
         external_id=record.external_id,
-        origin_change_id=(
-            record.origin_change_id
-        ),
+        origin_change_id=(record.origin_change_id),
         title=record.title,
         summary=record.summary,
         actor=record.actor,
@@ -445,39 +434,26 @@ def change_event_view(
         provider=record.provider,
         account_id=record.account_id,
         region=record.region,
-        cluster_name=(
-            record.cluster_name
-        ),
+        cluster_name=(record.cluster_name),
         namespace=record.namespace,
         repository=record.repository,
         commit_sha=record.commit_sha,
-        pipeline_name=(
-            record.pipeline_name
-        ),
-        release_version=(
-            record.release_version
-        ),
-        terraform_workspace=(
-            record.terraform_workspace
-        ),
+        pipeline_name=(record.pipeline_name),
+        release_version=(record.release_version),
+        terraform_workspace=(record.terraform_workspace),
         risk_score=record.risk_score,
         risk_level=record.risk_level,
         status=record.status,
-        observation_count=(
-            record.observation_count
-        ),
-        metadata=_json_dict(
-            record.metadata_json
-        ),
-        raw_payload=_json_dict(
-            record.raw_payload_json
-        ),
+        observation_count=(record.observation_count),
+        metadata=_json_dict(record.metadata_json),
+        raw_payload=_json_dict(record.raw_payload_json),
         agent_id=record.agent_id,
         links=[
             _link_view(link)
             for link in _links(
                 session,
                 event_id=record.event_id,
+                tenant_id=tenant_id,
             )
         ],
         created_at=record.created_at,
@@ -489,10 +465,13 @@ def load_change_event(
     session: Session,
     *,
     event_id: str,
+    tenant_id: DomainTenant,
 ) -> ChangeEventRecord | None:
-    return session.get(
+    return tenant_get(
+        session,
         ChangeEventRecord,
         event_id,
+        tenant_id=tenant_id,
     )
 
 
@@ -570,10 +549,12 @@ def correlate_change_event(
     event_id: str,
     snapshot_id: str | None = None,
     commit: bool = True,
+    tenant_id: DomainTenant,
 ) -> ChangeCorrelationResponse:
     record = load_change_event(
         session,
         event_id=event_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -590,9 +571,11 @@ def correlate_change_event(
     # 1. Caller explicitly requested
     # a snapshot.
     if snapshot_id:
-        snapshot_record = session.get(
+        snapshot_record = tenant_get(
+            session,
             SnapshotRecord,
             snapshot_id,
+            tenant_id=tenant_id,
         )
 
         if snapshot_record is None:
@@ -605,10 +588,7 @@ def correlate_change_event(
     # correlate against the snapshot
     # where the original change was
     # observed, never a future snapshot.
-    elif (
-        record.source
-        == "topology_diff"
-    ):
+    elif record.source == "topology_diff":
         origin_snapshot_id = (
             metadata.get(
                 "to_snapshot_id"
@@ -616,11 +596,11 @@ def correlate_change_event(
         )
 
         if origin_snapshot_id:
-            snapshot_record = session.get(
+            snapshot_record = tenant_get(
+                session,
                 SnapshotRecord,
-                str(
-                    origin_snapshot_id
-                ),
+                str(origin_snapshot_id),
+                tenant_id=tenant_id,
             )
 
     # 3. External operational events may use only a scope-compatible
@@ -633,9 +613,8 @@ def correlate_change_event(
                 session,
                 cluster_name=record.cluster_name,
                 namespace=record.namespace,
-                boundary_at=(
-                    change_event_temporal(record).effective_at
-                ),
+                boundary_at=(change_event_temporal(record).effective_at),
+                tenant_id=tenant_id,
             )
     # Explicit links can exist even
     # without any snapshot.
@@ -643,6 +622,7 @@ def correlate_change_event(
         links = _links(
             session,
             event_id=event_id,
+            tenant_id=tenant_id,
         )
 
         return ChangeCorrelationResponse(
@@ -779,6 +759,7 @@ def correlate_change_event(
                 f"reference by {resolution.strategy.value}."
             ),
             snapshot_id=snapshot.snapshot_id,
+            tenant_id=tenant_id,
         )
 
     event_tokens = {
@@ -801,37 +782,28 @@ def correlate_change_event(
     }
 
     for token in event_tokens:
-        for entity in (
-            token_index.get(
-                token,
-                [],
-            )
+        for entity in token_index.get(
+            token,
+            [],
         ):
             _upsert_link(
                 session,
                 event_id=event_id,
                 entity_id=entity.id,
-                link_type=(
-                    ChangeEntityLinkType
-                    .DERIVED
-                ),
+                link_type=(ChangeEntityLinkType.DERIVED),
                 confidence=0.75,
-                reason=(
-                    "Event metadata matched "
-                    "an entity property "
-                    "or label."
-                ),
-                snapshot_id=(
-                    snapshot.snapshot_id
-                ),
+                reason=("Event metadata matched " "an entity property " "or label."),
+                snapshot_id=(snapshot.snapshot_id),
+                tenant_id=tenant_id,
             )
 
     if commit:
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
 
     links = _links(
         session,
         event_id=event_id,
+        tenant_id=tenant_id,
     )
 
     return ChangeCorrelationResponse(
@@ -853,27 +825,23 @@ def ingest_change_event(
     request: ChangeEventCreate,
     agent_id: str | None = None,
     auto_correlate: bool = True,
-    correlation_snapshot_id:
-        str | None = None,
+    correlation_snapshot_id: str | None = None,
     source_time_trusted: bool = False,
     observed_at: str | None = None,
     source_field: str | None = None,
     source_time_origin: TimeOrigin = TimeOrigin.SOURCE_REPORTED,
     source_time_quality: TimeQuality = TimeQuality.EXACT,
     commit: bool = True,
+    tenant_id: DomainTenant,
 ) -> ChangeEventReceipt:
     fingerprint = _event_fingerprint(
         request
     )
 
     existing = session.scalar(
-        select(
-            ChangeEventRecord
-        ).where(
-            ChangeEventRecord
-            .event_fingerprint
-            == fingerprint
-        )
+        select(ChangeEventRecord)
+        .where(tenant_predicate(ChangeEventRecord, tenant_id))
+        .where(ChangeEventRecord.event_fingerprint == fingerprint)
     )
 
     now = utc_now_iso()
@@ -930,61 +898,30 @@ def ingest_change_event(
 
     if existing is None:
         record = ChangeEventRecord(
-            event_id=_event_id(
-                fingerprint
-            ),
-            event_fingerprint=(
-                fingerprint
-            ),
+            event_id=_event_id(fingerprint),
+            event_fingerprint=(fingerprint),
             source=request.source.value,
             kind=request.kind.value,
-            external_id=(
-                request.external_id
-            ),
-            origin_change_id=(
-                request.origin_change_id
-            ),
+            external_id=(request.external_id),
+            origin_change_id=(request.origin_change_id),
             title=request.title,
             summary=request.summary,
             actor=request.actor,
-            occurred_at=(
-                temporal.effective_at.isoformat()
-            ),
+            occurred_at=(temporal.effective_at.isoformat()),
             received_at=(
-                temporal.observed_at
-                or temporal.recorded_at
-                or temporal.effective_at
+                temporal.observed_at or temporal.recorded_at or temporal.effective_at
             ).isoformat(),
-            environment=(
-                request.environment
-            ),
+            environment=(request.environment),
             provider=request.provider,
-            account_id=(
-                request.account_id
-            ),
+            account_id=(request.account_id),
             region=request.region,
-            cluster_name=(
-                request.cluster_name
-            ),
-            namespace=(
-                request.namespace
-            ),
-            repository=(
-                request.repository
-            ),
-            commit_sha=(
-                request.commit_sha
-            ),
-            pipeline_name=(
-                request.pipeline_name
-            ),
-            release_version=(
-                request.release_version
-            ),
-            terraform_workspace=(
-                request
-                .terraform_workspace
-            ),
+            cluster_name=(request.cluster_name),
+            namespace=(request.namespace),
+            repository=(request.repository),
+            commit_sha=(request.commit_sha),
+            pipeline_name=(request.pipeline_name),
+            release_version=(request.release_version),
+            terraform_workspace=(request.terraform_workspace),
             risk_score=risk_score,
             risk_level=level.value,
             status=request.status,
@@ -1002,10 +939,11 @@ def ingest_change_event(
             agent_id=agent_id,
             created_at=now,
             updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(record)
-        session.flush()
+        tenant_flush(session, tenant_id=tenant_id)
 
     else:
         record = existing
@@ -1087,6 +1025,7 @@ def ingest_change_event(
                 cluster_name=record.cluster_name,
                 namespace=record.namespace,
                 boundary_at=change_event_temporal(record).effective_at,
+                tenant_id=tenant_id,
             )
         )
 
@@ -1101,30 +1040,20 @@ def ingest_change_event(
             session,
             event_id=record.event_id,
             entity_id=ref.entity_id,
-            link_type=(
-                ChangeEntityLinkType
-                .EXPLICIT
-            ),
+            link_type=(ChangeEntityLinkType.EXPLICIT),
             confidence=1.0,
-            reason=(
-                "Event explicitly "
-                "referenced entity."
-            ),
-            snapshot_id=(
-                correlation_snapshot_id
-            ),
+            reason=("Event explicitly " "referenced entity."),
+            snapshot_id=(correlation_snapshot_id),
+            tenant_id=tenant_id,
         )
 
     if auto_correlate:
-        correlation = (
-            correlate_change_event(
-                session,
-                event_id=record.event_id,
-                snapshot_id=(
-                    correlation_snapshot_id
-                ),
-                commit=False,
-            )
+        correlation = correlate_change_event(
+            session,
+            event_id=record.event_id,
+            snapshot_id=(correlation_snapshot_id),
+            commit=False,
+            tenant_id=tenant_id,
         )
 
         linked_count = (
@@ -1137,11 +1066,12 @@ def ingest_change_event(
             _links(
                 session,
                 event_id=record.event_id,
+                tenant_id=tenant_id,
             )
         )
 
     if commit:
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
 
     return ChangeEventReceipt(
         event_id=record.event_id,
@@ -1174,9 +1104,10 @@ def list_change_events(
     occurred_before: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    tenant_id: DomainTenant,
 ) -> list[ChangeEventView]:
-    statement = select(
-        ChangeEventRecord
+    statement = select(ChangeEventRecord).where(
+        tenant_predicate(ChangeEventRecord, tenant_id)
     )
 
     if source:
@@ -1241,8 +1172,7 @@ def list_change_events(
         change_event_view(
             session,
             record=record,
+            tenant_id=tenant_id,
         )
-        for record in session.scalars(
-            statement
-        ).all()
+        for record in session.scalars(statement).all()
     ]

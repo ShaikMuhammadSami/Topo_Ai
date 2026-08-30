@@ -24,10 +24,9 @@ from app.db.schema_management import (
     verify_database_revision,
 )
 
-
 DOMAIN_TABLE_COUNT = 43
 DOMAIN_COLUMN_COUNT = 768
-EXPECTED_HEAD = "0005_domain_tenant_ownership"
+EXPECTED_HEAD = "0006_domain_tenant_enforcement"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"

@@ -408,7 +408,7 @@ def prepare_disposable_product_database(database_path: Path) -> None:
                     "SELECT version_num FROM alembic_version"
                 )
             )
-            if revisions == ("0005_domain_tenant_ownership",):
+            if revisions == ("0006_domain_tenant_enforcement",):
                 return
             raise ValueError(
                 "Disposable evaluation database has unexpected migration state."
@@ -458,6 +458,8 @@ def prepare_disposable_product_database(database_path: Path) -> None:
                 ]
             )
             command.upgrade(config, "0005_domain_tenant_ownership")
+            config.cmd_opts = Namespace(x=[])
+            command.upgrade(config, "0006_domain_tenant_enforcement")
     finally:
         engine.dispose()
 
@@ -483,6 +485,7 @@ def ingest_distractors(session: Any, items: Iterable[Mapping[str, Any]], order: 
         request = ChangeEventCreate.model_validate(item["product_input"])
         receipt = ingest_change_event(
             session,
+            tenant_id=DISPOSABLE_EVALUATION_TENANT_ID,
             request=request,
             auto_correlate=False,
             source_time_trusted=True,
@@ -995,6 +998,7 @@ def run_scenario(seed_db: Path, output_root: Path, spec: ScenarioSpec) -> dict[s
             database_hash_before_analysis = sha256_file(database_path)
             analysis = analyze_causal_rca(
                 session,
+                tenant_id=DISPOSABLE_EVALUATION_TENANT_ID,
                 incident_id=GOLDEN_INCIDENT_ID,
                 request=CausalAnalysisRequest(),
                 persist=True,

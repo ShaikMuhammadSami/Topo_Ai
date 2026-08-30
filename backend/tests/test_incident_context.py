@@ -1,3 +1,4 @@
+from domain_tenant_fixtures import TEST_CONTEXT, TEST_TENANT
 from datetime import (
     datetime,
     timezone,
@@ -30,7 +31,6 @@ from app.models.topology import (
     EntityType,
     GraphSnapshot,
 )
-
 
 NOW = datetime(
     2026,
@@ -351,26 +351,22 @@ def _wire_context(
     monkeypatch.setattr(
         context_service,
         "latest_causal_analysis",
-        lambda session, *, incident_id:
-            analysis,
+        lambda session, *, incident_id, **_tenant_kwargs: analysis,
     )
     monkeypatch.setattr(
         context_service,
         "calculate_incident_ownership_impact",
-        lambda *, session, incident_id:
-            impact,
+        lambda *, session, incident_id, **_tenant_kwargs: impact,
     )
     monkeypatch.setattr(
         context_service,
         "load_topology_snapshot",
-        lambda *, session, snapshot_id:
-            snapshot,
+        lambda *, session, snapshot_id, **_tenant_kwargs: snapshot,
     )
     monkeypatch.setattr(
         context_service,
         "resolve_entity_ownership",
-        lambda *, session, snapshot, entity:
-            ownership,
+        lambda *, session, snapshot, entity, **_tenant_kwargs: ownership,
     )
 
 
@@ -393,12 +389,7 @@ def test_causal_root_entity_resolves_ownership(
         ownership=ownership,
     )
 
-    def resolve(
-        *,
-        session,
-        snapshot,
-        entity,
-    ):
+    def resolve(*, session, snapshot, entity, tenant_id=None):
         selected["entity_id"] = entity.id
         return ownership
 
@@ -408,12 +399,8 @@ def test_causal_root_entity_resolves_ownership(
         resolve,
     )
 
-    result = (
-        context_service
-        .build_incident_operational_context(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = context_service.build_incident_operational_context(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.root_entity_id == (
@@ -448,12 +435,8 @@ def test_unresolved_root_ownership_is_explicit(
         ),
     )
 
-    result = (
-        context_service
-        .build_incident_operational_context(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = context_service.build_incident_operational_context(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert (
@@ -487,12 +470,8 @@ def test_business_impact_survives_unresolved_root(
         ),
     )
 
-    result = (
-        context_service
-        .build_incident_operational_context(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = context_service.build_incident_operational_context(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert (
@@ -528,22 +507,13 @@ def test_historical_causal_snapshot_is_used(
         ),
     )
 
-    def load(
-        *,
-        session,
-        snapshot_id,
-    ):
+    def load(*, session, snapshot_id, tenant_id=None):
         loaded_snapshot_ids.append(
             snapshot_id
         )
         return historical
 
-    def resolve(
-        *,
-        session,
-        snapshot,
-        entity,
-    ):
+    def resolve(*, session, snapshot, entity, tenant_id=None):
         resolved_snapshots.append(
             snapshot.snapshot_id
         )
@@ -563,8 +533,7 @@ def test_historical_causal_snapshot_is_used(
     )
 
     context_service.build_incident_operational_context(
-        session=object(),
-        incident_id="incident:1",
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert loaded_snapshot_ids == [
@@ -599,12 +568,8 @@ def test_escalation_targets_are_deduplicated(
         ),
     )
 
-    result = (
-        context_service
-        .build_incident_operational_context(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = context_service.build_incident_operational_context(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.escalation_targets == [
@@ -618,11 +583,7 @@ def test_escalation_targets_are_deduplicated(
 def test_missing_causal_analysis_returns_404(
     monkeypatch,
 ) -> None:
-    def missing(
-        *,
-        session,
-        incident_id,
-    ):
+    def missing(*, session, incident_id, tenant_id=None):
         raise ValueError(
             "No causal analysis exists for "
             "this incident."
@@ -634,12 +595,11 @@ def test_missing_causal_analysis_returns_404(
         missing,
     )
 
-    with pytest.raises(
-        HTTPException
-    ) as raised:
+    with pytest.raises(HTTPException) as raised:
         context_api.get_incident_operational_context(
             incident_id="incident:missing",
             session=object(),
+            tenant_context=TEST_CONTEXT,
         )
 
     assert raised.value.status_code == 404
@@ -655,11 +615,7 @@ def test_existing_ownership_impact_endpoint_unchanged(
     impact = _impact()
     calls = []
 
-    def calculate(
-        *,
-        session,
-        incident_id,
-    ):
+    def calculate(*, session, incident_id, tenant_id=None):
         calls.append(incident_id)
         return impact
 
@@ -669,12 +625,8 @@ def test_existing_ownership_impact_endpoint_unchanged(
         calculate,
     )
 
-    result = (
-        ownership_api
-        .get_incident_ownership_impact(
-            incident_id="incident:1",
-            session=object(),
-        )
+    result = ownership_api.get_incident_ownership_impact(
+        incident_id="incident:1", session=object(), tenant_context=TEST_CONTEXT
     )
 
     assert result == impact

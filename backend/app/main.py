@@ -65,7 +65,7 @@ from app.security.auth_config import (
 from app.services.auth_api_credential_service import (
     has_active_human_admin_credential,
 )
-
+from app.repositories.tenant_scope import TenantResourceNotFound
 
 LOGGER = logging.getLogger(__name__)
 
@@ -124,6 +124,10 @@ def create_app(
     application.state.session_factory = session_factory
     application.state.database_initializer = database_initializer or init_db
     application.state.ready = False
+
+    @application.exception_handler(TenantResourceNotFound)
+    async def tenant_resource_not_found(request: Request, exc: TenantResourceNotFound):
+        return JSONResponse(status_code=404, content={"detail": "Resource not found."})
 
     application.add_middleware(
         ApiTokenAuthMiddleware,

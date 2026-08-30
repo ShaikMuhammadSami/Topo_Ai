@@ -1,3 +1,10 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 import json
 
 from sqlalchemy import select
@@ -63,10 +70,14 @@ def _to_response(
 def load_incident_explanation(
     session: Session,
     explanation_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentExplanationResponse | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         IncidentExplanationRecord,
         explanation_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -78,21 +89,14 @@ def load_incident_explanation(
 def load_latest_incident_explanation(
     session: Session,
     incident_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentExplanationResponse | None:
     statement = (
-        select(
-            IncidentExplanationRecord
-        )
-        .where(
-            IncidentExplanationRecord
-            .incident_id
-            == incident_id
-        )
-        .order_by(
-            IncidentExplanationRecord
-            .generated_at
-            .desc()
-        )
+        select(IncidentExplanationRecord)
+        .where(tenant_predicate(IncidentExplanationRecord, tenant_id))
+        .where(IncidentExplanationRecord.incident_id == incident_id)
+        .order_by(IncidentExplanationRecord.generated_at.desc())
         .limit(1)
     )
 
@@ -110,21 +114,14 @@ def list_incident_explanations(
     session: Session,
     incident_id: str,
     limit: int = 20,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[IncidentExplanationResponse]:
     statement = (
-        select(
-            IncidentExplanationRecord
-        )
-        .where(
-            IncidentExplanationRecord
-            .incident_id
-            == incident_id
-        )
-        .order_by(
-            IncidentExplanationRecord
-            .generated_at
-            .desc()
-        )
+        select(IncidentExplanationRecord)
+        .where(tenant_predicate(IncidentExplanationRecord, tenant_id))
+        .where(IncidentExplanationRecord.incident_id == incident_id)
+        .order_by(IncidentExplanationRecord.generated_at.desc())
         .limit(limit)
     )
 
@@ -143,15 +140,20 @@ def list_incident_explanations(
 def save_incident_explanation(
     session: Session,
     record: IncidentExplanationRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentExplanationResponse:
-    existing = session.get(
+    require_record_owner(record, tenant_id=tenant_id)
+    existing = tenant_get(
+        session,
         IncidentExplanationRecord,
         record.explanation_id,
+        tenant_id=tenant_id,
     )
 
     if existing is None:
         session.add(record)
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
         session.refresh(record)
 
         return _to_response(record)
@@ -179,7 +181,7 @@ def save_incident_explanation(
     existing.warnings_json = record.warnings_json
     existing.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(existing)
 
     return _to_response(existing)

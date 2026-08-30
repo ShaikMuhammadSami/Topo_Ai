@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from collections import (
     defaultdict,
@@ -28,7 +31,6 @@ from app.models.topology import (
 from app.repositories.topology_snapshot_repository import (
     load_topology_snapshot,
 )
-
 
 ALGORITHM_VERSION = (
     "predeployment-impact-0.1.0"
@@ -492,10 +494,13 @@ def _recommendation(
 def analyze_predeployment_impact(
     session: Session,
     request: PreDeploymentImpactRequest,
+    *,
+    tenant_id: DomainTenant,
 ) -> PreDeploymentImpactResponse:
     snapshot = load_topology_snapshot(
         session=session,
         snapshot_id=request.snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:

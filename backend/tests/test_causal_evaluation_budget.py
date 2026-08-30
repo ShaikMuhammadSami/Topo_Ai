@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 import json
@@ -37,7 +38,6 @@ from app.services.causal_candidate_policy import select_causal_candidates
 from app.services.lineage_candidate_admission import (
     evaluate_lineage_candidate_admission,
 )
-
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 GOLDEN_ID = "change:golden-source-mutation"
@@ -341,6 +341,7 @@ def test_sc2_proves_one_preserved_candidate_without_ar1_truncation() -> None:
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -362,6 +363,7 @@ def _incident(session: Session) -> None:
             last_observed_at=NOW.isoformat(),
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -409,8 +411,11 @@ def test_ar1_frontier_reaches_relevance_once_and_persists_round_trip(
         session,
         incident_id="incident:ar1",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
-    loaded = latest_causal_analysis(session, incident_id="incident:ar1")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:ar1", tenant_id=TEST_TENANT
+    )
 
     assert loaded is not None
     assert loaded.analysis_id == analysis.analysis_id
@@ -459,6 +464,7 @@ def test_dual_basis_produces_one_relevance_row_and_one_hypothesis_ledger(
         incident_id="incident:ar1",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
 
     assert sum(
@@ -486,6 +492,7 @@ def test_historical_analysis_loads_without_fabricated_ar1_metadata(monkeypatch) 
         incident_id="incident:ar1",
         request=CausalAnalysisRequest(),
         persist=False,
+        tenant_id=TEST_TENANT,
     )
     payload = current.model_dump(mode="json")
     payload.pop("evaluation_policy_version")
@@ -506,11 +513,14 @@ def test_historical_analysis_loads_without_fabricated_ar1_metadata(monkeypatch) 
             payload_json=legacy_json,
             created_at=NOW.isoformat(),
             updated_at=NOW.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
 
-    loaded = latest_causal_analysis(session, incident_id="incident:ar1")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:ar1", tenant_id=TEST_TENANT
+    )
     assert loaded is not None
     assert loaded.evaluation_policy_version is None
     assert loaded.candidate_evaluation_audit == []

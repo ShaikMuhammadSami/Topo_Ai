@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+)
 
 from sqlalchemy.orm import Session
 
@@ -17,7 +21,6 @@ from app.repositories.change_event_repository import (
     ingest_change_event,
 )
 from app.models.temporal import TimeOrigin, TimeQuality
-
 
 CATEGORY_TO_KIND = {
     ChangeCategory.DEPLOYMENT:
@@ -54,6 +57,7 @@ IMPORTANCE_TO_RISK = {
     ChangeImportance.MEDIUM: 50,
     ChangeImportance.HIGH: 80,
 }
+
 
 def _event_kind(
     change: NormalizedChange,
@@ -248,10 +252,9 @@ def normalized_change_to_event(
 def promote_normalized_changes(
     session: Session,
     *,
-    changes: list[
-        NormalizedChange
-    ],
+    changes: list[NormalizedChange],
     agent_id: str | None = None,
+    tenant_id: DomainTenant,
 ) -> dict[str, int]:
     created = 0
     duplicates = 0
@@ -267,21 +270,16 @@ def promote_normalized_changes(
             session,
             request=event,
             agent_id=agent_id,
-
             # Correlate against the
             # exact "after" snapshot.
-            correlation_snapshot_id=(
-                change.to_snapshot_id
-            ),
-
+            correlation_snapshot_id=(change.to_snapshot_id),
             auto_correlate=True,
-
             source_time_trusted=True,
             observed_at=change.detected_at.isoformat(),
             source_time_origin=TimeOrigin.DERIVED,
             source_time_quality=TimeQuality.BOUNDED,
-
             commit=False,
+            tenant_id=tenant_id,
         )
 
         if receipt.duplicate:
@@ -290,7 +288,7 @@ def promote_normalized_changes(
         else:
             created += 1
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return {
         "created": created,

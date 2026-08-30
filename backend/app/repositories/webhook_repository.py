@@ -1,3 +1,11 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 import json
 from uuid import uuid4
 
@@ -87,41 +95,28 @@ def _delivery_to_view(
 def create_webhook_endpoint(
     session: Session,
     request: WebhookEndpointCreate,
+    *,
+    tenant_id: DomainTenant,
 ) -> WebhookEndpointView:
     now = utc_now_iso()
 
     record = WebhookEndpointRecord(
-        webhook_id=(
-            f"webhook:{uuid4().hex}"
-        ),
+        webhook_id=(f"webhook:{uuid4().hex}"),
         name=request.name,
         url=request.url,
-        event_types_json=json.dumps(
-            [
-                value.value
-                for value
-                in request.event_types
-            ]
-        ),
-        headers_json=json.dumps(
-            request.headers
-        ),
-        signing_secret=(
-            request.signing_secret
-        ),
+        event_types_json=json.dumps([value.value for value in request.event_types]),
+        headers_json=json.dumps(request.headers),
+        signing_secret=(request.signing_secret),
         active=request.active,
-        timeout_seconds=(
-            request.timeout_seconds
-        ),
-        max_attempts=(
-            request.max_attempts
-        ),
+        timeout_seconds=(request.timeout_seconds),
+        max_attempts=(request.max_attempts),
         created_at=now,
         updated_at=now,
+        tenant_id=tenant_value(tenant_id),
     )
 
     session.add(record)
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return _endpoint_to_view(record)
@@ -130,20 +125,27 @@ def create_webhook_endpoint(
 def load_webhook_endpoint_record(
     session: Session,
     webhook_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> WebhookEndpointRecord | None:
-    return session.get(
+    return tenant_get(
+        session,
         WebhookEndpointRecord,
         webhook_id,
+        tenant_id=tenant_id,
     )
 
 
 def load_webhook_endpoint(
     session: Session,
     webhook_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> WebhookEndpointView | None:
     record = load_webhook_endpoint_record(
         session=session,
         webhook_id=webhook_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -155,9 +157,11 @@ def load_webhook_endpoint(
 def list_webhook_endpoint_records(
     session: Session,
     active: bool | None = None,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[WebhookEndpointRecord]:
-    statement = select(
-        WebhookEndpointRecord
+    statement = select(WebhookEndpointRecord).where(
+        tenant_predicate(WebhookEndpointRecord, tenant_id)
     )
 
     if active is not None:
@@ -182,13 +186,15 @@ def list_webhook_endpoint_records(
 def list_webhook_endpoints(
     session: Session,
     active: bool | None = None,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[WebhookEndpointView]:
     return [
         _endpoint_to_view(record)
-        for record in
-        list_webhook_endpoint_records(
+        for record in list_webhook_endpoint_records(
             session=session,
             active=active,
+            tenant_id=tenant_id,
         )
     ]
 
@@ -197,10 +203,13 @@ def update_webhook_endpoint(
     session: Session,
     webhook_id: str,
     request: WebhookEndpointUpdate,
+    *,
+    tenant_id: DomainTenant,
 ) -> WebhookEndpointView | None:
     record = load_webhook_endpoint_record(
         session=session,
         webhook_id=webhook_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -254,7 +263,7 @@ def update_webhook_endpoint(
 
     record.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
     return _endpoint_to_view(record)
@@ -264,14 +273,16 @@ def find_delivery_record(
     session: Session,
     webhook_id: str,
     event_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> WebhookDeliveryRecord | None:
-    statement = select(
-        WebhookDeliveryRecord
-    ).where(
-        WebhookDeliveryRecord.webhook_id
-        == webhook_id,
-        WebhookDeliveryRecord.event_id
-        == event_id,
+    statement = (
+        select(WebhookDeliveryRecord)
+        .where(tenant_predicate(WebhookDeliveryRecord, tenant_id))
+        .where(
+            WebhookDeliveryRecord.webhook_id == webhook_id,
+            WebhookDeliveryRecord.event_id == event_id,
+        )
     )
 
     return session.scalars(
@@ -282,25 +293,26 @@ def find_delivery_record(
 def save_delivery_result(
     session: Session,
     record: WebhookDeliveryRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> WebhookDeliveryView:
+    require_record_owner(record, tenant_id=tenant_id)
     existing = find_delivery_record(
         session=session,
         webhook_id=record.webhook_id,
         event_id=record.event_id,
+        tenant_id=tenant_id,
     )
 
     if existing is None:
         session.add(record)
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
         session.refresh(record)
 
-        endpoint = (
-            load_webhook_endpoint_record(
-                session=session,
-                webhook_id=(
-                    record.webhook_id
-                ),
-            )
+        endpoint = load_webhook_endpoint_record(
+            session=session,
+            webhook_id=(record.webhook_id),
+            tenant_id=tenant_id,
         )
 
         return _delivery_to_view(
@@ -334,12 +346,13 @@ def save_delivery_result(
     )
     existing.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
     session.refresh(existing)
 
     endpoint = load_webhook_endpoint_record(
         session=session,
         webhook_id=existing.webhook_id,
+        tenant_id=tenant_id,
     )
 
     return _delivery_to_view(
@@ -356,9 +369,11 @@ def list_webhook_deliveries(
     status: str | None = None,
     event_type: str | None = None,
     limit: int = 200,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[WebhookDeliveryView]:
-    statement = select(
-        WebhookDeliveryRecord
+    statement = select(WebhookDeliveryRecord).where(
+        tenant_predicate(WebhookDeliveryRecord, tenant_id)
     )
 
     if webhook_id:
@@ -396,12 +411,11 @@ def list_webhook_deliveries(
     )
 
     endpoint_names = {
-        endpoint.webhook_id:
-            endpoint.name
-        for endpoint in
-        list_webhook_endpoint_records(
+        endpoint.webhook_id: endpoint.name
+        for endpoint in list_webhook_endpoint_records(
             session=session,
             active=None,
+            tenant_id=tenant_id,
         )
     }
 

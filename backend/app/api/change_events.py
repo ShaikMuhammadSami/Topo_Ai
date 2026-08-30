@@ -1,8 +1,9 @@
 from __future__ import annotations
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -31,7 +32,6 @@ from app.services.incident_change_analysis import (
     analyze_incident_change_events,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/change-events",
     tags=["change-events"],
@@ -46,58 +46,39 @@ incident_router = APIRouter(
 
 @router.post(
     "",
-    response_model=(
-        ChangeEventReceipt
-    ),
-    status_code=(
-        status.HTTP_201_CREATED
-    ),
+    response_model=(ChangeEventReceipt),
+    status_code=(status.HTTP_201_CREATED),
 )
 def create_event(
     request: ChangeEventCreate,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeEventReceipt:
     return ingest_change_event(
         session,
         request=request,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.get(
     "",
-    response_model=list[
-        ChangeEventView
-    ],
+    response_model=list[ChangeEventView],
 )
 def get_events(
-    source: str | None = Query(
-        default=None
-    ),
-    kind: str | None = Query(
-        default=None
-    ),
-    environment: str | None = Query(
-        default=None
-    ),
-    cluster_name: str | None = Query(
-        default=None
-    ),
-    namespace: str | None = Query(
-        default=None
-    ),
+    source: str | None = Query(default=None),
+    kind: str | None = Query(default=None),
+    environment: str | None = Query(default=None),
+    cluster_name: str | None = Query(default=None),
+    namespace: str | None = Query(default=None),
     minimum_risk_score: int = Query(
         default=0,
         ge=0,
         le=100,
     ),
-    occurred_after: str | None = Query(
-        default=None
-    ),
-    occurred_before: str | None = Query(
-        default=None
-    ),
+    occurred_after: str | None = Query(default=None),
+    occurred_before: str | None = Query(default=None),
     limit: int = Query(
         default=100,
         ge=1,
@@ -107,9 +88,9 @@ def get_events(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[ChangeEventView]:
     return list_change_events(
         session,
@@ -118,13 +99,12 @@ def get_events(
         environment=environment,
         cluster_name=cluster_name,
         namespace=namespace,
-        minimum_risk_score=(
-            minimum_risk_score
-        ),
+        minimum_risk_score=(minimum_risk_score),
         occurred_after=occurred_after,
         occurred_before=occurred_before,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -134,13 +114,14 @@ def get_events(
 )
 def get_event(
     event_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeEventView:
     record = load_change_event(
         session,
         event_id=event_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if record is None:
@@ -154,30 +135,27 @@ def get_event(
     return change_event_view(
         session,
         record=record,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.post(
     "/{event_id}/correlate",
-    response_model=(
-        ChangeCorrelationResponse
-    ),
+    response_model=(ChangeCorrelationResponse),
 )
 def correlate_event(
     event_id: str,
-    request:
-        ChangeCorrelationRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    request: ChangeCorrelationRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeCorrelationResponse:
     try:
         return correlate_change_event(
             session,
             event_id=event_id,
-            snapshot_id=(
-                request.snapshot_id
-            ),
+            snapshot_id=(request.snapshot_id),
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -189,9 +167,7 @@ def correlate_event(
 
 @incident_router.get(
     "/{incident_id}/change-events",
-    response_model=(
-        IncidentChangeAnalysisResponse
-    ),
+    response_model=(IncidentChangeAnalysisResponse),
 )
 def incident_change_events(
     incident_id: str,
@@ -210,26 +186,19 @@ def incident_change_events(
         ge=1,
         le=1000,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentChangeAnalysisResponse:
     try:
-        return (
-            analyze_incident_change_events(
-                session,
-                incident_id=(
-                    incident_id
-                ),
-                lookback_minutes=(
-                    lookback_minutes
-                ),
-                after_minutes=(
-                    after_minutes
-                ),
-                minimum_score=0,
-                limit=limit,
-            )
+        return analyze_incident_change_events(
+            session,
+            incident_id=(incident_id),
+            lookback_minutes=(lookback_minutes),
+            after_minutes=(after_minutes),
+            minimum_score=0,
+            limit=limit,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -240,13 +209,8 @@ def incident_change_events(
 
 
 @incident_router.get(
-    (
-        "/{incident_id}/"
-        "suspected-change-events"
-    ),
-    response_model=(
-        IncidentChangeAnalysisResponse
-    ),
+    ("/{incident_id}/" "suspected-change-events"),
+    response_model=(IncidentChangeAnalysisResponse),
 )
 def suspected_changes(
     incident_id: str,
@@ -270,28 +234,19 @@ def suspected_changes(
         ge=1,
         le=100,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentChangeAnalysisResponse:
     try:
-        return (
-            analyze_incident_change_events(
-                session,
-                incident_id=(
-                    incident_id
-                ),
-                lookback_minutes=(
-                    lookback_minutes
-                ),
-                after_minutes=(
-                    after_minutes
-                ),
-                minimum_score=(
-                    minimum_score
-                ),
-                limit=limit,
-            )
+        return analyze_incident_change_events(
+            session,
+            incident_id=(incident_id),
+            lookback_minutes=(lookback_minutes),
+            after_minutes=(after_minutes),
+            minimum_score=(minimum_score),
+            limit=limit,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

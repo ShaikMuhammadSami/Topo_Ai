@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from datetime import (
     datetime,
@@ -54,6 +57,7 @@ from app.services.webhook_delivery import (
     build_webhook_event,
     publish_event_safely,
 )
+
 ORCHESTRATION_VERSION = (
     "incident-orchestration-0.1.0"
 )
@@ -118,13 +122,11 @@ def orchestrate_signal(
     grace_minutes: int = 15,
     max_graph_hops: int = 6,
     max_hypotheses: int = 10,
-    minimum_recommendation_score: (
-        float
-    ) = 0.50,
+    minimum_recommendation_score: float = 0.50,
     max_recommendations: int = 3,
-    require_failure_severity: (
-        bool
-    ) = True,
+    require_failure_severity: bool = True,
+    *,
+    tenant_id: DomainTenant,
 ) -> IncidentOrchestrationResult:
     started_at = datetime.now(
         timezone.utc
@@ -133,6 +135,7 @@ def orchestrate_signal(
     signal = load_signal(
         session=session,
         signal_id=signal_id,
+        tenant_id=tenant_id,
     )
 
     if signal is None:
@@ -252,9 +255,8 @@ def orchestrate_signal(
 
     snapshot = load_snapshot(
         session=session,
-        snapshot_id=(
-            signal.topology_snapshot_id
-        ),
+        snapshot_id=(signal.topology_snapshot_id),
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:
@@ -278,19 +280,14 @@ def orchestrate_signal(
         )
     )
 
-    candidate_changes = (
-        find_changes_in_window(
-            session=session,
-            cluster_name=(
-                signal.cluster_name
-            ),
-            namespace=(
-                signal.namespace
-            ),
-            start_at=start_at,
-            end_at=end_at,
-            limit=500,
-        )
+    candidate_changes = find_changes_in_window(
+        session=session,
+        cluster_name=(signal.cluster_name),
+        namespace=(signal.namespace),
+        start_at=start_at,
+        end_at=end_at,
+        limit=500,
+        tenant_id=tenant_id,
     )
 
     analysis = analyze_incident(
@@ -316,18 +313,16 @@ def orchestrate_signal(
     save_incident_analysis(
         session=session,
         analysis=analysis,
+        tenant_id=tenant_id,
     )
 
     changes_by_id = {}
 
-    for hypothesis in (
-        analysis.hypotheses
-    ):
+    for hypothesis in analysis.hypotheses:
         change = load_change(
             session=session,
-            change_id=(
-                hypothesis.change_id
-            ),
+            change_id=(hypothesis.change_id),
+            tenant_id=tenant_id,
         )
 
         if change is not None:
@@ -352,38 +347,24 @@ def orchestrate_signal(
         )
     )
 
-    for recommendation in (
-        recommendations
-    ):
+    for recommendation in recommendations:
         save_recommendation(
             session=session,
-            recommendation=(
-                recommendation
-            ),
+            recommendation=(recommendation),
+            tenant_id=tenant_id,
         )
-    existing_incident = (
-        find_correlatable_incident(
-            session=session,
-            fingerprint=(
-                incident_fingerprint(
-                    signal
-                )
-            ),
-            observed_after=(
-                signal.first_observed_at
-                - timedelta(minutes=120)
-            ),
-        )
+    existing_incident = find_correlatable_incident(
+        session=session,
+        fingerprint=(incident_fingerprint(signal)),
+        observed_after=(signal.first_observed_at - timedelta(minutes=120)),
+        tenant_id=tenant_id,
     )
-    incident_record = (
-        upsert_incident_from_orchestration(
-            session=session,
-            signal=signal,
-            analysis=analysis,
-            recommendations=(
-                recommendations
-            ),
-        )
+    incident_record = upsert_incident_from_orchestration(
+        session=session,
+        signal=signal,
+        analysis=analysis,
+        recommendations=(recommendations),
+        tenant_id=tenant_id,
     )
 
     if existing_incident is None:
@@ -443,6 +424,7 @@ def orchestrate_signal(
         publish_event_safely(
             session=session,
             event=incident_event,
+            tenant_id=tenant_id,
         )
 
     for recommendation in recommendations:
@@ -507,6 +489,7 @@ def orchestrate_signal(
         publish_event_safely(
             session=session,
             event=recommendation_event,
+            tenant_id=tenant_id,
         )
 
     warnings = list(

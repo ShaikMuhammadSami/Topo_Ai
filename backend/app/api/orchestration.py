@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -19,7 +20,6 @@ from app.services.incident_orchestrator import (
     orchestrate_signal,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/orchestration",
     tags=["orchestration"],
@@ -28,12 +28,8 @@ router = APIRouter(
 
 @router.post(
     "/signals/{signal_id}/run",
-    response_model=(
-        IncidentOrchestrationResult
-    ),
-    status_code=(
-        status.HTTP_201_CREATED
-    ),
+    response_model=(IncidentOrchestrationResult),
+    status_code=(status.HTTP_201_CREATED),
 )
 def run_signal_orchestration(
     signal_id: str,
@@ -57,9 +53,7 @@ def run_signal_orchestration(
         ge=1,
         le=50,
     ),
-    minimum_recommendation_score: (
-        float
-    ) = Query(
+    minimum_recommendation_score: float = Query(
         default=0.50,
         ge=0.0,
         le=1.0,
@@ -69,53 +63,34 @@ def run_signal_orchestration(
         ge=1,
         le=20,
     ),
-    require_failure_severity: (
-        bool
-    ) = Query(
+    require_failure_severity: bool = Query(
         default=True,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentOrchestrationResult:
     try:
         return orchestrate_signal(
             session=session,
             signal_id=signal_id,
-            lookback_minutes=(
-                lookback_minutes
-            ),
-            grace_minutes=(
-                grace_minutes
-            ),
-            max_graph_hops=(
-                max_graph_hops
-            ),
-            max_hypotheses=(
-                max_hypotheses
-            ),
-            minimum_recommendation_score=(
-                minimum_recommendation_score
-            ),
-            max_recommendations=(
-                max_recommendations
-            ),
-            require_failure_severity=(
-                require_failure_severity
-            ),
+            lookback_minutes=(lookback_minutes),
+            grace_minutes=(grace_minutes),
+            max_graph_hops=(max_graph_hops),
+            max_hypotheses=(max_hypotheses),
+            minimum_recommendation_score=(minimum_recommendation_score),
+            max_recommendations=(max_recommendations),
+            require_failure_severity=(require_failure_severity),
+            tenant_id=tenant_context.tenant_id,
         )
 
-    except (
-        OrchestrationNotFoundError
-    ) as exc:
+    except OrchestrationNotFoundError as exc:
         raise HTTPException(
             status_code=404,
             detail=str(exc),
         ) from exc
 
-    except (
-        OrchestrationValidationError
-    ) as exc:
+    except OrchestrationValidationError as exc:
         raise HTTPException(
             status_code=422,
             detail=str(exc),

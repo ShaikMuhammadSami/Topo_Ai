@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import importlib
 import inspect
@@ -64,7 +65,6 @@ from app.services.temporal_semantics import (
     safe_snapshot_record_at_or_before,
 )
 
-
 UTC = timezone.utc
 CHANGE_AT = datetime(2026, 8, 20, 10, 1, tzinfo=UTC)
 SNAPSHOT_AT = datetime(2026, 8, 20, 10, 2, tzinfo=UTC)
@@ -75,6 +75,7 @@ RECEIVED_AT = datetime(2026, 8, 20, 10, 8, tzinfo=UTC)
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -162,6 +163,7 @@ def _incident(*, snapshot_id: str | None = "snapshot:incident") -> IncidentRecor
         last_observed_at=INCIDENT_AT.isoformat(),
         created_at=(INCIDENT_AT + timedelta(minutes=1)).isoformat(),
         updated_at=(INCIDENT_AT + timedelta(minutes=1)).isoformat(),
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -192,8 +194,10 @@ def _event(
 
 
 def _persist_incident_fixture(session: Session) -> IncidentRecord:
-    save_snapshot(session, _snapshot("snapshot:incident", SNAPSHOT_AT))
-    save_signals(session, [_signal()])
+    save_snapshot(
+        session, _snapshot("snapshot:incident", SNAPSHOT_AT), tenant_id=TEST_TENANT
+    )
+    save_signals(session, [_signal()], tenant_id=TEST_TENANT)
     incident = _incident()
     session.add(incident)
     session.commit()
@@ -214,8 +218,11 @@ def test_source_observed_and_recorded_times_are_distinct(monkeypatch) -> None:
         source_time_trusted=True,
         observed_at=RECEIVED_AT.isoformat(),
         auto_correlate=False,
+        tenant_id=TEST_TENANT,
     )
-    record = load_change_event(session, event_id=receipt.event_id)
+    record = load_change_event(
+        session, event_id=receipt.event_id, tenant_id=TEST_TENANT
+    )
     assert record is not None
     temporal = change_event_temporal(record)
     assert temporal.source_event_at == CHANGE_AT
@@ -239,8 +246,11 @@ def test_untrusted_client_time_is_preserved_but_not_authoritative(
         session,
         request=_event(external_id="manual:claim", occurred_at=CHANGE_AT),
         auto_correlate=False,
+        tenant_id=TEST_TENANT,
     )
-    record = load_change_event(session, event_id=receipt.event_id)
+    record = load_change_event(
+        session, event_id=receipt.event_id, tenant_id=TEST_TENANT
+    )
     assert record is not None
     temporal = change_event_temporal(record)
     assert temporal.source_event_at == CHANGE_AT
@@ -303,9 +313,11 @@ def test_legacy_time_is_readable_without_fabricated_source_time() -> None:
 
 def test_snapshot_collection_and_persistence_are_distinct() -> None:
     session = _session()
-    save_snapshot(session, _snapshot("snapshot:temporal", SNAPSHOT_AT))
+    save_snapshot(
+        session, _snapshot("snapshot:temporal", SNAPSHOT_AT), tenant_id=TEST_TENANT
+    )
     record = session.get(SnapshotRecord, "snapshot:temporal")
-    loaded = load_snapshot(session, "snapshot:temporal")
+    loaded = load_snapshot(session, "snapshot:temporal", tenant_id=TEST_TENANT)
     assert record is not None and loaded is not None
     assert loaded.collected_at == SNAPSHOT_AT
     assert loaded.temporal is not None
@@ -327,8 +339,10 @@ def test_relationship_observation_does_not_invent_validity() -> None:
             observed_at=SNAPSHOT_AT,
         )
     )
-    save_snapshot(session, snapshot)
-    edge = load_snapshot(session, "snapshot:edge").relationships[0]
+    save_snapshot(session, snapshot, tenant_id=TEST_TENANT)
+    edge = load_snapshot(session, "snapshot:edge", tenant_id=TEST_TENANT).relationships[
+        0
+    ]
     assert edge.temporal is not None
     assert edge.temporal.observed_at == SNAPSHOT_AT
     assert edge.temporal.valid_from is None
@@ -337,7 +351,8 @@ def test_relationship_observation_does_not_invent_validity() -> None:
 
 def test_signal_source_observation_and_backend_record_time() -> None:
     session = _session()
-    save_signals(session, [_signal()])
+    save_snapshot(session, _snapshot("snapshot:incident", SNAPSHOT_AT), tenant_id=TEST_TENANT)
+    save_signals(session, [_signal()], tenant_id=TEST_TENANT)
     from app.db.models import SignalRecord
 
     record = session.get(SignalRecord, "signal:tc3")
@@ -350,12 +365,16 @@ def test_signal_source_observation_and_backend_record_time() -> None:
 
 def test_incident_operational_time_uses_primary_signal_without_rewrite() -> None:
     session = _session()
-    save_signals(session, [_signal()])
+    save_snapshot(session, _snapshot("snapshot:incident", SNAPSHOT_AT), tenant_id=TEST_TENANT)
+    save_signals(session, [_signal()], tenant_id=TEST_TENANT)
     incident = _incident(snapshot_id=None)
     original = incident.first_observed_at
     session.add(incident)
     session.commit()
-    assert incident_operational_time(session, incident) == INCIDENT_AT
+    assert (
+        incident_operational_time(session, incident, tenant_id=TEST_TENANT)
+        == INCIDENT_AT
+    )
     assert incident.first_observed_at == original
 
 
@@ -375,8 +394,11 @@ def test_late_but_causal_change_is_pre_incident(monkeypatch) -> None:
         source_time_trusted=True,
         observed_at=RECEIVED_AT.isoformat(),
         correlation_snapshot_id="snapshot:incident",
+        tenant_id=TEST_TENANT,
     )
-    result = analyze_incident_change_events(session, incident_id=incident.incident_id)
+    result = analyze_incident_change_events(
+        session, incident_id=incident.incident_id, tenant_id=TEST_TENANT
+    )
     candidate = result.candidates[0]
     assert candidate.minutes_before_incident == 2.0
     assert candidate.event.temporal.source_event_at == CHANGE_AT
@@ -401,8 +423,11 @@ def test_received_early_but_effective_late_is_post_incident(monkeypatch) -> None
         source_time_trusted=True,
         observed_at=queued_at.isoformat(),
         correlation_snapshot_id="snapshot:incident",
+        tenant_id=TEST_TENANT,
     )
-    result = analyze_incident_change_events(session, incident_id=incident.incident_id)
+    result = analyze_incident_change_events(
+        session, incident_id=incident.incident_id, tenant_id=TEST_TENANT
+    )
     assert result.candidates[0].minutes_before_incident == -2.0
 
 
@@ -412,11 +437,10 @@ def test_explicit_incident_snapshot_has_priority_over_later_topology() -> None:
     save_snapshot(
         session,
         _snapshot("snapshot:future", INCIDENT_AT + timedelta(minutes=5)),
+        tenant_id=TEST_TENANT,
     )
     record, snapshot = _snapshot_for_incident(
-        session,
-        incident=incident,
-        incident_time=INCIDENT_AT,
+        session, incident=incident, incident_time=INCIDENT_AT, tenant_id=TEST_TENANT
     )
     assert record.snapshot_id == "snapshot:incident"
     assert snapshot.snapshot_id == "snapshot:incident"
@@ -428,13 +452,18 @@ def test_safe_snapshot_selection_never_uses_future_latest() -> None:
     save_snapshot(
         session,
         _snapshot("snapshot:future", INCIDENT_AT + timedelta(minutes=1)),
+        tenant_id=TEST_TENANT,
     )
-    assert safe_snapshot_record_at_or_before(
-        session,
-        cluster_name="prod",
-        namespace="payments",
-        boundary_at=INCIDENT_AT,
-    ) is None
+    assert (
+        safe_snapshot_record_at_or_before(
+            session,
+            cluster_name="prod",
+            namespace="payments",
+            boundary_at=INCIDENT_AT,
+            tenant_id=TEST_TENANT,
+        )
+        is None
+    )
 
 
 def test_safe_snapshot_selection_is_scope_bounded() -> None:
@@ -442,13 +471,18 @@ def test_safe_snapshot_selection_is_scope_bounded() -> None:
     save_snapshot(
         session,
         _snapshot("snapshot:other", SNAPSHOT_AT, namespace="checkout"),
+        tenant_id=TEST_TENANT,
     )
-    assert safe_snapshot_record_at_or_before(
-        session,
-        cluster_name="prod",
-        namespace="payments",
-        boundary_at=INCIDENT_AT,
-    ) is None
+    assert (
+        safe_snapshot_record_at_or_before(
+            session,
+            cluster_name="prod",
+            namespace="payments",
+            boundary_at=INCIDENT_AT,
+            tenant_id=TEST_TENANT,
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize(
@@ -480,8 +514,11 @@ def test_delayed_cloud_provider_time_orders_before_incident(
         source_time_trusted=True,
         observed_at=RECEIVED_AT.isoformat(),
         correlation_snapshot_id="snapshot:incident",
+        tenant_id=TEST_TENANT,
     )
-    result = analyze_incident_change_events(session, incident_id=incident.incident_id)
+    result = analyze_incident_change_events(
+        session, incident_id=incident.incident_id, tenant_id=TEST_TENANT
+    )
     assert result.candidates[0].minutes_before_incident == 2.0
 
 
@@ -506,8 +543,11 @@ def test_github_source_time_is_distinct_from_webhook_receipt(monkeypatch) -> Non
         source_time_trusted=True,
         observed_at=RECEIVED_AT.isoformat(),
         auto_correlate=False,
+        tenant_id=TEST_TENANT,
     )
-    temporal = change_event_temporal(load_change_event(session, event_id=receipt.event_id))
+    temporal = change_event_temporal(
+        load_change_event(session, event_id=receipt.event_id, tenant_id=TEST_TENANT)
+    )
     assert temporal.source_event_at == CHANGE_AT
     assert temporal.observed_at == RECEIVED_AT
 
@@ -589,6 +629,7 @@ def test_duplicate_source_event_dedupes_across_receipt_times(monkeypatch) -> Non
         source_time_trusted=True,
         observed_at=RECEIVED_AT.isoformat(),
         auto_correlate=False,
+        tenant_id=TEST_TENANT,
     )
     monkeypatch.setattr(
         change_events,
@@ -601,10 +642,11 @@ def test_duplicate_source_event_dedupes_across_receipt_times(monkeypatch) -> Non
         source_time_trusted=True,
         observed_at=(RECEIVED_AT + timedelta(minutes=2)).isoformat(),
         auto_correlate=False,
+        tenant_id=TEST_TENANT,
     )
     assert second.event_id == first.event_id
     assert second.duplicate is True
-    record = load_change_event(session, event_id=first.event_id)
+    record = load_change_event(session, event_id=first.event_id, tenant_id=TEST_TENANT)
     assert change_event_temporal(record).observed_at == RECEIVED_AT
 
 
@@ -616,13 +658,16 @@ def test_legacy_change_event_view_does_not_fabricate_source_time() -> None:
         request=request,
         source_time_trusted=True,
         auto_correlate=False,
+        tenant_id=TEST_TENANT,
     )
-    record = load_change_event(session, event_id=receipt.event_id)
+    record = load_change_event(
+        session, event_id=receipt.event_id, tenant_id=TEST_TENANT
+    )
     metadata = json.loads(record.metadata_json)
     metadata.pop("temporal")
     record.metadata_json = json.dumps(metadata)
     session.commit()
-    view = change_event_view(session, record=record)
+    view = change_event_view(session, record=record, tenant_id=TEST_TENANT)
     assert view.occurred_at == record.occurred_at
     assert view.temporal.status == TemporalStatus.LEGACY_UNSPECIFIED
     assert view.temporal.source_event_at is None

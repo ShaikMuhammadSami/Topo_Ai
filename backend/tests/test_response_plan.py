@@ -1,3 +1,4 @@
+from domain_tenant_fixtures import TEST_CONTEXT, TEST_TENANT
 from datetime import (
     datetime,
     timezone,
@@ -46,7 +47,6 @@ from app.models.topology import (
     EntityType,
     GraphSnapshot,
 )
-
 
 NOW = datetime(
     2026,
@@ -478,29 +478,22 @@ def _wire(
     monkeypatch.setattr(
         response_service,
         "load_incident_record",
-        lambda *, session, incident_id:
-            SimpleNamespace(
-                severity="critical"
-            ),
+        lambda *, session, incident_id, **_tenant_kwargs: SimpleNamespace(
+            severity="critical"
+        ),
     )
     monkeypatch.setattr(
         response_service,
         "latest_causal_analysis",
-        lambda session, *, incident_id:
-            analysis,
+        lambda session, *, incident_id, **_tenant_kwargs: analysis,
     )
     monkeypatch.setattr(
         response_service,
         "build_incident_operational_context",
-        lambda *, session, incident_id:
-            context,
+        lambda *, session, incident_id, **_tenant_kwargs: context,
     )
 
-    def load_snapshot(
-        *,
-        session,
-        snapshot_id,
-    ):
+    def load_snapshot(*, session, snapshot_id, tenant_id=None):
         if loaded_snapshots is not None:
             loaded_snapshots.append(
                 snapshot_id
@@ -516,20 +509,14 @@ def _wire(
     monkeypatch.setattr(
         response_service,
         "load_change_event",
-        lambda session, *, event_id:
-            (
-                SimpleNamespace(
-                    event_id=event_id
-                )
-                if event_id in events
-                else None
-            ),
+        lambda session, *, event_id, **_tenant_kwargs: (
+            SimpleNamespace(event_id=event_id) if event_id in events else None
+        ),
     )
     monkeypatch.setattr(
         response_service,
         "change_event_view",
-        lambda session, *, record:
-            events[record.event_id],
+        lambda session, *, record, **_tenant_kwargs: events[record.event_id],
     )
 
 
@@ -547,12 +534,8 @@ def test_strong_causal_plan_with_resolved_owner(
         events=_events(),
     )
 
-    result = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.root_cause.event_id == (
@@ -589,12 +572,8 @@ def test_deployment_rollback_candidate_requires_approval(
         events=_events(),
     )
 
-    result = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.rollback_candidate.available
@@ -640,12 +619,8 @@ def test_weak_confidence_is_conservative(
         events=_events(),
     )
 
-    result = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert not result.rollback_candidate.available
@@ -682,12 +657,8 @@ def test_unresolved_owner_keeps_business_context(
         events=_events(),
     )
 
-    result = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.primary_owner is not None
@@ -723,12 +694,8 @@ def test_missing_runbook_returns_empty_list(
         events=_events(),
     )
 
-    result = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.runbooks == []
@@ -761,12 +728,8 @@ def test_existing_runbook_metadata_is_surfaced(
         events=events,
     )
 
-    result = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert len(result.runbooks) == 1
@@ -797,8 +760,7 @@ def test_historical_topology_snapshot_is_used(
     )
 
     response_service.build_incident_response_plan(
-        session=object(),
-        incident_id="incident:1",
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert loaded == [snapshot_id]
@@ -815,19 +777,11 @@ def test_response_plan_is_deterministic(
         events=_events(),
     )
 
-    first = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    first = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
-    second = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    second = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert first.model_dump(mode="json") == (
@@ -900,12 +854,8 @@ def test_escalation_targets_are_deduplicated(
         events=_events(),
     )
 
-    result = (
-        response_service
-        .build_incident_response_plan(
-            session=object(),
-            incident_id="incident:1",
-        )
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
     )
 
     assert result.escalation_targets == [
@@ -921,19 +871,16 @@ def test_missing_causal_analysis_returns_404(
     monkeypatch.setattr(
         response_api,
         "build_incident_response_plan",
-        lambda *, session, incident_id:
-            (_ for _ in ()).throw(
-                ValueError(
-                    "No causal analysis exists "
-                    "for this incident."
-                )
-            ),
+        lambda *, session, incident_id, **_tenant_kwargs: (_ for _ in ()).throw(
+            ValueError("No causal analysis exists " "for this incident.")
+        ),
     )
 
     with pytest.raises(HTTPException) as raised:
         response_api.get_incident_response_plan(
             incident_id="incident:missing",
             session=object(),
+            tenant_context=TEST_CONTEXT,
         )
 
     assert raised.value.status_code == 404

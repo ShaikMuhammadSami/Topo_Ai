@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 from collections import deque
 from dataclasses import dataclass
@@ -32,7 +35,6 @@ from app.services.pinned_runtime_health import (
     PinnedRuntimeHealth,
     pinned_pod_health,
 )
-
 
 MAX_DEPTH = 5
 
@@ -249,6 +251,8 @@ def _incident_failure_evidence(
     incident: IncidentRecordView,
     snapshot: GraphSnapshot,
     root_entity_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> dict[str, set[str]]:
     """Load only correlated durable failures bound to the same snapshot."""
 
@@ -261,10 +265,11 @@ def _incident_failure_evidence(
         namespace=incident.namespace,
         fingerprint=incident.fingerprint,
         limit=200,
+        tenant_id=tenant_id,
     )
 
     for summary in summaries:
-        signal = load_signal(session, summary.signal_id)
+        signal = load_signal(session, summary.signal_id, tenant_id=tenant_id)
         if signal is None or not is_failure_signal(signal):
             continue
         if signal.topology_snapshot_id != snapshot.snapshot_id:
@@ -711,10 +716,13 @@ def calculate_blast_radius_from_snapshot(
 def calculate_blast_radius(
     session: Session,
     incident_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> BlastRadiusResponse:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
     if incident is None:
         raise ValueError("Incident not found")
@@ -726,6 +734,7 @@ def calculate_blast_radius(
     snapshot = load_topology_snapshot(
         session=session,
         snapshot_id=incident.topology_snapshot_id,
+        tenant_id=tenant_id,
     )
     if snapshot is None:
         raise ValueError("Topology snapshot not found")
@@ -746,6 +755,7 @@ def calculate_blast_radius(
         incident,
         snapshot,
         root_entity.id,
+        tenant_id=tenant_id,
     )
     return calculate_blast_radius_from_snapshot(
         incident_id=incident_id,

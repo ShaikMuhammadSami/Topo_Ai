@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
 )
 from sqlalchemy.orm import Session
@@ -15,7 +16,6 @@ from app.services.incident_outcome import (
     record_incident_outcome,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/incidents",
     tags=["incident-outcomes"],
@@ -28,14 +28,15 @@ router = APIRouter(
 )
 def get_outcome(
     incident_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentOutcome:
     try:
         return get_incident_outcome(
             session,
             incident_id=incident_id,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -52,15 +53,16 @@ def get_outcome(
 def post_outcome(
     incident_id: str,
     request: IncidentOutcomeUpdate,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentOutcome:
     try:
         return record_incident_outcome(
             session,
             incident_id=incident_id,
             update=request,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 import json
 import os
@@ -39,7 +42,6 @@ from app.services.llm_client import (
     generate_openai_structured,
     resolve_configured_provider,
 )
-
 
 COPILOT_PROMPT_VERSION = (
     "incident-copilot-groq-0.1.0"
@@ -196,6 +198,7 @@ def _sanitize_evidence(
         for item in evidence
     ]
 
+
 def _select_evidence(
     evidence: list[GroundingEvidence],
     question: str,
@@ -280,6 +283,7 @@ def _select_evidence(
         unique.values()
     )[:maximum_items]
 
+
 def _validate_answer(
     answer: CopilotGeneratedAnswer,
     evidence: list[GroundingEvidence],
@@ -334,6 +338,7 @@ def _validate_answer(
             "The copilot returned an empty "
             "answer."
         )
+
 
 def _first_type(
     evidence: list[GroundingEvidence],
@@ -732,6 +737,7 @@ def _deterministic_answer(
         suggested_questions=suggested,
     )
 
+
 def _groq_answer(
     *,
     question: str,
@@ -908,6 +914,7 @@ def _openai_answer(
 
     return result
 
+
 def _resolve_provider(
     requested:
         ExplanationProvider,
@@ -922,12 +929,14 @@ def _resolve_provider(
 def create_incident_copilot_session(
     session: Session,
     incident_id: str,
-    request:
-        CopilotSessionCreateRequest,
+    request: CopilotSessionCreateRequest,
+    *,
+    tenant_id: DomainTenant,
 ) -> CopilotSessionDetail:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     if incident is None:
@@ -984,6 +993,7 @@ def create_incident_copilot_session(
         title=title,
         provider=provider,
         model_name=model_name,
+        tenant_id=tenant_id,
     )
 
 
@@ -993,12 +1003,12 @@ def answer_copilot_question(
     incident_id: str,
     session_id: str,
     question: str,
+    tenant_id: DomainTenant,
 ) -> CopilotQuestionResponse:
-    session_record = (
-        load_copilot_session_record(
-            session=session,
-            session_id=session_id,
-        )
+    session_record = load_copilot_session_record(
+        session=session,
+        session_id=session_id,
+        tenant_id=tenant_id,
     )
 
     if session_record is None:
@@ -1025,12 +1035,11 @@ def answer_copilot_question(
             "This copilot session is closed."
         )
 
-    previous_messages = (
-        list_copilot_messages(
-            session=session,
-            session_id=session_id,
-            limit=50,
-        )
+    previous_messages = list_copilot_messages(
+        session=session,
+        session_id=session_id,
+        limit=50,
+        tenant_id=tenant_id,
     )
 
     user_message = save_copilot_message(
@@ -1039,6 +1048,7 @@ def answer_copilot_question(
         incident_id=incident_id,
         role=CopilotMessageRole.USER,
         content=question.strip(),
+        tenant_id=tenant_id,
     )
 
     (
@@ -1048,6 +1058,7 @@ def answer_copilot_question(
     ) = build_incident_evidence(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     sanitized = _sanitize_evidence(
@@ -1171,33 +1182,20 @@ def answer_copilot_question(
         else None
     )
 
-    assistant_message = (
-        save_copilot_message(
-            session=session,
-            session_id=session_id,
-            incident_id=incident_id,
-            role=(
-                CopilotMessageRole
-                .ASSISTANT
-            ),
-            content=generated.answer,
-            provider=actual_provider,
-            answer_status=(
-                generated.answer_status
-            ),
-            confidence=(
-                generated.confidence
-            ),
-            evidence=selected_evidence,
-            evidence_ids=(
-                generated.evidence_ids
-            ),
-            suggested_questions=(
-                generated
-                .suggested_questions
-            ),
-            warning=warning,
-        )
+    assistant_message = save_copilot_message(
+        session=session,
+        session_id=session_id,
+        incident_id=incident_id,
+        role=(CopilotMessageRole.ASSISTANT),
+        content=generated.answer,
+        provider=actual_provider,
+        answer_status=(generated.answer_status),
+        confidence=(generated.confidence),
+        evidence=selected_evidence,
+        evidence_ids=(generated.evidence_ids),
+        suggested_questions=(generated.suggested_questions),
+        warning=warning,
+        tenant_id=tenant_id,
     )
 
     return CopilotQuestionResponse(

@@ -10,6 +10,7 @@ from sqlalchemy import MetaData, create_engine, inspect, text
 from sqlalchemy.engine import Connection, Engine
 
 from app.db.database import Base
+from app.db.domain_ownership import REQUIRED_OWNERSHIP_TABLES
 from app.db.schema_management import (
     alembic_config,
     current_revisions,
@@ -17,7 +18,6 @@ from app.db.schema_management import (
     schema_differences,
     script_directory,
 )
-
 
 TENANT_A = "tenant:11111111-1111-4111-8111-111111111111"
 TENANT_B = "tenant:22222222-2222-4222-8222-222222222222"
@@ -231,7 +231,7 @@ def test_domain_table_partition_and_nullable_orm_ownership_are_exact() -> None:
 
     for table_name in PH3C_DOMAIN:
         column = Base.metadata.tables[table_name].c.tenant_id
-        assert column.nullable is True
+        assert column.nullable is (table_name not in REQUIRED_OWNERSHIP_TABLES)
         assert column.type.length == 255
         assert column.default is None
         assert column.server_default is None
@@ -249,7 +249,7 @@ def test_fresh_sqlite_requires_no_legacy_tenant_and_creates_none(
     _upgrade(migration_engine)
 
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == (DOMAIN_OWNERSHIP_REVISION,)
+        assert current_revisions(connection) == ("0006_domain_tenant_enforcement",)
         assert connection.scalar(text("SELECT COUNT(*) FROM tenants")) == 0
         assert schema_differences(connection) == ()
         assert inspect_schema_authority(connection).ok

@@ -1,4 +1,6 @@
 from __future__ import annotations
+from domain_tenant_fixtures import seed_domain_parents
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 import itertools
@@ -39,7 +41,6 @@ from app.services.causal_hypothesis_projection import (
     project_causal_hypotheses,
 )
 from app.services.causal_rca import _stable_id
-
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -383,20 +384,24 @@ def test_projection_dropped_supported_invariant_is_model_enforced() -> None:
         )
 
 
-def test_projection_metadata_and_supported_top1_survive_fresh_session_readback() -> None:
+def test_projection_metadata_and_supported_top1_survive_fresh_session_readback() -> (
+    None
+):
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
+    seed_domain_parents(engine, ("incidents", "incident:ar3"))
     analysis = _analysis()
+    seed_domain_parents(engine, ("topology_snapshots", analysis.topology_snapshot_id))
     with Session(engine) as session:
-        save_causal_analysis(session, analysis=analysis)
+        save_causal_analysis(session, analysis=analysis, tenant_id=TEST_TENANT)
     with Session(engine) as fresh_session:
         loaded = load_causal_analysis(
-            fresh_session,
-            analysis_id=analysis.analysis_id,
+            fresh_session, analysis_id=analysis.analysis_id, tenant_id=TEST_TENANT
         )
 
     assert loaded is not None
@@ -443,6 +448,7 @@ def test_legacy_payload_loads_without_projection_reconstruction() -> None:
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     legacy_json = json.dumps(payload)
     with Session(engine) as session:
         session.add(
@@ -458,12 +464,12 @@ def test_legacy_payload_loads_without_projection_reconstruction() -> None:
                 payload_json=legacy_json,
                 created_at=payload["generated_at"],
                 updated_at=payload["generated_at"],
+                tenant_id=TEST_TENANT,
             )
         )
         session.commit()
         loaded = load_causal_analysis(
-            session,
-            analysis_id=payload["analysis_id"],
+            session, analysis_id=payload["analysis_id"], tenant_id=TEST_TENANT
         )
         stored_json = session.get(
             CausalAnalysisRecord,

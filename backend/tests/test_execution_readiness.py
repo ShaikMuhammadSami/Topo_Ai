@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_CONTEXT, TEST_TENANT
 
 from copy import deepcopy
 from datetime import datetime, timezone
@@ -620,6 +621,7 @@ def _build(
         session=object(),
         incident_id="incident:1",
         include_ai=include_ai,
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -1225,6 +1227,7 @@ def test_builder_consumes_14e_once_without_requesting_14e_ai(
         session=object(),
         incident_id="incident:1",
         include_ai=False,
+        tenant_id=TEST_TENANT,
     )
 
     assert len(calls) == 1
@@ -1267,6 +1270,7 @@ def test_api_uses_existing_not_found_convention(
             history_limit=5,
             min_similarity=0.5,
             session=object(),
+            tenant_context=TEST_CONTEXT,
         )
 
     assert exc.value.status_code == 404

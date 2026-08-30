@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import inspect
 import math
@@ -82,7 +83,6 @@ from app.services.relationship_provenance import (
 )
 from app.services.temporal_semantics import build_temporal_metadata
 
-
 INCIDENT_TIME = datetime(2026, 7, 20, 18, 0, tzinfo=timezone.utc)
 SOURCE_TIME = INCIDENT_TIME - timedelta(minutes=600)
 PROVIDER_TIME = SOURCE_TIME + timedelta(minutes=5)
@@ -97,6 +97,7 @@ OTHER_REVISION = "d" * 40
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -394,6 +395,7 @@ def _add_source_change(
         auto_correlate=False,
         source_time_trusted=True,
         observed_at=(occurred_at + timedelta(minutes=1)).isoformat(),
+        tenant_id=TEST_TENANT,
     )
     return receipt.event_id
 
@@ -455,6 +457,7 @@ def _add_provider(
             temporal=temporal,
             completeness=completeness,
         ),
+        tenant_id=TEST_TENANT,
     )
 
 
@@ -469,7 +472,7 @@ def _world(
 ) -> tuple[Session, str | None]:
     session = _session()
     pinned = snapshot or _snapshot()
-    save_snapshot(session, pinned)
+    save_snapshot(session, pinned, tenant_id=TEST_TENANT)
     signal = NormalizedSignal(
         signal_id="signal:failure",
         fingerprint="signal-fingerprint",
@@ -495,7 +498,7 @@ def _world(
             else {}
         ),
     )
-    save_signals(session, [signal])
+    save_signals(session, [signal], tenant_id=TEST_TENANT)
     session.add(
         IncidentRecord(
             incident_id="incident:sc2",
@@ -516,6 +519,7 @@ def _world(
             last_observed_at=INCIDENT_TIME.isoformat(),
             created_at=INCIDENT_TIME.isoformat(),
             updated_at=INCIDENT_TIME.isoformat(),
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -533,9 +537,7 @@ def _world(
 
 def _analysis(session: Session):
     return analyze_incident_change_events(
-        session,
-        incident_id="incident:sc2",
-        lookback_minutes=180,
+        session, incident_id="incident:sc2", lookback_minutes=180, tenant_id=TEST_TENANT
     )
 
 
@@ -730,7 +732,9 @@ def test_sc3_requested_identity_repairs_measured_shape_without_weakening_sc2():
 
 def test_latest_snapshot_never_substitutes_for_incident_pin():
     session, _ = _world(snapshot=_snapshot(include_owners=False))
-    save_snapshot(session, _snapshot(snapshot_id="snapshot:latest"))
+    save_snapshot(
+        session, _snapshot(snapshot_id="snapshot:latest"), tenant_id=TEST_TENANT
+    )
     result = _analysis(session)
     assert result.candidates == []
     assert result.lineage_admission_audit[0].admission_reason == (
@@ -1111,8 +1115,11 @@ def test_admission_metadata_survives_causal_analysis_persistence_round_trip():
         session,
         incident_id="incident:sc2",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
-    loaded = latest_causal_analysis(session, incident_id="incident:sc2")
+    loaded = latest_causal_analysis(
+        session, incident_id="incident:sc2", tenant_id=TEST_TENANT
+    )
     assert loaded is not None
     assert loaded.analysis_id == analysis.analysis_id
     assert loaded.candidate_admission_policy_version == (
@@ -1158,6 +1165,7 @@ def test_lineage_candidate_can_still_safely_abstain():
         session,
         incident_id="incident:sc2",
         request=CausalAnalysisRequest(),
+        tenant_id=TEST_TENANT,
     )
     assert analysis.candidate_count == 1
     assert analysis.top_hypothesis is None

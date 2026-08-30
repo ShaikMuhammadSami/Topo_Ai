@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import ast
 import inspect
@@ -70,7 +71,6 @@ from app.services.snapshot_diff import compare_snapshots
 from app.services.temporal_semantics import build_temporal_metadata
 from app.services.topology_checkpoint import persist_topology_checkpoint
 
-
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[2]
 CONTRACT_PATH = (
@@ -85,6 +85,7 @@ CONTRACT_PATH = (
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -524,6 +525,7 @@ def test_provenance_only_checkpoint_creates_no_change_record_or_event() -> None:
         session,
         snapshot=_snapshot("snapshot:legacy-checkpoint", relationship=_relationship()),
         reason=TopologyCheckpointReason.PERIODIC_RECONCILE,
+        tenant_id=TEST_TENANT,
     )
     result = persist_topology_checkpoint(
         session,
@@ -533,6 +535,7 @@ def test_provenance_only_checkpoint_creates_no_change_record_or_event() -> None:
             collected_at=NOW + timedelta(minutes=1),
         ),
         reason=TopologyCheckpointReason.AUTOMATIC_CHANGE,
+        tenant_id=TEST_TENANT,
     )
 
     assert result.detected_change_count == 0
@@ -850,6 +853,7 @@ def test_tetragon_edge_references_real_runtime_dependency_record(
             first_seen_at=(NOW - timedelta(minutes=5)).isoformat(),
             last_seen_at=NOW.isoformat(),
             metadata_json="{}",
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -884,6 +888,7 @@ def test_tetragon_edge_references_real_runtime_dependency_record(
             metadata={},
         ),
         window_minutes=30,
+        tenant_id=TEST_TENANT,
     )
     relationship = next(
         item

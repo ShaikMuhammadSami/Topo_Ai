@@ -1,4 +1,12 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    UNOWNED_MACHINE,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+)
 
 import hashlib
 import json
@@ -48,7 +56,6 @@ from app.services.webhook_security import (
     verify_terraform_cloud,
     verify_topo_hmac,
 )
-
 
 SAFE_HEADERS = {
     "content-type",
@@ -566,18 +573,12 @@ def _existing_delivery(
     session: Session,
     *,
     delivery_key: str,
-) -> (
-    ChangeSourceDeliveryRecord
-    | None
-):
+    tenant_id: DomainTenant,
+) -> ChangeSourceDeliveryRecord | None:
     return session.scalar(
-        select(
-            ChangeSourceDeliveryRecord
-        ).where(
-            ChangeSourceDeliveryRecord
-            .delivery_key
-            == delivery_key
-        )
+        select(ChangeSourceDeliveryRecord)
+        .where(tenant_predicate(ChangeSourceDeliveryRecord, tenant_id))
+        .where(ChangeSourceDeliveryRecord.delivery_key == delivery_key)
     )
 
 
@@ -672,6 +673,7 @@ def ingest_change_source_webhook(
     existing = _existing_delivery(
         session,
         delivery_key=delivery_key,
+        tenant_id=UNOWNED_MACHINE,
     )
 
     if existing is not None:
@@ -688,32 +690,22 @@ def ingest_change_source_webhook(
 
     now = utc_now_iso()
 
-    delivery = (
-        ChangeSourceDeliveryRecord(
-            delivery_id=(
-                "change-delivery:"
-                + uuid4().hex
-            ),
-            source_id=source.source_id,
-            delivery_key=delivery_key,
-            source_delivery_id=(
-                source_delivery_id
-            ),
-            event_type=event_type,
-            status="received",
-            payload_sha256=(
-                payload_hash
-            ),
-            headers_json=json.dumps(
-                _safe_headers(headers)
-            ),
-            payload_json=json.dumps(
-                _redact(payload),
-                default=str,
-            ),
-            event_ids_json="[]",
-            received_at=now,
-        )
+    delivery = ChangeSourceDeliveryRecord(
+        delivery_id=("change-delivery:" + uuid4().hex),
+        source_id=source.source_id,
+        delivery_key=delivery_key,
+        source_delivery_id=(source_delivery_id),
+        event_type=event_type,
+        status="received",
+        payload_sha256=(payload_hash),
+        headers_json=json.dumps(_safe_headers(headers)),
+        payload_json=json.dumps(
+            _redact(payload),
+            default=str,
+        ),
+        event_ids_json="[]",
+        received_at=now,
+        tenant_id=tenant_value(UNOWNED_MACHINE),
     )
 
     session.add(delivery)
@@ -725,7 +717,7 @@ def ingest_change_source_webhook(
     # Preserve authenticated delivery
     # even if normalization later fails.
     try:
-        session.commit()
+        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
 
     except IntegrityError:
         session.rollback()
@@ -733,6 +725,7 @@ def ingest_change_source_webhook(
         existing = _existing_delivery(
             session,
             delivery_key=delivery_key,
+            tenant_id=UNOWNED_MACHINE,
         )
 
         if existing is not None:
@@ -776,15 +769,18 @@ def ingest_change_source_webhook(
                 source_time_trusted=True,
                 observed_at=delivery.received_at,
                 commit=False,
+                tenant_id=UNOWNED_MACHINE,
             )
 
             event_ids.append(
                 receipt.event_id
             )
 
-        delivery = session.get(
+        delivery = tenant_get(
+            session,
             ChangeSourceDeliveryRecord,
             delivery.delivery_id,
+            tenant_id=UNOWNED_MACHINE,
         )
 
         source = session.get(
@@ -823,7 +819,7 @@ def ingest_change_source_webhook(
 
         source.last_error = None
 
-        session.commit()
+        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
 
         return _receipt(
             delivery,
@@ -833,9 +829,11 @@ def ingest_change_source_webhook(
     except Exception as exc:
         session.rollback()
 
-        delivery = session.get(
+        delivery = tenant_get(
+            session,
             ChangeSourceDeliveryRecord,
             delivery.delivery_id,
+            tenant_id=UNOWNED_MACHINE,
         )
 
         source = session.get(
@@ -843,26 +841,16 @@ def ingest_change_source_webhook(
             source.source_id,
         )
 
-        if (
-            delivery is None
-            or source is None
-        ):
+        if delivery is None or source is None:
             raise
 
-        error = (
-            f"{type(exc).__name__}: "
-            f"{exc}"
-        )
+        error = f"{type(exc).__name__}: " f"{exc}"
 
-        delivery.status = (
-            "dead_letter"
-        )
+        delivery.status = "dead_letter"
 
         delivery.error = error
 
-        delivery.processed_at = (
-            utc_now_iso()
-        )
+        delivery.processed_at = utc_now_iso()
 
         source.status = "error"
 
@@ -870,38 +858,24 @@ def ingest_change_source_webhook(
 
         source.last_error = error
 
-        source.last_error_at = (
-            utc_now_iso()
-        )
+        source.last_error_at = utc_now_iso()
 
-        dead_letter = (
-            ChangeSourceDeadLetterRecord(
-                dead_letter_id=(
-                    "change-dead-letter:"
-                    + uuid4().hex
-                ),
-                source_id=(
-                    source.source_id
-                ),
-                delivery_id=(
-                    delivery.delivery_id
-                ),
-                event_type=event_type,
-                reason=error,
-                payload_json=(
-                    delivery.payload_json
-                ),
-                attempt_count=0,
-                status="pending",
-                created_at=(
-                    utc_now_iso()
-                ),
-            )
+        dead_letter = ChangeSourceDeadLetterRecord(
+            dead_letter_id=("change-dead-letter:" + uuid4().hex),
+            source_id=(source.source_id),
+            delivery_id=(delivery.delivery_id),
+            event_type=event_type,
+            reason=error,
+            payload_json=(delivery.payload_json),
+            attempt_count=0,
+            status="pending",
+            created_at=(utc_now_iso()),
+            tenant_id=tenant_value(UNOWNED_MACHINE),
         )
 
         session.add(dead_letter)
 
-        session.commit()
+        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
 
         raise
 
@@ -910,10 +884,13 @@ def replay_dead_letter(
     session: Session,
     *,
     dead_letter_id: str,
+    tenant_id: DomainTenant,
 ) -> ChangeSourceReplayResponse:
-    dead_letter = session.get(
+    dead_letter = tenant_get(
+        session,
         ChangeSourceDeadLetterRecord,
         dead_letter_id,
+        tenant_id=tenant_id,
     )
 
     if dead_letter is None:
@@ -926,9 +903,11 @@ def replay_dead_letter(
         dead_letter.source_id,
     )
 
-    delivery = session.get(
+    delivery = tenant_get(
+        session,
         ChangeSourceDeliveryRecord,
         dead_letter.delivery_id,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -990,6 +969,7 @@ def replay_dead_letter(
                 # replay processing time remains in delivery.processed_at.
                 observed_at=delivery.received_at,
                 commit=False,
+                tenant_id=tenant_id,
             )
 
             event_ids.append(
@@ -1026,7 +1006,7 @@ def replay_dead_letter(
 
         source.last_error = None
 
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
 
         return (
             ChangeSourceReplayResponse(
@@ -1041,34 +1021,25 @@ def replay_dead_letter(
     except Exception as exc:
         session.rollback()
 
-        dead_letter = session.get(
+        dead_letter = tenant_get(
+            session,
             ChangeSourceDeadLetterRecord,
             dead_letter_id,
+            tenant_id=tenant_id,
         )
 
         if dead_letter is not None:
-            dead_letter.status = (
-                "pending"
-            )
+            dead_letter.status = "pending"
 
-            dead_letter.reason = (
-                f"{type(exc).__name__}: "
-                f"{exc}"
-            )
+            dead_letter.reason = f"{type(exc).__name__}: " f"{exc}"
 
-            dead_letter.last_attempt_at = (
-                utc_now_iso()
-            )
+            dead_letter.last_attempt_at = utc_now_iso()
 
-            session.commit()
+            tenant_commit(session, tenant_id=tenant_id)
 
-        return (
-            ChangeSourceReplayResponse(
-                dead_letter_id=(
-                    dead_letter_id
-                ),
-                succeeded=False,
-                event_ids=[],
-                error=str(exc),
-            )
+        return ChangeSourceReplayResponse(
+            dead_letter_id=(dead_letter_id),
+            succeeded=False,
+            event_ids=[],
+            error=str(exc),
         )

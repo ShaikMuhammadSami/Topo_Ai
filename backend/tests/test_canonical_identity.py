@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 from datetime import datetime, timezone
 import inspect
@@ -59,7 +60,6 @@ from app.services.ownership_resolver import (
 import app.services.canonical_identity as canonical_identity_service
 from app.services.network_topology_enricher import _entity_id as network_entity_id
 
-
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 
 
@@ -107,6 +107,7 @@ def _kubernetes_entity(
 def _session() -> Session:
     engine = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -482,8 +483,8 @@ def test_snapshot_history_incident_change_and_blast_compatibility() -> None:
             }
         )
         historical = _snapshot(legacy, snapshot_id="snapshot:legacy-identity")
-        save_snapshot(session, historical)
-        loaded = load_snapshot(session, historical.snapshot_id)
+        save_snapshot(session, historical, tenant_id=TEST_TENANT)
+        loaded = load_snapshot(session, historical.snapshot_id, tenant_id=TEST_TENANT)
         assert loaded is not None
         assert loaded.entities[0].id == legacy_id
         assert loaded.entities[0].identity_version == "legacy"
@@ -503,11 +504,13 @@ def test_snapshot_history_incident_change_and_blast_compatibility() -> None:
                 entity_id=legacy_id,
                 owner_team="Payments Platform",
             ),
+            tenant_id=TEST_TENANT,
         )
         ownership = resolve_entity_ownership(
             session,
             _snapshot(canonical, snapshot_id="snapshot:ownership-alias"),
             canonical,
+            tenant_id=TEST_TENANT,
         )
         assert ownership.resolved is True
         assert ownership.owner_team == "Payments Platform"
@@ -534,16 +537,19 @@ def test_snapshot_history_incident_change_and_blast_compatibility() -> None:
                 occurrence_count=1,
                 created_at=now,
                 updated_at=now,
+                tenant_id=TEST_TENANT,
             )
         )
         session.commit()
 
-        blast = calculate_blast_radius(session, "incident:legacy-identity")
+        blast = calculate_blast_radius(
+            session, "incident:legacy-identity", tenant_id=TEST_TENANT
+        )
         assert blast.root_entity_id == legacy_id
         assert blast.affected_entity_count == 1
 
         current = _snapshot(canonical, snapshot_id="snapshot:canonical-identity")
-        save_snapshot(session, current)
+        save_snapshot(session, current, tenant_id=TEST_TENANT)
         receipt = ingest_change_event(
             session,
             request=ChangeEventCreate(
@@ -565,6 +571,7 @@ def test_snapshot_history_incident_change_and_blast_compatibility() -> None:
             ),
             auto_correlate=True,
             correlation_snapshot_id=current.snapshot_id,
+            tenant_id=TEST_TENANT,
         )
         links = list(
             session.scalars(

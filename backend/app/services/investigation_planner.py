@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 import hashlib
 import json
@@ -23,9 +26,6 @@ from app.models.investigation_plan import (
     InvestigationPlanDetail,
     InvestigationPlanGenerateRequest,
 )
-from app.repositories.incident_explanation_repository import (
-    load_latest_incident_explanation,
-)
 from app.repositories.investigation_plan_repository import (
     create_investigation_plan,
     load_investigation_plan,
@@ -38,7 +38,6 @@ from app.services.llm_client import (
     generate_openai_structured,
     resolve_configured_provider,
 )
-
 
 INVESTIGATION_PROMPT_VERSION = (
     "investigation-planner-groq-0.1.0"
@@ -89,6 +88,7 @@ class InvestigationPlanGenerationError(
     Exception
 ):
     pass
+
 
 SENSITIVE_KEY_PARTS = {
     "password",
@@ -244,6 +244,7 @@ def _grounding_hash(
         content.encode("utf-8")
     ).hexdigest()
 
+
 FORBIDDEN_COMMAND_TOKENS = (
     "\n",
     "\r",
@@ -398,6 +399,7 @@ def _validate_command(
             f"{normalized}"
         )
 
+
 def _validate_plan(
     generated:
         GeneratedInvestigationPlan,
@@ -489,6 +491,7 @@ def _validate_plan(
             "steps": normalized_steps
         }
     )
+
 
 def _first_evidence(
     evidence: list[GroundingEvidence],
@@ -1052,6 +1055,7 @@ def _deterministic_plan(
         ),
     )
 
+
 def _groq_plan(
     *,
     evidence: list[GroundingEvidence],
@@ -1202,6 +1206,7 @@ def _openai_plan(
         evidence=evidence,
     )
 
+
 def _resolve_provider(
     requested: ExplanationProvider,
 ) -> ExplanationProvider:
@@ -1245,8 +1250,8 @@ def generate_investigation_plan(
     session: Session,
     *,
     incident_id: str,
-    request:
-        InvestigationPlanGenerateRequest,
+    request: InvestigationPlanGenerateRequest,
+    tenant_id: DomainTenant,
 ) -> InvestigationPlanDetail:
     (
         _,
@@ -1255,6 +1260,7 @@ def generate_investigation_plan(
     ) = build_incident_evidence(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
 
     sanitized = _sanitize_evidence(
@@ -1317,6 +1323,7 @@ def generate_investigation_plan(
         existing = load_investigation_plan(
             session=session,
             plan_id=plan_id,
+            tenant_id=tenant_id,
         )
 
         if existing is not None:
@@ -1448,11 +1455,10 @@ def generate_investigation_plan(
         incident_id=incident_id,
         provider=provider,
         model_name=model_name,
-        prompt_version=(
-            INVESTIGATION_PROMPT_VERSION
-        ),
+        prompt_version=(INVESTIGATION_PROMPT_VERSION),
         grounding_hash=grounding_hash,
         generated=generated,
         evidence=evidence,
         warnings=warnings,
+        tenant_id=tenant_id,
     )

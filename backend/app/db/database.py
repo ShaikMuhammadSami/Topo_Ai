@@ -2,10 +2,10 @@ import os
 from collections.abc import Generator
 from pathlib import Path
 
+from fastapi import Request
 from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
-
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BACKEND_DIR / "data"
@@ -78,9 +78,9 @@ def init_db(*, bind: Engine | None = None) -> None:
     verify_database_revision(target)
 
 
-def get_session() -> Generator[Session, None, None]:
+def get_session(request: Request) -> Generator[Session, None, None]:
     """
     Provide one database session per API request.
     """
-    with SessionLocal() as session:
+    with request.app.state.session_factory() as session:
         yield session

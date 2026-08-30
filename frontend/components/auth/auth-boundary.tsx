@@ -13,6 +13,7 @@ import {
 import { AlertTriangle, LoaderCircle, LogIn, RefreshCw } from "lucide-react"
 
 import { TopoLogo } from "@/components/topo-logo"
+import { TenantGate } from "@/components/auth/tenant-boundary"
 import { Button } from "@/components/ui/button"
 import {
   type BrowserSession,
@@ -189,7 +190,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             </button>
           </div>
         )}
-        {children}
+        <TenantGate>{children}</TenantGate>
       </>
     )
   }

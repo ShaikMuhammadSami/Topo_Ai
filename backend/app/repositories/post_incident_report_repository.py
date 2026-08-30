@@ -1,3 +1,11 @@
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    tenant_get,
+    require_record_owner,
+)
 import hashlib
 import json
 
@@ -61,20 +69,14 @@ def _action_to_view(
 def _load_action_records(
     session: Session,
     report_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[ReportActionItemRecord]:
     statement = (
-        select(
-            ReportActionItemRecord
-        )
-        .where(
-            ReportActionItemRecord.report_id
-            == report_id
-        )
-        .order_by(
-            ReportActionItemRecord
-            .sequence
-            .asc()
-        )
+        select(ReportActionItemRecord)
+        .where(tenant_predicate(ReportActionItemRecord, tenant_id))
+        .where(ReportActionItemRecord.report_id == report_id)
+        .order_by(ReportActionItemRecord.sequence.asc())
     )
 
     return list(
@@ -87,10 +89,14 @@ def _load_action_records(
 def _report_to_summary(
     session: Session,
     record: PostIncidentReportRecord,
+    *,
+    tenant_id: DomainTenant,
 ) -> PostIncidentReportSummary:
+    require_record_owner(record, tenant_id=tenant_id)
     actions = _load_action_records(
         session=session,
         report_id=record.report_id,
+        tenant_id=tenant_id,
     )
 
     completed = sum(
@@ -131,10 +137,14 @@ def _report_to_summary(
 def load_post_incident_report(
     session: Session,
     report_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> PostIncidentReportDetail | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         PostIncidentReportRecord,
         report_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -150,6 +160,7 @@ def load_post_incident_report(
     summary = _report_to_summary(
         session=session,
         record=record,
+        tenant_id=tenant_id,
     )
 
     actions = [
@@ -157,6 +168,7 @@ def load_post_incident_report(
         for action in _load_action_records(
             session=session,
             report_id=report_id,
+            tenant_id=tenant_id,
         )
     ]
 
@@ -212,21 +224,14 @@ def load_post_incident_report(
 def load_latest_post_incident_report(
     session: Session,
     incident_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> PostIncidentReportDetail | None:
     statement = (
-        select(
-            PostIncidentReportRecord
-        )
-        .where(
-            PostIncidentReportRecord
-            .incident_id
-            == incident_id
-        )
-        .order_by(
-            PostIncidentReportRecord
-            .version
-            .desc()
-        )
+        select(PostIncidentReportRecord)
+        .where(tenant_predicate(PostIncidentReportRecord, tenant_id))
+        .where(PostIncidentReportRecord.incident_id == incident_id)
+        .order_by(PostIncidentReportRecord.version.desc())
         .limit(1)
     )
 
@@ -240,6 +245,7 @@ def load_latest_post_incident_report(
     return load_post_incident_report(
         session=session,
         report_id=record.report_id,
+        tenant_id=tenant_id,
     )
 
 
@@ -248,21 +254,14 @@ def list_post_incident_reports(
     incident_id: str,
     limit: int = 50,
     offset: int = 0,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[PostIncidentReportSummary]:
     statement = (
-        select(
-            PostIncidentReportRecord
-        )
-        .where(
-            PostIncidentReportRecord
-            .incident_id
-            == incident_id
-        )
-        .order_by(
-            PostIncidentReportRecord
-            .version
-            .desc()
-        )
+        select(PostIncidentReportRecord)
+        .where(tenant_predicate(PostIncidentReportRecord, tenant_id))
+        .where(PostIncidentReportRecord.incident_id == incident_id)
+        .order_by(PostIncidentReportRecord.version.desc())
         .offset(offset)
         .limit(limit)
     )
@@ -277,6 +276,7 @@ def list_post_incident_reports(
         _report_to_summary(
             session=session,
             record=record,
+            tenant_id=tenant_id,
         )
         for record in records
     ]
@@ -292,14 +292,15 @@ def create_post_incident_report(
     model_name: str | None,
     prompt_version: str,
     grounding_hash: str,
-    generated:
-        GeneratedPostIncidentReport,
+    generated: GeneratedPostIncidentReport,
     evidence: list[GroundingEvidence],
     warnings: list[str],
+    tenant_id: DomainTenant,
 ) -> PostIncidentReportDetail:
     existing = load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_id,
     )
 
     if existing is not None:
@@ -312,37 +313,22 @@ def create_post_incident_report(
         incident_id=incident_id,
         version=version,
         title=generated.title,
-        status=(
-            PostIncidentReportStatus
-            .DRAFT.value
-        ),
+        status=(PostIncidentReportStatus.DRAFT.value),
         provider=provider.value,
         model_name=model_name,
         prompt_version=prompt_version,
         grounding_hash=grounding_hash,
-        overall_confidence=str(
-            generated.overall_confidence
-        ),
-        payload_json=(
-            generated.model_dump_json()
-        ),
-        evidence_json=json.dumps(
-            [
-                item.model_dump(
-                    mode="json"
-                )
-                for item in evidence
-            ]
-        ),
-        warnings_json=json.dumps(
-            warnings
-        ),
+        overall_confidence=str(generated.overall_confidence),
+        payload_json=(generated.model_dump_json()),
+        evidence_json=json.dumps([item.model_dump(mode="json") for item in evidence]),
+        warnings_json=json.dumps(warnings),
         reviewer_name=None,
         review_notes=None,
         reviewed_at=None,
         approved_at=None,
         created_at=now,
         updated_at=now,
+        tenant_id=tenant_value(tenant_id),
     )
 
     session.add(record)
@@ -358,53 +344,35 @@ def create_post_incident_report(
             identity.encode("utf-8")
         ).hexdigest()[:24]
 
-        action_record = (
-            ReportActionItemRecord(
-                action_item_id=(
-                    "report-action:"
-                    f"{digest}"
-                ),
-                report_id=report_id,
-                incident_id=incident_id,
-                sequence=action.sequence,
-                title=action.title,
-                description=(
-                    action.description
-                ),
-                owner_team=(
-                    action.owner_team
-                ),
-                owner_contact=(
-                    action.owner_contact
-                ),
-                priority=(
-                    action.priority.value
-                ),
-                due_date=action.due_date,
-                success_criteria=(
-                    action.success_criteria
-                ),
-                evidence_ids_json=json.dumps(
-                    action.evidence_ids
-                ),
-                status=(
-                    ReportActionStatus
-                    .OPEN.value
-                ),
-                notes=None,
-                completed_at=None,
-                created_at=now,
-                updated_at=now,
-            )
+        action_record = ReportActionItemRecord(
+            action_item_id=("report-action:" f"{digest}"),
+            report_id=report_id,
+            incident_id=incident_id,
+            sequence=action.sequence,
+            title=action.title,
+            description=(action.description),
+            owner_team=(action.owner_team),
+            owner_contact=(action.owner_contact),
+            priority=(action.priority.value),
+            due_date=action.due_date,
+            success_criteria=(action.success_criteria),
+            evidence_ids_json=json.dumps(action.evidence_ids),
+            status=(ReportActionStatus.OPEN.value),
+            notes=None,
+            completed_at=None,
+            created_at=now,
+            updated_at=now,
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(action_record)
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     result = load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_id,
     )
 
     if result is None:
@@ -420,12 +388,14 @@ def update_post_incident_report(
     session: Session,
     *,
     report_id: str,
-    request:
-        PostIncidentReportUpdateRequest,
+    request: PostIncidentReportUpdateRequest,
+    tenant_id: DomainTenant,
 ) -> PostIncidentReportDetail | None:
-    record = session.get(
+    record = tenant_get(
+        session,
         PostIncidentReportRecord,
         report_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -488,11 +458,12 @@ def update_post_incident_report(
 
     record.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_id,
     )
 
 
@@ -501,12 +472,14 @@ def update_report_action_item(
     *,
     report_id: str,
     action_item_id: str,
-    request:
-        ReportActionItemUpdateRequest,
+    request: ReportActionItemUpdateRequest,
+    tenant_id: DomainTenant,
 ) -> PostIncidentReportDetail | None:
-    action = session.get(
+    action = tenant_get(
+        session,
         ReportActionItemRecord,
         action_item_id,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -562,17 +535,20 @@ def update_report_action_item(
 
     action.updated_at = utc_now_iso()
 
-    report = session.get(
+    report = tenant_get(
+        session,
         PostIncidentReportRecord,
         report_id,
+        tenant_id=tenant_id,
     )
 
     if report:
         report.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return load_post_incident_report(
         session=session,
         report_id=report_id,
+        tenant_id=tenant_id,
     )

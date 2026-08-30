@@ -154,6 +154,14 @@ class ManagedTopoEnvironment:
                 raise RuntimeError(
                     "Isolated named API credential authentication failed."
                 )
+            tenant = self.client.post(
+                "/api/v1/tenants", {"display_name": "Isolated evaluation"},
+            )
+            if tenant.status != 201 or not isinstance(tenant.body, dict):
+                raise RuntimeError("Isolated evaluation tenant creation failed.")
+            # The real create route atomically grants this authenticated human
+            # membership. Keep its runtime ID transport-only, out of results.
+            self.client.set_tenant(tenant.body["tenant_id"])
         except Exception as exc:
             raise RuntimeError(f"Isolated backend did not start.\n{_tail(log_path)}") from exc
 

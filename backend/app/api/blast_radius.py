@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
 )
 
@@ -21,8 +22,6 @@ from app.services.blast_radius import (
     calculate_blast_radius,
 )
 
-
-
 router = APIRouter(
     prefix="/api/v1/incidents",
     tags=[
@@ -31,18 +30,15 @@ router = APIRouter(
 )
 
 
-
 @router.get(
     "/{incident_id}/blast-radius",
-    response_model=(
-        BlastRadiusResponse
-    ),
+    response_model=(BlastRadiusResponse),
 )
 def get_blast_radius(
     incident_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ):
 
     try:
@@ -50,6 +46,7 @@ def get_blast_radius(
         return calculate_blast_radius(
             session=session,
             incident_id=incident_id,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

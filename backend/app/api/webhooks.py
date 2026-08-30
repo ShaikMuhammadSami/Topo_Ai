@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -31,7 +32,6 @@ from app.services.webhook_delivery import (
     deliver_event_to_endpoint,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/integrations",
     tags=["integrations"],
@@ -45,31 +45,31 @@ router = APIRouter(
 )
 def create_webhook(
     request: WebhookEndpointCreate,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> WebhookEndpointView:
     return create_webhook_endpoint(
         session=session,
         request=request,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.get(
     "/webhooks",
-    response_model=list[
-        WebhookEndpointView
-    ],
+    response_model=list[WebhookEndpointView],
 )
 def get_webhooks(
     active: bool | None = None,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[WebhookEndpointView]:
     return list_webhook_endpoints(
         session=session,
         active=active,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -80,14 +80,15 @@ def get_webhooks(
 def patch_webhook(
     webhook_id: str,
     request: WebhookEndpointUpdate,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> WebhookEndpointView:
     result = update_webhook_endpoint(
         session=session,
         webhook_id=webhook_id,
         request=request,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if result is None:
@@ -109,15 +110,14 @@ def patch_webhook(
 def test_webhook(
     webhook_id: str,
     request: WebhookTestRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> WebhookDeliveryView:
-    endpoint = (
-        load_webhook_endpoint_record(
-            session=session,
-            webhook_id=webhook_id,
-        )
+    endpoint = load_webhook_endpoint_record(
+        session=session,
+        webhook_id=webhook_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if endpoint is None:
@@ -138,47 +138,35 @@ def test_webhook(
         session=session,
         endpoint=endpoint,
         event=event,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
 @router.get(
     "/deliveries",
-    response_model=list[
-        WebhookDeliveryView
-    ],
+    response_model=list[WebhookDeliveryView],
 )
 def get_deliveries(
     webhook_id: str | None = None,
-    delivery_status: (
-        WebhookDeliveryStatus | None
-    ) = Query(
+    delivery_status: WebhookDeliveryStatus | None = Query(
         default=None,
         alias="status",
     ),
-    event_type: (
-        WebhookEventType | None
-    ) = None,
+    event_type: WebhookEventType | None = None,
     limit: int = Query(
         default=200,
         ge=1,
         le=500,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[WebhookDeliveryView]:
     return list_webhook_deliveries(
         session=session,
         webhook_id=webhook_id,
-        status=(
-            delivery_status.value
-            if delivery_status
-            else None
-        ),
-        event_type=(
-            event_type.value
-            if event_type
-            else None
-        ),
+        status=(delivery_status.value if delivery_status else None),
+        event_type=(event_type.value if event_type else None),
         limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )

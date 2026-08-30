@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
     status,
@@ -28,7 +29,6 @@ from app.services.incident_copilot import (
     create_incident_copilot_session,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/incidents",
     tags=["incident-copilot"],
@@ -42,19 +42,17 @@ router = APIRouter(
 )
 def create_session(
     incident_id: str,
-    request:
-        CopilotSessionCreateRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    request: CopilotSessionCreateRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> CopilotSessionDetail:
     try:
-        return (
-            create_incident_copilot_session(
-                session=session,
-                incident_id=incident_id,
-                request=request,
-            )
+        return create_incident_copilot_session(
+            session=session,
+            incident_id=incident_id,
+            request=request,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:
@@ -66,9 +64,7 @@ def create_session(
 
 @router.get(
     "/{incident_id}/copilot/sessions",
-    response_model=list[
-        CopilotSessionSummary
-    ],
+    response_model=list[CopilotSessionSummary],
 )
 def get_sessions(
     incident_id: str,
@@ -81,15 +77,16 @@ def get_sessions(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[CopilotSessionSummary]:
     return list_incident_copilot_sessions(
         session=session,
         incident_id=incident_id,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -100,13 +97,14 @@ def get_sessions(
 def get_session_detail(
     incident_id: str,
     session_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> CopilotSessionDetail:
     result = load_copilot_session_detail(
         session=session,
         session_id=session_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if (
@@ -126,17 +124,15 @@ def get_session_detail(
 
 @router.post(
     "/{incident_id}/copilot/sessions/{session_id}/messages",
-    response_model=(
-        CopilotQuestionResponse
-    ),
+    response_model=(CopilotQuestionResponse),
 )
 def post_message(
     incident_id: str,
     session_id: str,
     request: CopilotQuestionRequest,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> CopilotQuestionResponse:
     try:
         return answer_copilot_question(
@@ -144,6 +140,7 @@ def post_message(
             incident_id=incident_id,
             session_id=session_id,
             question=request.question,
+            tenant_id=tenant_context.tenant_id,
         )
 
     except ValueError as exc:

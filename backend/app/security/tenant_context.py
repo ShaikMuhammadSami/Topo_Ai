@@ -8,6 +8,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from app.db.database import get_session
 from app.models.tenant import TenantContextView, is_valid_tenant_id
 from app.repositories.tenant_repository import (
     load_active_human_tenant_context,
@@ -16,7 +17,6 @@ from app.repositories.tenant_repository import (
 )
 from app.security.approval_authorization import authenticated_principal
 from app.security.principals import AuthPrincipal
-
 
 TENANT_HEADER_NAME = "X-Topo-Tenant-ID"
 TENANT_CONTEXT_REQUIRED = "TENANT_CONTEXT_REQUIRED"
@@ -149,7 +149,7 @@ def resolve_tenant_context(
 
 def require_tenant_context(
     request: Request,
-    session: Session = Depends(tenant_database_session),
+    session: Session = Depends(get_session),
 ) -> TenantContext:
     principal = authenticated_principal(request)
     selected_tenant_id: str | None

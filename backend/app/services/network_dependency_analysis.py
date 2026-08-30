@@ -1,4 +1,7 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+)
 
 import hashlib
 from collections import (
@@ -19,7 +22,6 @@ from app.models.network_dependency import (
 from app.repositories.snapshot_repository import (
     load_snapshot,
 )
-
 
 NETWORK_RELATIONSHIPS = {
     "selects",
@@ -93,10 +95,13 @@ def analyze_network_dependencies(
     session: Session,
     snapshot_id: str,
     max_depth: int = 5,
+    *,
+    tenant_id: DomainTenant,
 ) -> NetworkDependencyAnalysisResponse:
     snapshot = load_snapshot(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:

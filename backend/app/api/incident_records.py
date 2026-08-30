@@ -1,6 +1,7 @@
+from app.security.tenant_context import TenantContext, require_tenant_context
+from fastapi import Depends
 from fastapi import (
     APIRouter,
-    Depends,
     HTTPException,
     Query,
 )
@@ -33,7 +34,6 @@ from app.services.webhook_delivery import (
     publish_event_safely,
 )
 
-
 router = APIRouter(
     prefix="/api/v1/incident-records",
     tags=["incident-records"],
@@ -42,9 +42,7 @@ router = APIRouter(
 
 @router.get(
     "",
-    response_model=list[
-        IncidentRecordSummary
-    ],
+    response_model=list[IncidentRecordSummary],
 )
 def get_incident_records(
     status: IncidentStatus | None = None,
@@ -59,26 +57,20 @@ def get_incident_records(
         default=0,
         ge=0,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[IncidentRecordSummary]:
     return list_incident_records(
         session=session,
-        status=(
-            status.value
-            if status
-            else None
-        ),
-        severity=(
-            severity.value
-            if severity
-            else None
-        ),
+        status=(status.value if status else None),
+        severity=(severity.value if severity else None),
         namespace=namespace,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_context.tenant_id,
     )
+
 
 @router.get(
     "/{incident_id}/signals",
@@ -91,13 +83,14 @@ def get_incident_related_signals(
         ge=1,
         le=500,
     ),
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentRelatedSignals:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if incident is None:
@@ -109,18 +102,13 @@ def get_incident_related_signals(
             ),
         )
 
-    signals = (
-        list_signals_by_incident_fingerprint(
-            session=session,
-            cluster_name=(
-                incident.cluster_name
-            ),
-            namespace=incident.namespace,
-            fingerprint=(
-                incident.fingerprint
-            ),
-            limit=limit,
-        )
+    signals = list_signals_by_incident_fingerprint(
+        session=session,
+        cluster_name=(incident.cluster_name),
+        namespace=incident.namespace,
+        fingerprint=(incident.fingerprint),
+        limit=limit,
+        tenant_id=tenant_context.tenant_id,
     )
 
     return IncidentRelatedSignals(
@@ -130,19 +118,21 @@ def get_incident_related_signals(
         signals=signals,
     )
 
+
 @router.get(
     "/{incident_id}",
     response_model=IncidentRecordView,
 )
 def get_incident_record(
     incident_id: str,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentRecordView:
     incident = load_incident_record(
         session=session,
         incident_id=incident_id,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if incident is None:
@@ -164,15 +154,16 @@ def get_incident_record(
 def patch_incident_status(
     incident_id: str,
     request: IncidentStatusUpdate,
-    session: Session = Depends(
-        get_session
-    ),
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> IncidentRecordView:
     incident = update_incident_status(
         session=session,
         incident_id=incident_id,
         status=request.status,
         note=request.note,
+        tenant_id=tenant_context.tenant_id,
     )
 
     if incident is None:
@@ -220,7 +211,8 @@ def patch_incident_status(
     )
 
     publish_event_safely(
-      session=session,
-      event=event,
-   )
+        session=session,
+        event=event,
+        tenant_id=tenant_context.tenant_id,
+    )
     return incident

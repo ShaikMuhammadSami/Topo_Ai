@@ -42,7 +42,12 @@ def postgres_engine() -> Engine:
         pool_pre_ping=True,
     )
     with engine.begin() as connection:
-        command.upgrade(alembic_config(connection=connection), "head")
+        configuration = alembic_config(connection=connection)
+        # Load the real migration options, but do not let in-process Alembic
+        # replace pytest handlers/disable app loggers for later auth tests.
+        configuration.get_section(configuration.config_ini_section)
+        configuration.config_file_name = None
+        command.upgrade(configuration, "head")
     yield engine
     engine.dispose()
 

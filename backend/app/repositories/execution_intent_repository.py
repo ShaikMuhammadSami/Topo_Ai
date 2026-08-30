@@ -1,4 +1,11 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    tenant_commit,
+    DomainTenant,
+    tenant_value,
+    tenant_predicate,
+    require_record_owner,
+)
 
 import json
 from datetime import datetime
@@ -21,7 +28,6 @@ from app.models.execution_transaction import (
 )
 from app.security.api_tokens import AuthPrincipal
 
-
 ACTIVE_EXECUTION_INTENT_STATUSES = {
     ExecutionIntentStatus.PENDING.value,
     ExecutionIntentStatus.CLAIMED.value,
@@ -33,14 +39,14 @@ def load_execution_intent_record(
     *,
     incident_id: str,
     execution_id: str,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
     statement = (
         select(ExecutionIntentRecord)
+        .where(tenant_predicate(ExecutionIntentRecord, tenant_id))
         .where(
-            ExecutionIntentRecord.incident_id
-            == incident_id,
-            ExecutionIntentRecord.execution_id
-            == execution_id,
+            ExecutionIntentRecord.incident_id == incident_id,
+            ExecutionIntentRecord.execution_id == execution_id,
         )
         .execution_options(populate_existing=True)
         .limit(1)
@@ -53,13 +59,12 @@ def load_execution_intent_by_key(
     session: Session,
     *,
     idempotency_key: str,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
     statement = (
         select(ExecutionIntentRecord)
-        .where(
-            ExecutionIntentRecord.idempotency_key
-            == idempotency_key
-        )
+        .where(tenant_predicate(ExecutionIntentRecord, tenant_id))
+        .where(ExecutionIntentRecord.idempotency_key == idempotency_key)
         .execution_options(populate_existing=True)
         .limit(1)
     )
@@ -71,13 +76,12 @@ def load_execution_intent_by_approval(
     session: Session,
     *,
     approval_id: str,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
     statement = (
         select(ExecutionIntentRecord)
-        .where(
-            ExecutionIntentRecord.approval_id
-            == approval_id
-        )
+        .where(tenant_predicate(ExecutionIntentRecord, tenant_id))
+        .where(ExecutionIntentRecord.approval_id == approval_id)
         .execution_options(populate_existing=True)
         .limit(1)
     )
@@ -94,12 +98,12 @@ def list_execution_intent_records(
     action_id: str | None = None,
     limit: int = 50,
     offset: int = 0,
+    tenant_id: DomainTenant,
 ) -> list[ExecutionIntentRecord]:
-    statement = select(
-        ExecutionIntentRecord
-    ).where(
-        ExecutionIntentRecord.incident_id
-        == incident_id
+    statement = (
+        select(ExecutionIntentRecord)
+        .where(tenant_predicate(ExecutionIntentRecord, tenant_id))
+        .where(ExecutionIntentRecord.incident_id == incident_id)
     )
 
     if status is not None:
@@ -152,23 +156,18 @@ def _event_record(
     claim_generation: int,
     reason: str | None,
     occurred_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentEventRecord:
+    require_record_owner(record, tenant_id=tenant_id)
     return ExecutionIntentEventRecord(
-        event_id=(
-            "execution-event:"
-            f"{uuid4().hex}"
-        ),
+        event_id=("execution-event:" f"{uuid4().hex}"),
         sequence=sequence,
         execution_id=record.execution_id,
         incident_id=record.incident_id,
         approval_id=record.approval_id,
         action_id=record.action_id,
         event_type=event_type.value,
-        from_status=(
-            from_status.value
-            if from_status is not None
-            else None
-        ),
+        from_status=(from_status.value if from_status is not None else None),
         to_status=to_status.value,
         actor_subject=actor.subject,
         actor_display_name=actor.display_name,
@@ -176,12 +175,11 @@ def _event_record(
             list(actor.roles),
             sort_keys=True,
         ),
-        authentication_type=(
-            actor.authentication_type
-        ),
+        authentication_type=(actor.authentication_type),
         claim_generation=claim_generation,
         reason=reason,
         occurred_at=occurred_at.isoformat(),
+        tenant_id=tenant_value(tenant_id),
     )
 
 
@@ -192,10 +190,12 @@ def create_execution_intent_record(
     idempotency_key: str,
     creator: AuthPrincipal,
     created_at: datetime,
+    tenant_id: DomainTenant,
 ) -> tuple[ExecutionIntentRecord, bool]:
     existing = load_execution_intent_by_key(
         session,
         idempotency_key=idempotency_key,
+        tenant_id=tenant_id,
     )
 
     if existing is not None:
@@ -203,44 +203,29 @@ def create_execution_intent_record(
 
     timestamp = created_at.isoformat()
     record = ExecutionIntentRecord(
-        execution_id=(
-            "execution-intent:"
-            f"{uuid4().hex}"
-        ),
+        execution_id=("execution-intent:" f"{uuid4().hex}"),
         incident_id=snapshot.incident_id,
         approval_id=snapshot.approval_id,
         action_id=snapshot.action_id,
-        action_family=(
-            snapshot.action_family.value
-        ),
+        action_family=(snapshot.action_family.value),
         status=ExecutionIntentStatus.PENDING.value,
-        approval_evidence_fingerprint=(
-            snapshot.approval_evidence_fingerprint
-        ),
+        approval_evidence_fingerprint=(snapshot.approval_evidence_fingerprint),
         policy_version=snapshot.policy_version,
         risk=snapshot.risk.value,
         target_entity_ids_json=json.dumps(
             snapshot.target.entity_ids,
             sort_keys=True,
         ),
-        target_change_event_id=(
-            snapshot.target.change_event_id
-        ),
-        execution_snapshot_json=(
-            snapshot.model_dump_json()
-        ),
+        target_change_event_id=(snapshot.target.change_event_id),
+        execution_snapshot_json=(snapshot.model_dump_json()),
         idempotency_key=idempotency_key,
         created_by_subject=creator.subject,
-        created_by_display_name=(
-            creator.display_name
-        ),
+        created_by_display_name=(creator.display_name),
         created_by_roles_json=json.dumps(
             list(creator.roles),
             sort_keys=True,
         ),
-        created_by_authentication_type=(
-            creator.authentication_type
-        ),
+        created_by_authentication_type=(creator.authentication_type),
         created_at=timestamp,
         claimed_by_subject=None,
         claimed_by_display_name=None,
@@ -267,15 +252,14 @@ def create_execution_intent_record(
         execution_performed=False,
         row_version=1,
         updated_at=timestamp,
+        tenant_id=tenant_value(tenant_id),
     )
     session.add(record)
     session.add(
         _event_record(
             record=record,
             sequence=1,
-            event_type=(
-                ExecutionIntentEventType.CREATED
-            ),
+            event_type=(ExecutionIntentEventType.CREATED),
             from_status=None,
             to_status=ExecutionIntentStatus.PENDING,
             actor=creator,
@@ -285,24 +269,25 @@ def create_execution_intent_record(
                 "currently valid evidence-bound approval."
             ),
             occurred_at=created_at,
+            tenant_id=tenant_id,
         )
     )
 
     try:
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
     except IntegrityError:
         session.rollback()
         existing = load_execution_intent_by_key(
             session,
             idempotency_key=idempotency_key,
+            tenant_id=tenant_id,
         )
 
         if existing is None:
-            existing = (
-                load_execution_intent_by_approval(
-                    session,
-                    approval_id=snapshot.approval_id,
-                )
+            existing = load_execution_intent_by_approval(
+                session,
+                approval_id=snapshot.approval_id,
+                tenant_id=tenant_id,
             )
 
         if existing is not None:
@@ -325,7 +310,9 @@ def _atomic_transition(
     reason: str | None,
     occurred_at: datetime,
     values: dict[str, Any] | None = None,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
+    require_record_owner(record, tenant_id=tenant_id)
     new_version = record.row_version + 1
     transition_values: dict[str, Any] = {
         "status": new_status.value,
@@ -338,18 +325,14 @@ def _atomic_transition(
 
     statement = (
         update(ExecutionIntentRecord)
+        .where(tenant_predicate(ExecutionIntentRecord, tenant_id))
         .where(
-            ExecutionIntentRecord.execution_id
-            == record.execution_id,
-            ExecutionIntentRecord.status
-            == expected_status.value,
-            ExecutionIntentRecord.row_version
-            == record.row_version,
+            ExecutionIntentRecord.execution_id == record.execution_id,
+            ExecutionIntentRecord.status == expected_status.value,
+            ExecutionIntentRecord.row_version == record.row_version,
         )
         .values(**transition_values)
-        .execution_options(
-            synchronize_session=False
-        )
+        .execution_options(synchronize_session=False)
     )
     result = session.execute(statement)
 
@@ -372,11 +355,12 @@ def _atomic_transition(
         ),
         reason=reason,
         occurred_at=occurred_at,
+        tenant_id=tenant_id,
     )
     session.add(event_record)
 
     try:
-        session.commit()
+        tenant_commit(session, tenant_id=tenant_id)
     except IntegrityError:
         session.rollback()
         return None
@@ -385,6 +369,7 @@ def _atomic_transition(
         session,
         incident_id=record.incident_id,
         execution_id=record.execution_id,
+        tenant_id=tenant_id,
     )
     return refreshed
 
@@ -397,7 +382,9 @@ def atomic_claim_execution_intent_record(
     claim_token_hash: str,
     claimed_at: datetime,
     claim_expires_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
+    require_record_owner(record, tenant_id=tenant_id)
     generation = record.claim_generation + 1
 
     return _atomic_transition(
@@ -414,22 +401,15 @@ def atomic_claim_execution_intent_record(
         occurred_at=claimed_at,
         values={
             "claimed_by_subject": worker.subject,
-            "claimed_by_display_name": (
-                worker.display_name
-            ),
-            "claimed_by_authentication_type": (
-                worker.authentication_type
-            ),
+            "claimed_by_display_name": (worker.display_name),
+            "claimed_by_authentication_type": (worker.authentication_type),
             "claimed_at": claimed_at.isoformat(),
-            "claim_expires_at": (
-                claim_expires_at.isoformat()
-            ),
+            "claim_expires_at": (claim_expires_at.isoformat()),
             "claim_token_hash": claim_token_hash,
             "claim_generation": generation,
-            "attempt_count": (
-                record.attempt_count + 1
-            ),
+            "attempt_count": (record.attempt_count + 1),
         },
+        tenant_id=tenant_id,
     )
 
 
@@ -440,7 +420,9 @@ def atomic_release_execution_claim_record(
     worker: AuthPrincipal,
     reason: str,
     released_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
+    require_record_owner(record, tenant_id=tenant_id)
     return _atomic_transition(
         session,
         record=record,
@@ -458,6 +440,7 @@ def atomic_release_execution_claim_record(
             "claim_expires_at": None,
             "claim_token_hash": None,
         },
+        tenant_id=tenant_id,
     )
 
 
@@ -467,19 +450,18 @@ def atomic_expire_execution_claim_record(
     record: ExecutionIntentRecord,
     system_actor: AuthPrincipal,
     expired_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
+    require_record_owner(record, tenant_id=tenant_id)
     return _atomic_transition(
         session,
         record=record,
         expected_status=ExecutionIntentStatus.CLAIMED,
         new_status=ExecutionIntentStatus.PENDING,
-        event_type=(
-            ExecutionIntentEventType.CLAIM_EXPIRED
-        ),
+        event_type=(ExecutionIntentEventType.CLAIM_EXPIRED),
         actor=system_actor,
         reason=(
-            "The server-owned claim lease elapsed; "
-            "the intent returned to pending."
+            "The server-owned claim lease elapsed; " "the intent returned to pending."
         ),
         occurred_at=expired_at,
         values={
@@ -490,6 +472,7 @@ def atomic_expire_execution_claim_record(
             "claim_expires_at": None,
             "claim_token_hash": None,
         },
+        tenant_id=tenant_id,
     )
 
 
@@ -500,7 +483,9 @@ def atomic_cancel_execution_intent_record(
     actor: AuthPrincipal,
     reason: str,
     cancelled_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
+    require_record_owner(record, tenant_id=tenant_id)
     return _atomic_transition(
         session,
         record=record,
@@ -512,12 +497,11 @@ def atomic_cancel_execution_intent_record(
         occurred_at=cancelled_at,
         values={
             "cancelled_by_subject": actor.subject,
-            "cancelled_by_display_name": (
-                actor.display_name
-            ),
+            "cancelled_by_display_name": (actor.display_name),
             "cancelled_at": cancelled_at.isoformat(),
             "cancellation_reason": reason,
         },
+        tenant_id=tenant_id,
     )
 
 
@@ -529,7 +513,9 @@ def atomic_invalidate_execution_intent_record(
     actor: AuthPrincipal,
     reason: str,
     invalidated_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
+    require_record_owner(record, tenant_id=tenant_id)
     return _atomic_transition(
         session,
         record=record,
@@ -546,11 +532,10 @@ def atomic_invalidate_execution_intent_record(
             "claimed_at": None,
             "claim_expires_at": None,
             "claim_token_hash": None,
-            "invalidated_at": (
-                invalidated_at.isoformat()
-            ),
+            "invalidated_at": (invalidated_at.isoformat()),
             "invalidation_reason": reason,
         },
+        tenant_id=tenant_id,
     )
 
 
@@ -562,7 +547,9 @@ def atomic_expire_execution_intent_record(
     actor: AuthPrincipal,
     reason: str,
     expired_at: datetime,
+    tenant_id: DomainTenant,
 ) -> ExecutionIntentRecord | None:
+    require_record_owner(record, tenant_id=tenant_id)
     return _atomic_transition(
         session,
         record=record,
@@ -582,6 +569,7 @@ def atomic_expire_execution_intent_record(
             "expired_at": expired_at.isoformat(),
             "expiration_reason": reason,
         },
+        tenant_id=tenant_id,
     )
 
 
@@ -589,16 +577,13 @@ def list_execution_intent_events(
     session: Session,
     *,
     execution_id: str,
+    tenant_id: DomainTenant,
 ) -> list[ExecutionIntentAuditEvent]:
     statement = (
         select(ExecutionIntentEventRecord)
-        .where(
-            ExecutionIntentEventRecord.execution_id
-            == execution_id
-        )
-        .order_by(
-            ExecutionIntentEventRecord.sequence.asc()
-        )
+        .where(tenant_predicate(ExecutionIntentEventRecord, tenant_id))
+        .where(ExecutionIntentEventRecord.execution_id == execution_id)
+        .order_by(ExecutionIntentEventRecord.sequence.asc())
     )
     records = list(session.scalars(statement).all())
 

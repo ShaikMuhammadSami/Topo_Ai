@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    tenant_value,
+)
 
 from hashlib import sha256
 
@@ -31,7 +35,6 @@ from app.services.canonical_identity import (
     resolve_snapshot_entity_identity,
     resolved_snapshot_entity,
 )
-
 
 OWNER_KEYS = (
     "topo.ai/owner-team",
@@ -238,6 +241,8 @@ def _mapping_confidence(
 def create_ownership_mapping(
     session: Session,
     request: OwnershipMappingCreate,
+    *,
+    tenant_id: DomainTenant,
 ):
     value = "|".join(
         [
@@ -264,48 +269,30 @@ def create_ownership_mapping(
         ownership_id=ownership_id,
         fingerprint=fingerprint,
         entity_id=request.entity_id,
-        service_name=(
-            request.service_name
-        ),
-        cluster_name=(
-            request.cluster_name
-        ),
+        service_name=(request.service_name),
+        cluster_name=(request.cluster_name),
         namespace=request.namespace,
-        entity_kind=(
-            request.entity_kind
-        ),
-        entity_name=(
-            request.entity_name
-        ),
-        environment=(
-            request.environment
-        ),
+        entity_kind=(request.entity_kind),
+        entity_name=(request.entity_name),
+        environment=(request.environment),
         owner_team=request.owner_team,
-        owner_email=(
-            request.owner_email
-        ),
-        oncall_contact=(
-            request.oncall_contact
-        ),
-        repository_url=(
-            request.repository_url
-        ),
-        business_capability=(
-            request.business_capability
-        ),
-        criticality=(
-            request.criticality.value
-        ),
+        owner_email=(request.owner_email),
+        oncall_contact=(request.oncall_contact),
+        repository_url=(request.repository_url),
+        business_capability=(request.business_capability),
+        criticality=(request.criticality.value),
         source=request.source.value,
         active=True,
         notes=request.notes,
         created_at=utc_now_iso(),
         updated_at=utc_now_iso(),
+        tenant_id=tenant_value(tenant_id),
     )
 
     return save_ownership_mapping(
         session=session,
         record=record,
+        tenant_id=tenant_id,
     )
 
 
@@ -313,6 +300,8 @@ def resolve_entity_ownership(
     session: Session,
     snapshot: GraphSnapshot,
     entity: Entity,
+    *,
+    tenant_id: DomainTenant,
 ) -> EntityOwnershipResolution:
     service_name = stable_service_name(
         entity
@@ -347,28 +336,17 @@ def resolve_entity_ownership(
         )
     )
 
-    mappings = (
-        find_active_ownership_mappings(
-            session=session,
-            cluster_name=(
-                str(cluster_name)
-                if cluster_name
-                else None
-            ),
-            namespace=(
-                str(namespace)
-                if namespace
-                else None
-            ),
-            entity_id=entity.id,
-            entity_kind=entity.kind,
-            entity_name=entity.name,
-            service_name=service_name,
-            environment=environment,
-            entity_ids=sorted(
-                accepted_entity_ids
-            ),
-        )
+    mappings = find_active_ownership_mappings(
+        session=session,
+        cluster_name=(str(cluster_name) if cluster_name else None),
+        namespace=(str(namespace) if namespace else None),
+        entity_id=entity.id,
+        entity_kind=entity.kind,
+        entity_name=entity.name,
+        service_name=service_name,
+        environment=environment,
+        entity_ids=sorted(accepted_entity_ids),
+        tenant_id=tenant_id,
     )
 
     if mappings:
@@ -553,10 +531,13 @@ def resolve_ownership_by_ids(
     session: Session,
     snapshot_id: str,
     entity_id: str,
+    *,
+    tenant_id: DomainTenant,
 ) -> EntityOwnershipResolution:
     snapshot = load_topology_snapshot(
         session=session,
         snapshot_id=snapshot_id,
+        tenant_id=tenant_id,
     )
 
     if snapshot is None:
@@ -585,4 +566,5 @@ def resolve_ownership_by_ids(
         session=session,
         snapshot=snapshot,
         entity=entity,
+        tenant_id=tenant_id,
     )

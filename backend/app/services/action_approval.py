@@ -1,4 +1,8 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import (
+    DomainTenant,
+    require_record_owner,
+)
 
 import hashlib
 import json
@@ -47,7 +51,6 @@ from app.security.api_tokens import (
 from app.services.execution_readiness import (
     build_incident_execution_readiness,
 )
-
 
 APPROVAL_TTL_ENV = (
     "TOPO_APPROVAL_TTL_MINUTES"
@@ -156,17 +159,15 @@ def _current_readiness(
     session: Session,
     *,
     incident_id: str,
+    tenant_id: DomainTenant,
 ) -> IncidentExecutionReadiness:
     return build_incident_execution_readiness(
         session=session,
         incident_id=incident_id,
-        history_limit=(
-            APPROVAL_READINESS_HISTORY_LIMIT
-        ),
-        min_similarity=(
-            APPROVAL_READINESS_MIN_SIMILARITY
-        ),
+        history_limit=(APPROVAL_READINESS_HISTORY_LIMIT),
+        min_similarity=(APPROVAL_READINESS_MIN_SIMILARITY),
         include_ai=False,
+        tenant_id=tenant_id,
     )
 
 
@@ -488,7 +489,9 @@ def _transition_system(
     status: ActionApprovalStatus,
     reason: str,
     now: datetime,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalRecord:
+    require_record_owner(record, tenant_id=tenant_id)
     event_type = {
         ActionApprovalStatus.EXPIRED: (
             ActionApprovalEventType.EXPIRED
@@ -506,6 +509,7 @@ def _transition_system(
         actor=SYSTEM_PRINCIPAL,
         reason=reason,
         occurred_at=now,
+        tenant_id=tenant_id,
     )
 
 
@@ -516,7 +520,9 @@ def _refresh_active_record(
     readiness: IncidentExecutionReadiness | None,
     readiness_error: str | None,
     now: datetime,
+    tenant_id: DomainTenant,
 ) -> tuple[ActionApprovalRecord, bool]:
+    require_record_owner(record, tenant_id=tenant_id)
     status = ActionApprovalStatus(
         record.status
     )
@@ -536,14 +542,10 @@ def _refresh_active_record(
             _transition_system(
                 session,
                 record=record,
-                status=(
-                    ActionApprovalStatus.EXPIRED
-                ),
-                reason=(
-                    "The server-owned approval TTL "
-                    "elapsed."
-                ),
+                status=(ActionApprovalStatus.EXPIRED),
+                reason=("The server-owned approval TTL " "elapsed."),
                 now=now,
+                tenant_id=tenant_id,
             ),
             False,
         )
@@ -564,11 +566,10 @@ def _refresh_active_record(
             _transition_system(
                 session,
                 record=record,
-                status=(
-                    ActionApprovalStatus.INVALIDATED
-                ),
+                status=(ActionApprovalStatus.INVALIDATED),
                 reason=reason,
                 now=now,
+                tenant_id=tenant_id,
             ),
             False,
         )
@@ -603,23 +604,18 @@ def _refresh_active_record(
         .eligible_for_future_execution
     )
 
-    if (
-        not current_is_eligible
-        or current_fingerprint
-        != record.evidence_fingerprint
-    ):
+    if not current_is_eligible or current_fingerprint != record.evidence_fingerprint:
         return (
             _transition_system(
                 session,
                 record=record,
-                status=(
-                    ActionApprovalStatus.INVALIDATED
-                ),
+                status=(ActionApprovalStatus.INVALIDATED),
                 reason=_stale_reason(
                     stored=stored,
                     current=current_snapshot,
                 ),
                 now=now,
+                tenant_id=tenant_id,
             ),
             False,
         )
@@ -634,6 +630,7 @@ def _readiness_or_error(
     session: Session,
     *,
     incident_id: str,
+    tenant_id: DomainTenant,
 ) -> tuple[
     IncidentExecutionReadiness | None,
     str | None,
@@ -643,6 +640,7 @@ def _readiness_or_error(
             _current_readiness(
                 session,
                 incident_id=incident_id,
+                tenant_id=tenant_id,
             ),
             None,
         )
@@ -784,7 +782,9 @@ def _detail(
     *,
     record: ActionApprovalRecord,
     currently_valid: bool,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
+    require_record_owner(record, tenant_id=tenant_id)
     view = _record_to_view(
         record,
         currently_valid=currently_valid,
@@ -795,9 +795,8 @@ def _detail(
         audit_events=(
             list_action_approval_events(
                 session,
-                approval_id=(
-                    record.approval_id
-                ),
+                approval_id=(record.approval_id),
+                tenant_id=tenant_id,
             )
         ),
     )
@@ -811,11 +810,13 @@ def create_action_approval(
     requester: AuthPrincipal,
     reason: str | None = None,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
     current_time = _utc_now(now)
     readiness = _current_readiness(
         session,
         incident_id=incident_id,
+        tenant_id=tenant_id,
     )
     action = _action(
         readiness,
@@ -858,12 +859,11 @@ def create_action_approval(
 
     # Refresh active records using the same current
     # readiness before applying idempotency.
-    for active in (
-        list_active_action_approval_records(
-            session,
-            incident_id=incident_id,
-            action_id=action_id,
-        )
+    for active in list_active_action_approval_records(
+        session,
+        incident_id=incident_id,
+        action_id=action_id,
+        tenant_id=tenant_id,
     ):
         active, valid = _refresh_active_record(
             session,
@@ -871,23 +871,20 @@ def create_action_approval(
             readiness=readiness,
             readiness_error=None,
             now=current_time,
+            tenant_id=tenant_id,
         )
 
-        if (
-            active.evidence_fingerprint
-            == fingerprint
-            and ActionApprovalStatus(
-                active.status
-            )
-            in {
-                ActionApprovalStatus.PENDING,
-                ActionApprovalStatus.APPROVED,
-            }
-        ):
+        if active.evidence_fingerprint == fingerprint and ActionApprovalStatus(
+            active.status
+        ) in {
+            ActionApprovalStatus.PENDING,
+            ActionApprovalStatus.APPROVED,
+        }:
             return _detail(
                 session,
                 record=active,
                 currently_valid=valid,
+                tenant_id=tenant_id,
             )
 
     ttl = configured_approval_ttl_minutes()
@@ -904,16 +901,15 @@ def create_action_approval(
         requester=requester,
         request_reason=_sanitize_reason(reason),
         requested_at=current_time,
-        expires_at=(
-            current_time
-            + timedelta(minutes=ttl)
-        ),
+        expires_at=(current_time + timedelta(minutes=ttl)),
+        tenant_id=tenant_id,
     )
 
     return _detail(
         session,
         record=record,
         currently_valid=False,
+        tenant_id=tenant_id,
     )
 
 
@@ -923,11 +919,13 @@ def get_action_approval(
     incident_id: str,
     approval_id: str,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
     record = load_action_approval_record(
         session,
         incident_id=incident_id,
         approval_id=approval_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -943,11 +941,10 @@ def get_action_approval(
         ActionApprovalStatus.PENDING,
         ActionApprovalStatus.APPROVED,
     }:
-        readiness, readiness_error = (
-            _readiness_or_error(
-                session,
-                incident_id=incident_id,
-            )
+        readiness, readiness_error = _readiness_or_error(
+            session,
+            incident_id=incident_id,
+            tenant_id=tenant_id,
         )
 
     record, valid = _refresh_active_record(
@@ -956,12 +953,14 @@ def get_action_approval(
         readiness=readiness,
         readiness_error=readiness_error,
         now=current_time,
+        tenant_id=tenant_id,
     )
 
     return _detail(
         session,
         record=record,
         currently_valid=valid,
+        tenant_id=tenant_id,
     )
 
 
@@ -974,6 +973,7 @@ def list_action_approvals(
     limit: int = 50,
     offset: int = 0,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> list[ActionApprovalView]:
     records = list_action_approval_records(
         session,
@@ -982,6 +982,7 @@ def list_action_approvals(
         action_id=action_id,
         limit=limit,
         offset=offset,
+        tenant_id=tenant_id,
     )
     current_time = _utc_now(now)
     has_active = any(
@@ -996,11 +997,10 @@ def list_action_approvals(
     readiness_error: str | None = None
 
     if has_active:
-        readiness, readiness_error = (
-            _readiness_or_error(
-                session,
-                incident_id=incident_id,
-            )
+        readiness, readiness_error = _readiness_or_error(
+            session,
+            incident_id=incident_id,
+            tenant_id=tenant_id,
         )
 
     result: list[ActionApprovalView] = []
@@ -1012,6 +1012,7 @@ def list_action_approvals(
             readiness=readiness,
             readiness_error=readiness_error,
             now=current_time,
+            tenant_id=tenant_id,
         )
 
         if (
@@ -1036,6 +1037,7 @@ def _pending_for_decision(
     incident_id: str,
     approval_id: str,
     now: datetime,
+    tenant_id: DomainTenant,
 ) -> tuple[
     ActionApprovalRecord,
     IncidentExecutionReadiness,
@@ -1044,6 +1046,7 @@ def _pending_for_decision(
         session,
         incident_id=incident_id,
         approval_id=approval_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -1062,11 +1065,10 @@ def _pending_for_decision(
             f"'{record.status}'."
         )
 
-    readiness, readiness_error = (
-        _readiness_or_error(
-            session,
-            incident_id=incident_id,
-        )
+    readiness, readiness_error = _readiness_or_error(
+        session,
+        incident_id=incident_id,
+        tenant_id=tenant_id,
     )
     record, _ = _refresh_active_record(
         session,
@@ -1074,6 +1076,7 @@ def _pending_for_decision(
         readiness=readiness,
         readiness_error=readiness_error,
         now=now,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -1101,6 +1104,7 @@ def decide_action_approval(
     decider: AuthPrincipal,
     reason: str | None = None,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
     if decision not in {
         ActionApprovalStatus.APPROVED,
@@ -1116,6 +1120,7 @@ def decide_action_approval(
         incident_id=incident_id,
         approval_id=approval_id,
         now=current_time,
+        tenant_id=tenant_id,
     )
 
     if (
@@ -1146,15 +1151,14 @@ def decide_action_approval(
         actor=decider,
         reason=_sanitize_reason(reason),
         occurred_at=current_time,
+        tenant_id=tenant_id,
     )
 
     return _detail(
         session,
         record=record,
-        currently_valid=(
-            decision
-            == ActionApprovalStatus.APPROVED
-        ),
+        currently_valid=(decision == ActionApprovalStatus.APPROVED),
+        tenant_id=tenant_id,
     )
 
 
@@ -1166,12 +1170,14 @@ def revoke_action_approval(
     revoker: AuthPrincipal,
     reason: str,
     now: datetime | None = None,
+    tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
     current_time = _utc_now(now)
     record = load_action_approval_record(
         session,
         incident_id=incident_id,
         approval_id=approval_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -1189,11 +1195,10 @@ def revoke_action_approval(
             f"'{record.status}'."
         )
 
-    readiness, readiness_error = (
-        _readiness_or_error(
-            session,
-            incident_id=incident_id,
-        )
+    readiness, readiness_error = _readiness_or_error(
+        session,
+        incident_id=incident_id,
+        tenant_id=tenant_id,
     )
     record, valid = _refresh_active_record(
         session,
@@ -1201,6 +1206,7 @@ def revoke_action_approval(
         readiness=readiness,
         readiness_error=readiness_error,
         now=current_time,
+        tenant_id=tenant_id,
     )
 
     if not valid:
@@ -1222,16 +1228,16 @@ def revoke_action_approval(
         session,
         record=record,
         new_status=ActionApprovalStatus.REVOKED,
-        event_type=(
-            ActionApprovalEventType.REVOKED
-        ),
+        event_type=(ActionApprovalEventType.REVOKED),
         actor=revoker,
         reason=sanitized_reason,
         occurred_at=current_time,
+        tenant_id=tenant_id,
     )
 
     return _detail(
         session,
         record=record,
         currently_valid=False,
+        tenant_id=tenant_id,
     )

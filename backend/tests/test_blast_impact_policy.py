@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import json
 from datetime import datetime, timezone
@@ -39,7 +40,6 @@ from app.services.pinned_runtime_health import (
     PinnedRuntimeHealth,
     pinned_pod_health,
 )
-
 
 NOW = datetime(2026, 8, 23, 12, 0, tzinfo=timezone.utc)
 ROOT = Path(__file__).resolve().parents[2]
@@ -124,6 +124,7 @@ def _ids(result: BlastRadiusResponse) -> set[str]:
 def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine)
     return Session(engine)
 
 
@@ -155,6 +156,7 @@ def _incident(
             occurrence_count=1,
             created_at=now,
             updated_at=now,
+            tenant_id=TEST_TENANT,
         )
     )
     session.commit()
@@ -500,13 +502,14 @@ def test_incident_pin_is_mandatory_and_latest_is_not_used() -> None:
             _service_graph(sibling_ready=True).model_copy(
                 update={"snapshot_id": "snapshot:latest-only"}
             ),
+            tenant_id=TEST_TENANT,
         )
         _incident(session, snapshot_id=None)
         with pytest.raises(
             ValueError,
             match="does not reference a topology snapshot",
         ):
-            calculate_blast_radius(session, "incident:pinned")
+            calculate_blast_radius(session, "incident:pinned", tenant_id=TEST_TENANT)
     finally:
         session.close()
 
@@ -521,11 +524,15 @@ def test_later_topology_cannot_change_historical_blast() -> None:
             sibling_ready=False,
             sibling_reason="ErrImagePull",
         ).model_copy(update={"snapshot_id": "snapshot:later-outage"})
-        save_snapshot(session, pinned)
+        save_snapshot(session, pinned, tenant_id=TEST_TENANT)
         _incident(session, snapshot_id=pinned.snapshot_id)
-        before = calculate_blast_radius(session, "incident:pinned")
-        save_snapshot(session, later)
-        after = calculate_blast_radius(session, "incident:pinned")
+        before = calculate_blast_radius(
+            session, "incident:pinned", tenant_id=TEST_TENANT
+        )
+        save_snapshot(session, later, tenant_id=TEST_TENANT)
+        after = calculate_blast_radius(
+            session, "incident:pinned", tenant_id=TEST_TENANT
+        )
         assert before.model_dump(mode="json") == after.model_dump(mode="json")
         assert "service:one" not in _ids(after)
     finally:
@@ -542,10 +549,12 @@ def test_later_recovery_cannot_rewrite_pinned_service_outage() -> None:
         later = _service_graph(sibling_ready=True).model_copy(
             update={"snapshot_id": "snapshot:later-recovery"}
         )
-        save_snapshot(session, pinned)
+        save_snapshot(session, pinned, tenant_id=TEST_TENANT)
         _incident(session, snapshot_id=pinned.snapshot_id)
-        save_snapshot(session, later)
-        result = calculate_blast_radius(session, "incident:pinned")
+        save_snapshot(session, later, tenant_id=TEST_TENANT)
+        result = calculate_blast_radius(
+            session, "incident:pinned", tenant_id=TEST_TENANT
+        )
         assert "service:one" in _ids(result)
         service = next(item for item in result.affected_entities if item.entity_id == "service:one")
         assert service.aggregate_evidence["snapshot_id"] == "snapshot:pinned-outage"
