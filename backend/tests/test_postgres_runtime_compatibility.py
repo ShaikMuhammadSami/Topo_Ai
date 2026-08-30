@@ -12,6 +12,7 @@ import json
 import os
 import re
 import secrets
+from argparse import Namespace
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -19,6 +20,7 @@ from threading import Barrier
 from uuid import uuid4
 
 import pytest
+import sqlalchemy as sa
 from alembic import command
 from fastapi.testclient import TestClient
 from sqlalchemy import (
@@ -55,6 +57,7 @@ from app.db.schema_management import (
     expected_head,
     inspect_schema_authority,
     schema_differences,
+    script_directory,
 )
 from app.models.build_artifacts import (
     BuildArtifactEvidence,
@@ -189,16 +192,39 @@ pytestmark = pytest.mark.skipif(
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
 DOMAIN_TABLE_NAMES = tuple(sorted(Base.metadata.tables))
+DOMAIN_OWNERSHIP_REVISION = "0005_domain_tenant_ownership"
+TENANT_FOUNDATION_REVISION = "0004_tenant_foundation"
+PH3C_DOMAIN_TABLE_NAMES = tuple(
+    script_directory()
+    .get_revision(DOMAIN_OWNERSHIP_REVISION)
+    .module.PH3C_DOMAIN_TABLES
+)
+POSTGRES_TENANT_A = "tenant:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+POSTGRES_TENANT_B = "tenant:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+POSTGRES_UNKNOWN_TENANT = "tenant:cccccccc-cccc-4ccc-8ccc-cccccccccccc"
 
 
 def _postgres_url() -> str:
     return _synchronous_database_url(POSTGRES_URL)
 
 
-def _upgrade(engine: Engine, revision: str = "head") -> None:
+def _upgrade(
+    engine: Engine,
+    revision: str = "head",
+    *,
+    legacy_tenant_id: str | None = None,
+) -> None:
     with engine.begin() as connection:
+        config = alembic_config(connection=connection)
+        config.cmd_opts = Namespace(
+            x=(
+                []
+                if legacy_tenant_id is None
+                else [f"legacy_tenant_id={legacy_tenant_id}"]
+            )
+        )
         command.upgrade(
-            alembic_config(connection=connection),
+            config,
             revision,
         )
 
@@ -327,6 +353,78 @@ def _domain_table_names(connection) -> set[str]:
     return set(inspect(connection).get_table_names()) & set(DOMAIN_TABLE_NAMES)
 
 
+def _seed_migration_tenant(
+    connection,
+    tenant_id: str,
+    *,
+    status: str = "active",
+) -> None:
+    connection.execute(
+        text(
+            "INSERT INTO tenants "
+            "(tenant_id, display_name, status, created_at, updated_at, "
+            "created_by_subject) VALUES "
+            "(:tenant_id, :display_name, :status, :created_at, :updated_at, "
+            ":created_by_subject)"
+        ),
+        {
+            "tenant_id": tenant_id,
+            "display_name": f"PostgreSQL fixture {tenant_id[-1]}",
+            "status": status,
+            "created_at": NOW.isoformat(),
+            "updated_at": NOW.isoformat(),
+            "created_by_subject": "test:ph3c-postgres-operator",
+        },
+    )
+
+
+def _migration_string_value(table_name: str, column) -> str:
+    if column.name.endswith("_json"):
+        return "{}"
+    if column.name.endswith("_at"):
+        return NOW.isoformat()
+    value = f"legacy-{table_name}-{column.name}"
+    length = getattr(column.type, "length", None)
+    return value[:length] if length is not None else value
+
+
+def _seed_pre_tenancy_record(
+    connection,
+    table_name: str,
+    **overrides,
+) -> dict[str, object]:
+    table = sa.Table(
+        table_name,
+        sa.MetaData(),
+        autoload_with=connection,
+    )
+    values: dict[str, object] = {}
+    for column in table.columns:
+        if column.name in overrides:
+            values[column.name] = overrides[column.name]
+        elif column.nullable or column.server_default is not None:
+            continue
+        elif isinstance(column.type, Boolean):
+            values[column.name] = False
+        elif isinstance(column.type, Integer):
+            values[column.name] = 1
+        elif isinstance(column.type, Float):
+            values[column.name] = 0.5
+        elif isinstance(column.type, (String, Text)):
+            values[column.name] = _migration_string_value(
+                table_name,
+                column,
+            )
+        else:  # pragma: no cover - fails explicitly for a new storage type
+            raise AssertionError(
+                f"Unsupported migration fixture type {column.type} for "
+                f"{table_name}.{column.name}"
+            )
+    values.update(overrides)
+    connection.execute(table.insert().values(**values))
+    return values
+
+
 def test_postgresql_environment_and_unqualified_driver_selection(
     postgres_engine: Engine,
 ) -> None:
@@ -367,23 +465,23 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
         assert len(_domain_table_names(connection)) == 43
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 733
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 768
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
         ) == 43
-        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 306
+        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 348
         assert sum(
             1
             for table in Base.metadata.tables.values()
             for index in table.indexes
             if index.unique
-        ) == 9
+        ) == 16
         assert sum(
             1
             for table in Base.metadata.tables.values()
             for constraint in table.constraints
             if constraint.__class__.__name__ == "UniqueConstraint"
-        ) == 14
+        ) == 24
 
         database_indexes = [
             item
@@ -391,9 +489,9 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for item in inspector.get_indexes(table_name)
             if not item.get("duplicates_constraint")
         ]
-        assert len(database_indexes) == 306
-        assert sum(bool(item["unique"]) for item in database_indexes) == 9
-        assert sum(not item["unique"] for item in database_indexes) == 297
+        assert len(database_indexes) == 348
+        assert sum(bool(item["unique"]) for item in database_indexes) == 16
+        assert sum(not item["unique"] for item in database_indexes) == 332
         assert all(
             inspector.get_pk_constraint(name).get("constrained_columns")
             for name in DOMAIN_TABLE_NAMES
@@ -463,7 +561,7 @@ def test_empty_postgresql_startup_fails_closed_without_creating_domain_tables() 
             assert _domain_table_names(connection) == set()
 
 
-def test_postgresql_0001_to_0002_to_0003_to_0004_lifecycle() -> None:
+def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
     with _temporary_database("auth_migration") as engine:
         _upgrade(engine, "0001_current_schema")
         with engine.connect() as connection:
@@ -490,9 +588,23 @@ def test_postgresql_0001_to_0002_to_0003_to_0004_lifecycle() -> None:
         with pytest.raises(SchemaAuthorityError, match="state=behind"):
             init_db(bind=engine)
 
-        _upgrade(engine)
+        _upgrade(engine, TENANT_FOUNDATION_REVISION)
         with engine.connect() as connection:
             assert current_revisions(connection) == ("0004_tenant_foundation",)
+            assert "tenant_id" not in {
+                column["name"]
+                for column in inspect(connection).get_columns(
+                    "topology_snapshots"
+                )
+            }
+        with pytest.raises(SchemaAuthorityError, match="state=behind"):
+            init_db(bind=engine)
+
+        _upgrade(engine)
+        with engine.connect() as connection:
+            assert current_revisions(connection) == (
+                DOMAIN_OWNERSHIP_REVISION,
+            )
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -536,6 +648,162 @@ def test_postgresql_0001_to_0002_to_0003_to_0004_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
+            assert inspect_schema_authority(connection).ok
+
+
+def test_postgresql_domain_backfill_authority_fails_atomically() -> None:
+    with _temporary_database("tenant_backfill_guard") as engine:
+        _upgrade(engine, TENANT_FOUNDATION_REVISION)
+        with engine.begin() as connection:
+            _seed_migration_tenant(connection, POSTGRES_TENANT_A)
+            _seed_migration_tenant(
+                connection,
+                POSTGRES_TENANT_B,
+                status="disabled",
+            )
+            _seed_pre_tenancy_record(
+                connection,
+                "topology_snapshots",
+                snapshot_id="snapshot:postgres-backfill-guard",
+            )
+
+        attempts = (
+            (None, "LEGACY_TENANT_REQUIRED"),
+            (POSTGRES_UNKNOWN_TENANT, "LEGACY_TENANT_NOT_FOUND"),
+            (POSTGRES_TENANT_B, "LEGACY_TENANT_DISABLED"),
+        )
+        for tenant_id, error in attempts:
+            with pytest.raises(RuntimeError, match=error):
+                _upgrade(engine, legacy_tenant_id=tenant_id)
+            with engine.connect() as connection:
+                assert current_revisions(connection) == (
+                    TENANT_FOUNDATION_REVISION,
+                )
+                assert "tenant_id" not in {
+                    column["name"]
+                    for column in inspect(connection).get_columns(
+                        "topology_snapshots"
+                    )
+                }
+
+
+def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
+    with _temporary_database("tenant_backfill") as engine:
+        _upgrade(engine, TENANT_FOUNDATION_REVISION)
+        with engine.begin() as connection:
+            _seed_migration_tenant(connection, POSTGRES_TENANT_A)
+            _seed_migration_tenant(connection, POSTGRES_TENANT_B)
+            identities: dict[str, str] = {}
+            for table_name in PH3C_DOMAIN_TABLE_NAMES:
+                overrides: dict[str, object] = {}
+                if table_name == "topology_snapshots":
+                    overrides["snapshot_id"] = "snapshot:postgres-legacy"
+                elif table_name == "signals":
+                    overrides["signal_id"] = "signal:postgres-legacy"
+                    overrides["involved_entity_id"] = "entity:postgres-legacy"
+                elif table_name == "incidents":
+                    overrides.update(
+                        incident_id="incident:postgres-legacy",
+                        topology_snapshot_id="snapshot:postgres-legacy",
+                        primary_signal_id="signal:postgres-legacy",
+                    )
+                elif table_name == "causal_analyses":
+                    overrides.update(
+                        analysis_id="causal-analysis:postgres-legacy",
+                        incident_id="incident:postgres-legacy",
+                    )
+                elif table_name == "change_events":
+                    overrides["event_id"] = "change-event:postgres-legacy"
+                elif table_name == "change_entity_links":
+                    overrides.update(
+                        link_id="change-link:postgres-legacy",
+                        event_id="change-event:postgres-legacy",
+                        entity_id="entity:postgres-legacy",
+                        snapshot_id="snapshot:postgres-legacy",
+                    )
+                elif table_name == "post_incident_reports":
+                    overrides.update(
+                        report_id="report:postgres-legacy",
+                        incident_id="incident:postgres-legacy",
+                    )
+
+                values = _seed_pre_tenancy_record(
+                    connection,
+                    table_name,
+                    **overrides,
+                )
+                primary_key = inspect(connection).get_pk_constraint(
+                    table_name
+                )["constrained_columns"][0]
+                identities[table_name] = str(values[primary_key])
+
+        _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
+        with engine.connect() as connection:
+            assert current_revisions(connection) == (
+                DOMAIN_OWNERSHIP_REVISION,
+            )
+            assert inspect_schema_authority(connection).ok
+            assert schema_differences(connection) == ()
+            assert len(_domain_table_names(connection)) == 43
+            for table_name, identity in identities.items():
+                table = sa.Table(
+                    table_name,
+                    sa.MetaData(),
+                    autoload_with=connection,
+                )
+                primary_key = next(iter(table.primary_key.columns))
+                row = connection.execute(
+                    sa.select(primary_key, table.c.tenant_id)
+                ).one()
+                assert str(row[0]) == identity
+                assert row[1] == POSTGRES_TENANT_B
+                assert connection.scalar(
+                    sa.select(sa.func.count()).select_from(table).where(
+                        table.c.tenant_id.is_(None)
+                    )
+                ) == 0
+
+            assert connection.scalar(
+                text(
+                    "SELECT COUNT(*) FROM tenants WHERE tenant_id NOT IN "
+                    "(:tenant_a, :tenant_b)"
+                ),
+                {
+                    "tenant_a": POSTGRES_TENANT_A,
+                    "tenant_b": POSTGRES_TENANT_B,
+                },
+            ) == 0
+            assert connection.scalar(
+                text("SELECT COUNT(*) FROM tenant_memberships")
+            ) == 0
+
+        with engine.begin() as connection:
+            command.downgrade(
+                alembic_config(connection=connection),
+                TENANT_FOUNDATION_REVISION,
+            )
+        with engine.connect() as connection:
+            assert current_revisions(connection) == (
+                TENANT_FOUNDATION_REVISION,
+            )
+            assert "tenant_id" not in {
+                column["name"]
+                for column in inspect(connection).get_columns(
+                    "topology_snapshots"
+                )
+            }
+
+        _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
+        with engine.connect() as connection:
+            row = connection.execute(
+                text(
+                    "SELECT snapshot_id, tenant_id FROM topology_snapshots"
+                )
+            ).one()
+            assert row == (
+                "snapshot:postgres-legacy",
+                POSTGRES_TENANT_B,
+            )
             assert inspect_schema_authority(connection).ok
 
 

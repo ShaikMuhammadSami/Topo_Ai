@@ -26,11 +26,12 @@ from app.db.schema_management import (
 
 
 DOMAIN_TABLE_COUNT = 43
-DOMAIN_COLUMN_COUNT = 733
-EXPECTED_HEAD = "0004_tenant_foundation"
+DOMAIN_COLUMN_COUNT = 768
+EXPECTED_HEAD = "0005_domain_tenant_ownership"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"
+TENANT_FOUNDATION_REVISION = "0004_tenant_foundation"
 BASELINE_SHA256 = (
     "b02368d0d15445417a5ede9445a267f34da9d50dddb181870d972bd23124b8a6"
 )
@@ -39,6 +40,9 @@ SESSION_SHA256 = (
 )
 API_CREDENTIAL_SHA256 = (
     "eae6ba5cf16a4e68161a710edfa29172e20c9dbd6f8739aca981c4a8d4dfac73"
+)
+TENANT_FOUNDATION_SHA256 = (
+    "cbcb14ff6c8d70c1a4f4039e5436d039c599ebc842be8db333d6ca4ed66a9a05"
 )
 TENANT_TABLES = {
     "tenants",
@@ -116,9 +120,9 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
         for table in domain_tables
         for index in inspector.get_indexes(table)
     ]
-    assert len(named_multi_column_uniques) == 11
-    assert sum(bool(index["unique"]) for index in indexes) == 9
-    assert len(indexes) == 306
+    assert len(named_multi_column_uniques) == 21
+    assert sum(bool(index["unique"]) for index in indexes) == 16
+    assert len(indexes) == 348
 
     with migration_engine.connect() as connection:
         assert schema_differences(connection) == ()
@@ -286,6 +290,10 @@ def test_tenant_revision_is_one_narrow_static_addition() -> None:
     )
     source = revision_path.read_text(encoding="utf-8")
 
+    assert (
+        hashlib.sha256(revision_path.read_bytes()).hexdigest()
+        == TENANT_FOUNDATION_SHA256
+    )
     assert "from app" not in source
     assert "Base.metadata" not in source
     assert 'revision: str = "0004_tenant_foundation"' in source
@@ -308,7 +316,29 @@ def test_tenant_revision_is_one_narrow_static_addition() -> None:
         assert forbidden not in source
 
 
-def test_sqlite_upgrade_from_0001_through_0002_0003_to_0004(
+def test_domain_tenant_revision_is_static_and_model_independent() -> None:
+    revision_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0005_domain_tenant_ownership.py"
+    )
+    source = revision_path.read_text(encoding="utf-8")
+
+    assert "from app" not in source
+    assert "Base.metadata" not in source
+    assert 'revision: str = "0005_domain_tenant_ownership"' in source
+    assert (
+        'down_revision: str | Sequence[str] | None = '
+        '"0004_tenant_foundation"'
+    ) in source
+    assert "legacy_tenant_id" in source
+    assert "LEGACY_TENANT_REQUIRED" in source
+    assert "LEGACY_TENANT_NOT_FOUND" in source
+    assert "LEGACY_TENANT_DISABLED" in source
+
+
+def test_sqlite_upgrade_from_0001_through_0002_0003_0004_to_0005(
     migration_engine: Engine,
 ) -> None:
     _upgrade(migration_engine, BASELINE_REVISION)
@@ -338,11 +368,35 @@ def test_sqlite_upgrade_from_0001_through_0002_0003_to_0004(
     with pytest.raises(SchemaAuthorityError, match="state=behind"):
         verify_database_revision(migration_engine)
 
+    _upgrade(migration_engine, TENANT_FOUNDATION_REVISION)
+    with migration_engine.connect() as connection:
+        assert current_revisions(connection) == (TENANT_FOUNDATION_REVISION,)
+    with pytest.raises(SchemaAuthorityError, match="state=behind"):
+        verify_database_revision(migration_engine)
+
     _upgrade(migration_engine)
     assert _domain_tables(migration_engine) == set(Base.metadata.tables)
     with migration_engine.connect() as connection:
         assert current_revisions(connection) == (EXPECTED_HEAD,)
         assert schema_differences(connection) == ()
+
+
+def test_disposable_0005_downgrade_preserves_0004_schema(
+    migration_engine: Engine,
+) -> None:
+    _upgrade(migration_engine)
+    _downgrade(migration_engine, TENANT_FOUNDATION_REVISION)
+
+    inspector = inspect(migration_engine)
+    assert _domain_tables(migration_engine) == set(Base.metadata.tables)
+    assert all(
+        "tenant_id"
+        not in {column["name"] for column in inspector.get_columns(table)}
+        for table in set(Base.metadata.tables) - TENANT_TABLES
+        if table not in {"agent_enrollment_tokens", "topo_agents", "change_sources"}
+    )
+    with migration_engine.connect() as connection:
+        assert current_revisions(connection) == (TENANT_FOUNDATION_REVISION,)
 
 
 def test_disposable_0004_downgrade_preserves_0003_schema(

@@ -10,6 +10,7 @@ import pytest
 
 from evaluation.lineage_distractor_robustness import (
     DEFAULT_SEED_DB,
+    DISPOSABLE_EVALUATION_TENANT_ID,
     DISTRACTOR_COUNTS,
     EXPECTED_SEED_SHA256,
     FIRST_DIVERGENCE_ORDER,
@@ -31,6 +32,7 @@ from evaluation.lineage_distractor_robustness import (
     expected_event_id,
     insertion_permutation,
     parse_utc,
+    prepare_disposable_product_database,
     product_distractor_input,
     product_input_contains_answer_hint,
     run_scenario,
@@ -172,6 +174,55 @@ def test_copy_mutation_cannot_mutate_seed(tmp_path: Path) -> None:
         connection.close()
     assert sha256_file(seed) == original_hash
     assert sha256_file(destination) != original_hash
+
+
+def test_disposable_product_schema_preparation_preserves_frozen_seed(
+    tmp_path: Path,
+) -> None:
+    seed_before = sha256_file(DEFAULT_SEED_DB)
+    destination = tmp_path / "current-product-copy.db"
+    copy_seed_database(DEFAULT_SEED_DB, destination)
+
+    prepare_disposable_product_database(destination)
+
+    connection = sqlite3.connect(destination)
+    try:
+        assert connection.execute(
+            "SELECT version_num FROM alembic_version"
+        ).fetchone() == ("0005_domain_tenant_ownership",)
+        assert connection.execute(
+            "SELECT tenant_id FROM tenants"
+        ).fetchall() == [(DISPOSABLE_EVALUATION_TENANT_ID,)]
+        domain_tables = []
+        for (table_name,) in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        ):
+            columns = {
+                str(row[1])
+                for row in connection.execute(
+                    f'PRAGMA table_info("{table_name}")'
+                )
+            }
+            if "tenant_id" in columns and table_name not in {
+                "tenants",
+                "tenant_memberships",
+                "service_api_tenant_bindings",
+            }:
+                domain_tables.append(table_name)
+                assert connection.execute(
+                    f'SELECT COUNT(*) FROM "{table_name}" '
+                    "WHERE tenant_id IS NULL"
+                ).fetchone() == (0,)
+        assert len(domain_tables) == 35
+    finally:
+        connection.close()
+
+    assert sha256_file(DEFAULT_SEED_DB) == seed_before == EXPECTED_SEED_SHA256
+
+
+def test_product_schema_preparation_refuses_frozen_database() -> None:
+    with pytest.raises(ValueError, match="frozen evaluation database"):
+        prepare_disposable_product_database(DEFAULT_SEED_DB)
 
 
 @pytest.mark.parametrize("count", DISTRACTOR_COUNTS[1:])
