@@ -18,7 +18,17 @@ def utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-class SnapshotRecord(Base):
+class TenantOwnedRecordMixin:
+    """Transitional PH-3C ownership metadata for customer-domain rows."""
+
+    tenant_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+        index=True,
+    )
+
+
+class SnapshotRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "topology_snapshots"
 
     snapshot_id: Mapped[str] = mapped_column(
@@ -90,7 +100,7 @@ class SnapshotRecord(Base):
         default=utc_now_iso,
     )
 
-class IdentityResolutionRecord(Base):
+class IdentityResolutionRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "identity_resolutions"
 
     snapshot_id: Mapped[str] = mapped_column(
@@ -137,7 +147,7 @@ class IdentityResolutionRecord(Base):
     )
 
 
-class IdentityOverrideRecord(Base):
+class IdentityOverrideRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "identity_overrides"
 
     __table_args__ = (
@@ -147,6 +157,14 @@ class IdentityOverrideRecord(Base):
             "entity_kind",
             "entity_name",
             name="uq_identity_override_target",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "cluster_name",
+            "namespace",
+            "entity_kind",
+            "entity_name",
+            name="uq_tenant_identity_override_target",
         ),
     )
 
@@ -210,7 +228,7 @@ class IdentityOverrideRecord(Base):
         default=utc_now_iso,
     )    
 
-class SignalRecord(Base):
+class SignalRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "signals"
 
     signal_id: Mapped[str] = mapped_column(
@@ -336,7 +354,7 @@ class SignalRecord(Base):
         default=utc_now_iso,
     )
 
-class ChangeRecord(Base):
+class ChangeRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "changes"
 
     change_id: Mapped[str] = mapped_column(
@@ -458,7 +476,7 @@ class ChangeRecord(Base):
         default=utc_now_iso,
     )
 
-class IncidentAnalysisRecord(Base):
+class IncidentAnalysisRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_analyses"
 
     analysis_id: Mapped[str] = mapped_column(
@@ -547,7 +565,7 @@ class IncidentAnalysisRecord(Base):
         default=utc_now_iso,
     )
 
-class RecommendationRecord(Base):
+class RecommendationRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = (
         "remediation_recommendations"
     )
@@ -702,7 +720,7 @@ class RecommendationRecord(Base):
         )
     )
 
-class RecoveryVerificationRecord(Base):
+class RecoveryVerificationRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = (
         "recovery_verifications"
     )
@@ -874,7 +892,7 @@ class RecoveryVerificationRecord(Base):
         )
     )
 
-class IncidentRecord(Base):
+class IncidentRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incidents"
 
     incident_id: Mapped[str] = mapped_column(
@@ -1032,8 +1050,17 @@ class IncidentRecord(Base):
     )
 
 
-class IncidentOutcomeRecord(Base):
+class IncidentOutcomeRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_outcomes"
+
+    __table_args__ = (
+        Index(
+            "ix_tenant_incident_outcomes_incident_id",
+            "tenant_id",
+            "incident_id",
+            unique=True,
+        ),
+    )
 
     outcome_id: Mapped[str] = mapped_column(
         String(255),
@@ -1114,8 +1141,17 @@ class IncidentOutcomeRecord(Base):
         default=utc_now_iso,
     )
 
-class OwnershipMappingRecord(Base):
+class OwnershipMappingRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "ownership_mappings"
+
+    __table_args__ = (
+        Index(
+            "ix_tenant_ownership_mappings_fingerprint",
+            "tenant_id",
+            "fingerprint",
+            unique=True,
+        ),
+    )
 
     ownership_id: Mapped[str] = mapped_column(
         String(255),
@@ -1236,7 +1272,7 @@ class OwnershipMappingRecord(Base):
         default=utc_now_iso,
     )
 
-class WebhookEndpointRecord(Base):
+class WebhookEndpointRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "webhook_endpoints"
 
     webhook_id: Mapped[str] = mapped_column(
@@ -1305,7 +1341,7 @@ class WebhookEndpointRecord(Base):
     )
 
 
-class WebhookDeliveryRecord(Base):
+class WebhookDeliveryRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "webhook_deliveries"
 
     __table_args__ = (
@@ -1313,6 +1349,12 @@ class WebhookDeliveryRecord(Base):
             "webhook_id",
             "event_id",
             name="uq_webhook_delivery_event",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "webhook_id",
+            "event_id",
+            name="uq_tenant_webhook_delivery_event",
         ),
     )
 
@@ -1405,7 +1447,7 @@ class WebhookDeliveryRecord(Base):
         default=utc_now_iso,
     )
 
-class IncidentExplanationRecord(Base):
+class IncidentExplanationRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_explanations"
 
     explanation_id: Mapped[str] = mapped_column(
@@ -1492,7 +1534,7 @@ class IncidentExplanationRecord(Base):
         default=utc_now_iso,
     )
 
-class CopilotSessionRecord(Base):
+class CopilotSessionRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_copilot_sessions"
 
     session_id: Mapped[str] = mapped_column(
@@ -1542,7 +1584,7 @@ class CopilotSessionRecord(Base):
     )
 
 
-class CopilotMessageRecord(Base):
+class CopilotMessageRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_copilot_messages"
 
     message_id: Mapped[str] = mapped_column(
@@ -1617,7 +1659,7 @@ class CopilotMessageRecord(Base):
         default=utc_now_iso,
     )
 
-class InvestigationPlanRecord(Base):
+class InvestigationPlanRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_investigation_plans"
 
     plan_id: Mapped[str] = mapped_column(
@@ -1716,7 +1758,7 @@ class InvestigationPlanRecord(Base):
     )
 
 
-class InvestigationStepRecord(Base):
+class InvestigationStepRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "incident_investigation_steps"
 
     __table_args__ = (
@@ -1726,6 +1768,12 @@ class InvestigationStepRecord(Base):
             name=(
                 "uq_investigation_plan_sequence"
             ),
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "plan_id",
+            "sequence",
+            name="uq_tenant_investigation_plan_sequence",
         ),
     )
 
@@ -1831,7 +1879,7 @@ class InvestigationStepRecord(Base):
         default=utc_now_iso,
     )
 
-class PostIncidentReportRecord(Base):
+class PostIncidentReportRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "post_incident_reports"
 
     __table_args__ = (
@@ -1839,6 +1887,12 @@ class PostIncidentReportRecord(Base):
             "incident_id",
             "version",
             name="uq_post_incident_report_version",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "incident_id",
+            "version",
+            name="uq_tenant_post_incident_report_version",
         ),
     )
 
@@ -1946,7 +2000,7 @@ class PostIncidentReportRecord(Base):
     )
 
 
-class ReportActionItemRecord(Base):
+class ReportActionItemRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "post_incident_report_actions"
 
     __table_args__ = (
@@ -1954,6 +2008,12 @@ class ReportActionItemRecord(Base):
             "report_id",
             "sequence",
             name="uq_post_incident_report_action_sequence",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "report_id",
+            "sequence",
+            name="uq_tenant_post_incident_report_action_sequence",
         ),
     )
 
@@ -2273,7 +2333,7 @@ class TopoAgentRecord(Base):
         default=utc_now_iso,
     )
 
-class RuntimeSensorRecord(Base):
+class RuntimeSensorRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "runtime_sensors"
 
     __table_args__ = (
@@ -2282,6 +2342,13 @@ class RuntimeSensorRecord(Base):
             "node_name",
             "source",
             name="uq_runtime_sensor_agent_node_source",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "agent_id",
+            "node_name",
+            "source",
+            name="uq_tenant_runtime_sensor_agent_node_source",
         ),
     )
 
@@ -2422,7 +2489,7 @@ class RuntimeSensorRecord(Base):
     )
 
 
-class RuntimeDependencyRecord(Base):
+class RuntimeDependencyRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "runtime_dependencies"
 
     runtime_dependency_id: Mapped[str] = mapped_column(
@@ -2575,7 +2642,7 @@ class RuntimeDependencyRecord(Base):
     )
 
 
-class RuntimeProcessRecord(Base):
+class RuntimeProcessRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "runtime_processes"
 
     runtime_process_id: Mapped[str] = mapped_column(
@@ -2705,7 +2772,7 @@ class RuntimeProcessRecord(Base):
         default=utc_now_iso,
     )
 
-class CloudAccountRecord(Base):
+class CloudAccountRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "cloud_accounts"
 
     cloud_account_id: Mapped[str] = (
@@ -2778,7 +2845,7 @@ class CloudAccountRecord(Base):
     )
 
 
-class CloudResourceRecord(Base):
+class CloudResourceRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "cloud_resources"
 
     cloud_resource_id: Mapped[str] = (
@@ -2916,7 +2983,7 @@ class CloudResourceRecord(Base):
         )
     )
 
-class BuildArtifactEvidenceRecord(Base):
+class BuildArtifactEvidenceRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "build_artifact_evidence"
 
     __table_args__ = (
@@ -2928,6 +2995,16 @@ class BuildArtifactEvidenceRecord(Base):
             "image_digest",
             "provider_evidence_id",
             name="uq_build_artifact_provider_fact",
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "provider",
+            "repository_id",
+            "workflow_run_id",
+            "run_attempt",
+            "image_digest",
+            "provider_evidence_id",
+            name="uq_tenant_build_artifact_provider_fact",
         ),
     )
 
@@ -3089,8 +3166,17 @@ class BuildArtifactEvidenceRecord(Base):
     )
 
 
-class ChangeEventRecord(Base):
+class ChangeEventRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "change_events"
+
+    __table_args__ = (
+        Index(
+            "ix_tenant_change_events_event_fingerprint",
+            "tenant_id",
+            "event_fingerprint",
+            unique=True,
+        ),
+    )
 
     event_id: Mapped[str] = mapped_column(
         String(255),
@@ -3333,7 +3419,7 @@ class ChangeEventRecord(Base):
     )
 
 
-class ChangeEntityLinkRecord(Base):
+class ChangeEntityLinkRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "change_entity_links"
 
     __table_args__ = (
@@ -3344,6 +3430,13 @@ class ChangeEntityLinkRecord(Base):
             name=(
                 "uq_change_event_entity_link"
             ),
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "event_id",
+            "entity_id",
+            "link_type",
+            name="uq_tenant_change_event_entity_link",
         ),
     )
 
@@ -3509,8 +3602,17 @@ class ChangeSourceRecord(Base):
     )
 
 
-class ChangeSourceDeliveryRecord(Base):
+class ChangeSourceDeliveryRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "change_source_deliveries"
+
+    __table_args__ = (
+        Index(
+            "ix_tenant_change_source_deliveries_delivery_key",
+            "tenant_id",
+            "delivery_key",
+            unique=True,
+        ),
+    )
 
     delivery_id: Mapped[str] = mapped_column(
         String(255),
@@ -3591,7 +3693,7 @@ class ChangeSourceDeliveryRecord(Base):
     )
 
 
-class ChangeSourceDeadLetterRecord(Base):
+class ChangeSourceDeadLetterRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "change_source_dead_letters"
 
     dead_letter_id: Mapped[str] = mapped_column(
@@ -3656,7 +3758,7 @@ class ChangeSourceDeadLetterRecord(Base):
         default=utc_now_iso,
     )
 
-class CausalAnalysisRecord(Base):
+class CausalAnalysisRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "causal_analyses"
 
     analysis_id: Mapped[str] = mapped_column(
@@ -3727,8 +3829,17 @@ class CausalAnalysisRecord(Base):
     )
 
 
-class ActionApprovalRecord(Base):
+class ActionApprovalRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "action_approvals"
+
+    __table_args__ = (
+        Index(
+            "ix_tenant_action_approvals_pending_key",
+            "tenant_id",
+            "pending_key",
+            unique=True,
+        ),
+    )
 
     approval_id: Mapped[str] = mapped_column(
         String(255),
@@ -3938,7 +4049,7 @@ class ActionApprovalRecord(Base):
     )
 
 
-class ActionApprovalEventRecord(Base):
+class ActionApprovalEventRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "action_approval_events"
 
     __table_args__ = (
@@ -3948,6 +4059,12 @@ class ActionApprovalEventRecord(Base):
             name=(
                 "uq_action_approval_event_sequence"
             ),
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "approval_id",
+            "sequence",
+            name="uq_tenant_action_approval_event_sequence",
         ),
     )
 
@@ -4032,8 +4149,23 @@ class ActionApprovalEventRecord(Base):
     )
 
 
-class ExecutionIntentRecord(Base):
+class ExecutionIntentRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "execution_intents"
+
+    __table_args__ = (
+        Index(
+            "ix_tenant_execution_intents_approval_id",
+            "tenant_id",
+            "approval_id",
+            unique=True,
+        ),
+        Index(
+            "ix_tenant_execution_intents_idempotency_key",
+            "tenant_id",
+            "idempotency_key",
+            unique=True,
+        ),
+    )
 
     execution_id: Mapped[str] = mapped_column(
         String(255),
@@ -4287,7 +4419,7 @@ class ExecutionIntentRecord(Base):
     )
 
 
-class ExecutionIntentEventRecord(Base):
+class ExecutionIntentEventRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "execution_intent_events"
 
     __table_args__ = (
@@ -4297,6 +4429,12 @@ class ExecutionIntentEventRecord(Base):
             name=(
                 "uq_execution_intent_event_sequence"
             ),
+        ),
+        UniqueConstraint(
+            "tenant_id",
+            "execution_id",
+            "sequence",
+            name="uq_tenant_execution_intent_event_sequence",
         ),
     )
 

@@ -7,6 +7,7 @@ import random
 import shutil
 import sqlite3
 import sys
+from argparse import Namespace
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -33,6 +34,9 @@ DEFAULT_OUTPUT_ROOT = (
 
 EXPECTED_SEED_SHA256 = (
     "9f3918a027c6d9a7bbd679495c48b387c9a1ac8c86141f85cf8b4495cd00b69f"
+)
+DISPOSABLE_EVALUATION_TENANT_ID = (
+    "tenant:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
 )
 DISTRACTOR_COUNTS = (0, 1, 5, 10, 20, 50)
 INSERTION_ORDER_SEEDS = (0, 1, 2)
@@ -382,10 +386,87 @@ def _ensure_backend_import_path() -> None:
         sys.path.insert(0, value)
 
 
+def prepare_disposable_product_database(database_path: Path) -> None:
+    """Upgrade only an isolated evaluation copy to the current ORM schema."""
+
+    database_path = database_path.resolve()
+    if database_path == DEFAULT_SEED_DB.resolve():
+        raise ValueError("Refusing to prepare the frozen evaluation database.")
+
+    connection = sqlite3.connect(database_path)
+    try:
+        table_names = {
+            str(row[0])
+            for row in connection.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+        if "alembic_version" in table_names:
+            revisions = tuple(
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT version_num FROM alembic_version"
+                )
+            )
+            if revisions == ("0005_domain_tenant_ownership",):
+                return
+            raise ValueError(
+                "Disposable evaluation database has unexpected migration state."
+            )
+        if len(table_names) != 38:
+            raise ValueError(
+                "Disposable evaluation database is not the accepted "
+                "38-table pre-tenancy fixture."
+            )
+    finally:
+        connection.close()
+
+    _ensure_backend_import_path()
+    from alembic import command
+    from sqlalchemy import create_engine, text
+
+    from app.db.schema_management import alembic_config
+
+    engine = create_engine(
+        f"sqlite+pysqlite:///{database_path.as_posix()}"
+    )
+    try:
+        with engine.begin() as migration_connection:
+            config = alembic_config(connection=migration_connection)
+            config.cmd_opts = Namespace(x=[])
+            command.stamp(config, "0001_current_schema")
+            command.upgrade(config, "0004_tenant_foundation")
+            migration_connection.execute(
+                text(
+                    "INSERT INTO tenants "
+                    "(tenant_id, display_name, status, created_at, "
+                    "updated_at, created_by_subject) VALUES "
+                    "(:tenant_id, :display_name, 'active', :created_at, "
+                    ":created_at, :created_by_subject)"
+                ),
+                {
+                    "tenant_id": DISPOSABLE_EVALUATION_TENANT_ID,
+                    "display_name": "Disposable evaluation fixture",
+                    "created_at": "2026-08-30T00:00:00+00:00",
+                    "created_by_subject": "evaluation:fixture-migration",
+                },
+            )
+            config.cmd_opts = Namespace(
+                x=[
+                    "legacy_tenant_id="
+                    f"{DISPOSABLE_EVALUATION_TENANT_ID}"
+                ]
+            )
+            command.upgrade(config, "0005_domain_tenant_ownership")
+    finally:
+        engine.dispose()
+
+
 def _scenario_engine(database_path: Path):
     _ensure_backend_import_path()
     from sqlalchemy import create_engine
 
+    prepare_disposable_product_database(database_path)
     return create_engine(f"sqlite+pysqlite:///{database_path.resolve().as_posix()}")
 
 
