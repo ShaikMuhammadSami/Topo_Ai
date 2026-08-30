@@ -25,14 +25,26 @@ from app.db.schema_management import (
 )
 
 
-DOMAIN_TABLE_COUNT = 40
-DOMAIN_COLUMN_COUNT = 715
-EXPECTED_HEAD = "0003_auth_api_credentials"
+DOMAIN_TABLE_COUNT = 43
+DOMAIN_COLUMN_COUNT = 733
+EXPECTED_HEAD = "0004_tenant_foundation"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
+API_CREDENTIAL_REVISION = "0003_auth_api_credentials"
 BASELINE_SHA256 = (
     "b02368d0d15445417a5ede9445a267f34da9d50dddb181870d972bd23124b8a6"
 )
+SESSION_SHA256 = (
+    "4eb2930bff89944da5e9ea24f33b80f170d0f82e40f0ab508a07b2dc6b624460"
+)
+API_CREDENTIAL_SHA256 = (
+    "eae6ba5cf16a4e68161a710edfa29172e20c9dbd6f8739aca981c4a8d4dfac73"
+)
+TENANT_TABLES = {
+    "tenants",
+    "tenant_memberships",
+    "service_api_tenant_bindings",
+}
 LEGACY_TABLES = {
     "change_dead_letters",
     "integration_deliveries",
@@ -104,9 +116,9 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
         for table in domain_tables
         for index in inspector.get_indexes(table)
     ]
-    assert len(named_multi_column_uniques) == 10
+    assert len(named_multi_column_uniques) == 11
     assert sum(bool(index["unique"]) for index in indexes) == 9
-    assert len(indexes) == 301
+    assert len(indexes) == 306
 
     with migration_engine.connect() as connection:
         assert schema_differences(connection) == ()
@@ -137,6 +149,63 @@ def test_migration_excludes_legacy_tables_and_includes_current_drift_fixes(
     } <= delivery_indexes
 
 
+def test_tenant_foundation_schema_is_exact_and_has_no_foreign_keys(
+    migration_engine: Engine,
+) -> None:
+    _upgrade(migration_engine)
+    inspector = inspect(migration_engine)
+
+    expected_columns = {
+        "tenants": {
+            "tenant_id",
+            "display_name",
+            "status",
+            "created_at",
+            "updated_at",
+            "created_by_subject",
+        },
+        "tenant_memberships": {
+            "membership_id",
+            "tenant_id",
+            "subject",
+            "status",
+            "created_at",
+            "updated_at",
+            "created_by_subject",
+        },
+        "service_api_tenant_bindings": {
+            "binding_id",
+            "credential_id",
+            "tenant_id",
+            "created_at",
+            "created_by_subject",
+        },
+    }
+    for table, columns in expected_columns.items():
+        assert {
+            column["name"] for column in inspector.get_columns(table)
+        } == columns
+        assert inspector.get_foreign_keys(table) == []
+
+    membership_uniques = inspector.get_unique_constraints(
+        "tenant_memberships"
+    )
+    assert any(
+        constraint["name"] == "uq_tenant_memberships_tenant_subject"
+        and constraint["column_names"] == ["tenant_id", "subject"]
+        for constraint in membership_uniques
+    )
+    binding_uniques = inspector.get_unique_constraints(
+        "service_api_tenant_bindings"
+    )
+    assert any(
+        constraint["name"]
+        == "uq_service_api_tenant_bindings_credential_id"
+        and constraint["column_names"] == ["credential_id"]
+        for constraint in binding_uniques
+    )
+
+
 def test_revision_is_static_and_does_not_import_application_models() -> None:
     revision_path = (
         Path(__file__).resolve().parents[1]
@@ -162,6 +231,7 @@ def test_auth_session_revision_is_one_narrow_static_addition() -> None:
     )
     source = revision_path.read_text(encoding="utf-8")
 
+    assert hashlib.sha256(revision_path.read_bytes()).hexdigest() == SESSION_SHA256
     assert "from app" not in source
     assert "Base.metadata" not in source
     assert 'revision: str = "0002_auth_sessions"' in source
@@ -190,6 +260,10 @@ def test_api_credential_revision_is_one_narrow_static_addition() -> None:
     )
     source = revision_path.read_text(encoding="utf-8")
 
+    assert (
+        hashlib.sha256(revision_path.read_bytes()).hexdigest()
+        == API_CREDENTIAL_SHA256
+    )
     assert "from app" not in source
     assert "Base.metadata" not in source
     assert 'revision: str = "0003_auth_api_credentials"' in source
@@ -203,7 +277,38 @@ def test_api_credential_revision_is_one_narrow_static_addition() -> None:
         assert forbidden not in source.lower()
 
 
-def test_sqlite_upgrade_from_0001_through_0002_to_0003(
+def test_tenant_revision_is_one_narrow_static_addition() -> None:
+    revision_path = (
+        Path(__file__).resolve().parents[1]
+        / "alembic"
+        / "versions"
+        / "0004_tenant_foundation.py"
+    )
+    source = revision_path.read_text(encoding="utf-8")
+
+    assert "from app" not in source
+    assert "Base.metadata" not in source
+    assert 'revision: str = "0004_tenant_foundation"' in source
+    assert (
+        'down_revision: str | Sequence[str] | None = '
+        '"0003_auth_api_credentials"'
+    ) in source
+    assert source.count("op.create_table(") == 3
+    for table in TENANT_TABLES:
+        assert f'"{table}"' in source
+    for forbidden in (
+        "op.add_column",
+        "op.alter_column",
+        "auth_sessions",
+        '"auth_api_credentials"',
+        "agent_enrollment_tokens",
+        "topology_snapshots",
+        "incidents",
+    ):
+        assert forbidden not in source
+
+
+def test_sqlite_upgrade_from_0001_through_0002_0003_to_0004(
     migration_engine: Engine,
 ) -> None:
     _upgrade(migration_engine, BASELINE_REVISION)
@@ -211,7 +316,7 @@ def test_sqlite_upgrade_from_0001_through_0002_to_0003(
     assert baseline_tables == set(Base.metadata.tables) - {
         "auth_sessions",
         "auth_api_credentials",
-    }
+    } - TENANT_TABLES
     assert len(baseline_tables) == 38
     baseline_columns = sum(
         len(inspect(migration_engine).get_columns(table))
@@ -222,7 +327,16 @@ def test_sqlite_upgrade_from_0001_through_0002_to_0003(
     _upgrade(migration_engine, SESSION_REVISION)
     assert _domain_tables(migration_engine) == set(Base.metadata.tables) - {
         "auth_api_credentials"
-    }
+    } - TENANT_TABLES
+
+    _upgrade(migration_engine, API_CREDENTIAL_REVISION)
+    assert _domain_tables(migration_engine) == (
+        set(Base.metadata.tables) - TENANT_TABLES
+    )
+    with migration_engine.connect() as connection:
+        assert current_revisions(connection) == (API_CREDENTIAL_REVISION,)
+    with pytest.raises(SchemaAuthorityError, match="state=behind"):
+        verify_database_revision(migration_engine)
 
     _upgrade(migration_engine)
     assert _domain_tables(migration_engine) == set(Base.metadata.tables)
@@ -231,15 +345,28 @@ def test_sqlite_upgrade_from_0001_through_0002_to_0003(
         assert schema_differences(connection) == ()
 
 
-def test_disposable_0003_downgrade_preserves_0002_schema(
+def test_disposable_0004_downgrade_preserves_0003_schema(
     migration_engine: Engine,
 ) -> None:
     _upgrade(migration_engine)
+    _downgrade(migration_engine, API_CREDENTIAL_REVISION)
+
+    assert _domain_tables(migration_engine) == (
+        set(Base.metadata.tables) - TENANT_TABLES
+    )
+    with migration_engine.connect() as connection:
+        assert current_revisions(connection) == (API_CREDENTIAL_REVISION,)
+
+
+def test_disposable_0003_downgrade_preserves_0002_schema(
+    migration_engine: Engine,
+) -> None:
+    _upgrade(migration_engine, API_CREDENTIAL_REVISION)
     _downgrade(migration_engine, SESSION_REVISION)
 
     assert _domain_tables(migration_engine) == set(Base.metadata.tables) - {
         "auth_api_credentials"
-    }
+    } - TENANT_TABLES
     with migration_engine.connect() as connection:
         assert current_revisions(connection) == (SESSION_REVISION,)
 
@@ -253,7 +380,7 @@ def test_disposable_0002_downgrade_preserves_0001_domain_schema(
     assert _domain_tables(migration_engine) == set(Base.metadata.tables) - {
         "auth_sessions",
         "auth_api_credentials",
-    }
+    } - TENANT_TABLES
     with migration_engine.connect() as connection:
         assert current_revisions(connection) == (BASELINE_REVISION,)
 

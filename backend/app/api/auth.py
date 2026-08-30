@@ -17,6 +17,10 @@ from app.repositories.auth_api_credential_repository import (
     load_auth_api_credential,
 )
 from app.repositories.auth_session_repository import load_auth_session
+from app.repositories.tenant_repository import (
+    load_service_api_tenant_binding,
+    service_binding_tenant_ids,
+)
 from app.security.approval_authorization import authenticated_principal
 from app.security.auth_config import AuthConfiguration
 from app.security.principals import AuthPrincipal
@@ -32,6 +36,7 @@ from app.services.auth_session_service import (
 )
 from app.services.auth_api_credential_service import (
     AuthApiCredentialPersistenceError,
+    ServiceTenantAccessError,
     create_auth_api_credential,
     credential_view,
     revoke_auth_api_credential,
@@ -240,6 +245,17 @@ def create_api_credential(
             status_code=503,
             detail="Authentication service is unavailable.",
         ) from exc
+    except ServiceTenantAccessError as exc:
+        raise HTTPException(
+            status_code=403,
+            detail="TENANT_ACCESS_DENIED",
+        ) from exc
+    except SQLAlchemyError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=503,
+            detail="Authentication service is unavailable.",
+        ) from exc
 
 
 @router.get("/api-credentials", response_model=list[ApiCredentialView])
@@ -253,13 +269,21 @@ def list_api_credentials(
     if not 1 <= limit <= 1000 or offset < 0:
         raise HTTPException(status_code=422, detail="Invalid pagination.")
     try:
+        records = list_auth_api_credentials(
+            session,
+            limit=limit,
+            offset=offset,
+        )
+        tenant_ids = service_binding_tenant_ids(
+            session,
+            (record.credential_id for record in records),
+        )
         return [
-            credential_view(record)
-            for record in list_auth_api_credentials(
-                session,
-                limit=limit,
-                offset=offset,
+            credential_view(
+                record,
+                tenant_id=tenant_ids.get(record.credential_id),
             )
+            for record in records
         ]
     except (SQLAlchemyError, AuthApiCredentialPersistenceError) as exc:
         raise HTTPException(
@@ -285,7 +309,11 @@ def get_api_credential(
                 status_code=404,
                 detail="API credential not found.",
             )
-        return credential_view(record)
+        binding = load_service_api_tenant_binding(session, credential_id)
+        return credential_view(
+            record,
+            tenant_id=binding.tenant_id if binding is not None else None,
+        )
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=503,
@@ -315,7 +343,11 @@ def revoke_api_credential(
             record=record,
             revoked_by_subject=principal.subject,
         )
-        return credential_view(record)
+        binding = load_service_api_tenant_binding(session, credential_id)
+        return credential_view(
+            record,
+            tenant_id=binding.tenant_id if binding is not None else None,
+        )
     except AuthApiCredentialPersistenceError as exc:
         raise HTTPException(
             status_code=503,

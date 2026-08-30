@@ -10,7 +10,10 @@ from uuid import uuid4
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
-from app.db.models import AuthApiCredentialRecord
+from app.db.models import (
+    AuthApiCredentialRecord,
+    ServiceApiTenantBindingRecord,
+)
 from app.models.auth import (
     ApiCredentialCallerType,
     ApiCredentialCreate,
@@ -23,6 +26,7 @@ from app.repositories.auth_api_credential_repository import (
     load_auth_api_credential_by_digest,
     update_auth_api_credential_last_used,
 )
+from app.repositories import tenant_repository
 from app.security.principals import AuthPrincipal
 
 
@@ -36,6 +40,10 @@ class AuthApiCredentialPersistenceError(RuntimeError):
 
 class InactiveAuthApiCredentialError(RuntimeError):
     """A digest matched a named credential that is not active."""
+
+
+class ServiceTenantAccessError(RuntimeError):
+    """The creator cannot bind a service credential to the requested tenant."""
 
 
 @dataclass(frozen=True)
@@ -137,6 +145,21 @@ def create_auth_api_credential(
     created_at = _as_utc(now or _utc_now())
     expires_at = created_at + timedelta(days=request.expires_in_days)
     display_name = request.display_name or request.subject
+    tenant_id = request.tenant_id
+    if request.caller_type is ApiCredentialCallerType.SERVICE_API:
+        if (
+            tenant_id is None
+            or tenant_repository.load_active_tenant(session, tenant_id) is None
+            or tenant_repository.load_active_tenant_membership(
+                session,
+                tenant_id=tenant_id,
+                subject=created_by_subject,
+            )
+            is None
+        ):
+            raise ServiceTenantAccessError(
+                "Service credential tenant access is not permitted."
+            )
 
     for attempt in range(MAX_GENERATION_ATTEMPTS):
         raw_secret = API_CREDENTIAL_PREFIX + secrets.token_urlsafe(48)
@@ -159,8 +182,24 @@ def create_auth_api_credential(
         )
         try:
             add_auth_api_credential(session, record)
+            session.flush()
+            if tenant_id is not None:
+                tenant_repository.add_service_api_tenant_binding(
+                    session,
+                    ServiceApiTenantBindingRecord(
+                        binding_id=f"service-tenant-binding:{uuid4()}",
+                        credential_id=record.credential_id,
+                        tenant_id=tenant_id,
+                        created_at=created_at.isoformat(),
+                        created_by_subject=created_by_subject,
+                    ),
+                )
             session.commit()
-            return credential_created_view(record, raw_secret)
+            return credential_created_view(
+                record,
+                raw_secret,
+                tenant_id=tenant_id,
+            )
         except IntegrityError as exc:
             session.rollback()
             if attempt + 1 == MAX_GENERATION_ATTEMPTS:
@@ -251,7 +290,11 @@ def revoke_auth_api_credential(
         ) from exc
 
 
-def credential_view(record: AuthApiCredentialRecord) -> ApiCredentialView:
+def credential_view(
+    record: AuthApiCredentialRecord,
+    *,
+    tenant_id: str | None = None,
+) -> ApiCredentialView:
     roles = _record_roles(record)
     if roles is None:
         raise AuthApiCredentialPersistenceError(
@@ -278,15 +321,18 @@ def credential_view(record: AuthApiCredentialRecord) -> ApiCredentialView:
         revoked_by_subject=record.revoked_by_subject,
         last_used_at=record.last_used_at,
         updated_at=record.updated_at,
+        tenant_id=tenant_id,
     )
 
 
 def credential_created_view(
     record: AuthApiCredentialRecord,
     raw_secret: str,
+    *,
+    tenant_id: str | None = None,
 ) -> ApiCredentialCreated:
     return ApiCredentialCreated(
-        **credential_view(record).model_dump(),
+        **credential_view(record, tenant_id=tenant_id).model_dump(),
         api_credential=raw_secret,
     )
 

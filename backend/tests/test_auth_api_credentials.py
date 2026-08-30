@@ -87,18 +87,22 @@ def _create(
     caller_type: str = "human_api",
     subject: str = "test:named-admin",
     roles: list[str] | None = None,
+    tenant_id: str | None = None,
 ):
+    payload = {
+        "name": "named operator",
+        "caller_type": caller_type,
+        "subject": subject,
+        "display_name": "Named Operator",
+        "roles": roles if roles is not None else ["admin"],
+        "expires_in_days": 30,
+    }
+    if tenant_id is not None:
+        payload["tenant_id"] = tenant_id
     return client.post(
         "/api/v1/auth/api-credentials",
         headers=_bearer(bootstrap),
-        json={
-            "name": "named operator",
-            "caller_type": caller_type,
-            "subject": subject,
-            "display_name": "Named Operator",
-            "roles": roles if roles is not None else ["admin"],
-            "expires_in_days": 30,
-        },
+        json=payload,
     )
 
 
@@ -211,12 +215,19 @@ def test_service_credential_is_api_only_and_cannot_manage_credentials(
 ) -> None:
     application, bootstrap, _, _ = credential_app
     with TestClient(application, base_url=ORIGIN) as client:
+        tenant = client.post(
+            "/api/v1/tenants",
+            headers=_bearer(bootstrap),
+            json={"display_name": "PH-2E regression tenant"},
+        )
+        assert tenant.status_code == 201
         created = _create(
             client,
             bootstrap,
             caller_type="service_api",
             subject="service:automation",
             roles=["admin"],
+            tenant_id=tenant.json()["tenant_id"],
         )
         raw_secret = created.json()["api_credential"]
 

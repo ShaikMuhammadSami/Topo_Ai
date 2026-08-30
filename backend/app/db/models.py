@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from sqlalchemy import (
     Float,
     Boolean,
+    Index,
     Integer,
     String,
     Text,
@@ -4495,3 +4496,70 @@ class AuthApiCredentialRecord(Base):
         index=True,
     )
     updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+
+
+class TenantRecord(Base):
+    """Durable customer security-boundary identity."""
+
+    __tablename__ = "tenants"
+
+    __table_args__ = (
+        Index("ix_tenants_status", "status"),
+    )
+
+    tenant_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    display_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)
+
+
+class TenantMembershipRecord(Base):
+    """A stable human subject's permission to enter one tenant."""
+
+    __tablename__ = "tenant_memberships"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "tenant_id",
+            "subject",
+            name="uq_tenant_memberships_tenant_subject",
+        ),
+        Index("ix_tenant_memberships_subject", "subject"),
+        Index("ix_tenant_memberships_tenant_id", "tenant_id"),
+        Index(
+            "ix_tenant_memberships_active_resolution",
+            "tenant_id",
+            "subject",
+            "status",
+        ),
+    )
+
+    membership_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)
+
+
+class ServiceApiTenantBindingRecord(Base):
+    """Immutable V1 tenant binding for one named service API credential."""
+
+    __tablename__ = "service_api_tenant_bindings"
+
+    __table_args__ = (
+        UniqueConstraint(
+            "credential_id",
+            name="uq_service_api_tenant_bindings_credential_id",
+        ),
+        Index("ix_service_api_tenant_bindings_tenant_id", "tenant_id"),
+    )
+
+    binding_id: Mapped[str] = mapped_column(String(255), primary_key=True)
+    credential_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)

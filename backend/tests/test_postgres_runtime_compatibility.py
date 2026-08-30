@@ -28,17 +28,24 @@ from sqlalchemy import (
     String,
     Text,
     create_engine,
+    func,
     inspect,
     select,
     text,
 )
 from sqlalchemy.engine import Engine, make_url
-from sqlalchemy.exc import DataError, IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError, OperationalError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.db import models as db_models
 from app.db.database import Base, _synchronous_database_url, init_db
-from app.db.models import AuthApiCredentialRecord, AuthSessionRecord
+from app.db.models import (
+    AuthApiCredentialRecord,
+    AuthSessionRecord,
+    ServiceApiTenantBindingRecord,
+    TenantMembershipRecord,
+    TenantRecord,
+)
 from app.main import create_app
 from app.db.schema_management import (
     SchemaAuthorityError,
@@ -170,6 +177,8 @@ from app.services.temporal_semantics import (
     parse_utc,
     safe_snapshot_record_at_or_before,
 )
+from app.repositories import tenant_repository
+from app.services.tenant_service import create_tenant_with_creator_membership
 
 
 POSTGRES_URL = os.getenv("TOPO_TEST_POSTGRES_URL", "").strip()
@@ -357,12 +366,12 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert current_revisions(connection) == (expected_head(),)
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
-        assert len(_domain_table_names(connection)) == 40
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 715
+        assert len(_domain_table_names(connection)) == 43
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 733
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
-        ) == 40
-        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 301
+        ) == 43
+        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 306
         assert sum(
             1
             for table in Base.metadata.tables.values()
@@ -374,7 +383,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for table in Base.metadata.tables.values()
             for constraint in table.constraints
             if constraint.__class__.__name__ == "UniqueConstraint"
-        ) == 12
+        ) == 14
 
         database_indexes = [
             item
@@ -382,9 +391,9 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for item in inspector.get_indexes(table_name)
             if not item.get("duplicates_constraint")
         ]
-        assert len(database_indexes) == 301
+        assert len(database_indexes) == 306
         assert sum(bool(item["unique"]) for item in database_indexes) == 9
-        assert sum(not item["unique"] for item in database_indexes) == 292
+        assert sum(not item["unique"] for item in database_indexes) == 297
         assert all(
             inspector.get_pk_constraint(name).get("constrained_columns")
             for name in DOMAIN_TABLE_NAMES
@@ -428,7 +437,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             if column.name.endswith("_at")
         ]
         assert len(json_columns) == 61
-        assert len(timestamp_columns) == 144
+        assert len(timestamp_columns) == 149
         assert all(storage[key][0] == "text" for key in json_columns)
         assert all(storage[key] == ("character varying", 50) for key in timestamp_columns)
         assert not any(
@@ -454,7 +463,7 @@ def test_empty_postgresql_startup_fails_closed_without_creating_domain_tables() 
             assert _domain_table_names(connection) == set()
 
 
-def test_postgresql_0001_to_0002_to_0003_upgrade_downgrade_and_reupgrade() -> None:
+def test_postgresql_0001_to_0002_to_0003_to_0004_lifecycle() -> None:
     with _temporary_database("auth_migration") as engine:
         _upgrade(engine, "0001_current_schema")
         with engine.connect() as connection:
@@ -470,11 +479,36 @@ def test_postgresql_0001_to_0002_to_0003_upgrade_downgrade_and_reupgrade() -> No
             assert "auth_sessions" in inspect(connection).get_table_names()
             assert "auth_api_credentials" not in inspect(connection).get_table_names()
 
-        _upgrade(engine)
+        _upgrade(engine, "0003_auth_api_credentials")
         with engine.connect() as connection:
             assert current_revisions(connection) == ("0003_auth_api_credentials",)
+            assert not {
+                "tenants",
+                "tenant_memberships",
+                "service_api_tenant_bindings",
+            }.intersection(inspect(connection).get_table_names())
+        with pytest.raises(SchemaAuthorityError, match="state=behind"):
+            init_db(bind=engine)
+
+        _upgrade(engine)
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0004_tenant_foundation",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
+
+        with engine.begin() as connection:
+            command.downgrade(
+                alembic_config(connection=connection),
+                "0003_auth_api_credentials",
+            )
+        with engine.connect() as connection:
+            assert current_revisions(connection) == ("0003_auth_api_credentials",)
+            assert "auth_api_credentials" in inspect(connection).get_table_names()
+            assert "tenants" not in inspect(connection).get_table_names()
+
+        _upgrade(engine)
+        with engine.connect() as connection:
+            assert inspect_schema_authority(connection).ok
 
         with engine.begin() as connection:
             command.downgrade(
@@ -613,6 +647,12 @@ def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
         assert resolved is not None
         assert resolved.principal.authentication_type == "human_api_token"
         assert resolved.record.last_used_at is not None
+        tenant = create_tenant_with_creator_membership(
+            session,
+            display_name="PostgreSQL credential tenant",
+            creator_subject="test:postgres-named-admin",
+            now=now,
+        )
         service = create_auth_api_credential(
             session,
             request=ApiCredentialCreate(
@@ -622,6 +662,7 @@ def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
                 display_name="PostgreSQL Automation",
                 roles=["admin"],
                 expires_in_days=30,
+                tenant_id=tenant.tenant_id,
             ),
             created_by_subject="test:postgres-named-admin",
             now=now,
@@ -714,6 +755,155 @@ def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
     assert raised.value.category is AuthConfigurationFailure.EMPTY_REQUIRED_AUTHORITY
 
 
+def test_postgresql_tenant_context_atomicity_and_fixed_service_binding(
+    postgres_engine: Engine,
+    session_factory,
+    monkeypatch,
+) -> None:
+    bootstrap = "postgres-tenant-bootstrap-" + secrets.token_urlsafe(40)
+    monkeypatch.setenv("TOPO_AUTH_MODE", "required")
+    monkeypatch.delenv("TOPO_AUTH_ENABLED", raising=False)
+    monkeypatch.setenv(
+        "TOPO_API_TOKEN_HASHES_JSON",
+        json.dumps(
+            {
+                token_digest(bootstrap): {
+                    "subject": "test:postgres-tenant-admin",
+                    "display_name": "PostgreSQL Tenant Admin",
+                    "roles": ["admin"],
+                }
+            }
+        ),
+    )
+    configuration = load_auth_configuration(database_url=_postgres_url())
+    application = create_app(
+        auth_configuration=configuration,
+        session_factory=session_factory,
+        database_initializer=lambda: init_db(bind=postgres_engine),
+    )
+    bearer = {"Authorization": f"Bearer {bootstrap}"}
+
+    with TestClient(application) as client:
+        created = client.post(
+            "/api/v1/tenants",
+            headers=bearer,
+            json={"display_name": "PostgreSQL Tenant"},
+        )
+        assert created.status_code == 201
+        tenant_id = created.json()["tenant_id"]
+        tenant_headers = {**bearer, "X-Topo-Tenant-ID": tenant_id}
+        context = client.get(
+            "/api/v1/tenant-context",
+            headers=tenant_headers,
+        )
+        assert context.status_code == 200
+        assert context.json()["tenant_id"] == tenant_id
+
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                tenant_repository,
+                "add_tenant_membership",
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    OperationalError("forced tenant atomicity", {}, None)
+                ),
+            )
+            tenant_failure = client.post(
+                "/api/v1/tenants",
+                headers=bearer,
+                json={"display_name": "Rolled back PostgreSQL tenant"},
+            )
+        assert tenant_failure.status_code == 503
+
+        service_payload = {
+            "name": "PostgreSQL tenant service",
+            "caller_type": "service_api",
+            "subject": "service:postgres-tenant",
+            "display_name": "PostgreSQL tenant service",
+            "roles": [],
+            "expires_in_days": 30,
+            "tenant_id": tenant_id,
+        }
+        with monkeypatch.context() as scoped:
+            scoped.setattr(
+                tenant_repository,
+                "add_service_api_tenant_binding",
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(
+                    OperationalError("forced binding atomicity", {}, None)
+                ),
+            )
+            binding_failure = client.post(
+                "/api/v1/auth/api-credentials",
+                headers=bearer,
+                json={**service_payload, "subject": "service:rolled-back"},
+            )
+        assert binding_failure.status_code == 503
+
+        service = client.post(
+            "/api/v1/auth/api-credentials",
+            headers=bearer,
+            json=service_payload,
+        )
+        assert service.status_code == 201
+        assert service.json()["tenant_id"] == tenant_id
+        service_context = client.get(
+            "/api/v1/tenant-context",
+            headers={
+                "Authorization": f"Bearer {service.json()['api_credential']}"
+            },
+        )
+        assert service_context.status_code == 200
+        assert service_context.json()["tenant_id"] == tenant_id
+        assert service_context.json()["selection_source"] == "service_binding"
+
+        disabled = client.post(
+            (
+                "/api/v1/tenant-memberships/"
+                f"{created.json()['membership_id']}/disable"
+            ),
+            headers=tenant_headers,
+        )
+        assert disabled.status_code == 200
+        assert client.get(
+            "/api/v1/tenant-context",
+            headers=tenant_headers,
+        ).status_code == 403
+        recovered = client.post(
+            "/api/v1/tenant-memberships/recover",
+            headers=bearer,
+            json={
+                "tenant_id": tenant_id,
+                "subject": "test:postgres-tenant-admin",
+            },
+        )
+        assert recovered.status_code == 200
+        assert client.get(
+            "/api/v1/tenant-context",
+            headers=tenant_headers,
+        ).status_code == 200
+
+    with session_factory() as session:
+        assert session.scalar(
+            select(func.count()).select_from(TenantRecord).where(
+                TenantRecord.display_name == "Rolled back PostgreSQL tenant"
+            )
+        ) == 0
+        assert session.scalar(
+            select(func.count()).select_from(AuthApiCredentialRecord).where(
+                AuthApiCredentialRecord.subject == "service:rolled-back"
+            )
+        ) == 0
+        assert session.scalar(
+            select(func.count())
+            .select_from(ServiceApiTenantBindingRecord)
+            .where(ServiceApiTenantBindingRecord.tenant_id == tenant_id)
+        ) == 1
+        assert session.scalar(
+            select(func.count())
+            .select_from(TenantMembershipRecord)
+            .where(TenantMembershipRecord.tenant_id == tenant_id)
+        ) == 1
+
+
 def test_exact_but_unstamped_schema_fails_closed() -> None:
     with _temporary_database("unstamped") as engine:
         Base.metadata.create_all(engine)
@@ -741,7 +931,7 @@ def test_unknown_revision_fails_closed_without_credential_disclosure() -> None:
 def test_every_mapped_table_supports_orm_write_read_and_false_booleans(
     session_factory,
 ) -> None:
-    assert len(DOMAIN_TABLE_NAMES) == 40
+    assert len(DOMAIN_TABLE_NAMES) == 43
     with session_factory() as session:
         records = [_mapped_instance(table_name) for table_name in DOMAIN_TABLE_NAMES]
         session.add_all(records)
