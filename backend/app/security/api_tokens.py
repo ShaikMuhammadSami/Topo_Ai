@@ -166,6 +166,7 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
                 return _unauthorized("A valid Bearer API token is required.")
 
             raw_token = token.strip()
+            named = None
             if raw_token.startswith(API_CREDENTIAL_PREFIX):
                 try:
                     with self.session_factory() as database_session:
@@ -188,6 +189,14 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
                 )
                 if principal is None:
                     return _unauthorized("The supplied API token is invalid.")
+                request.state.direct_static_bearer = True
+            elif named is not None:
+                request.state.auth_api_credential_id = (
+                    named.record.credential_id
+                )
+                request.state.auth_api_credential_caller_type = (
+                    named.record.caller_type
+                )
 
             request.state.principal = principal
             request.state.source_credential_digest = token_digest(raw_token)

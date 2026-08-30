@@ -2,7 +2,15 @@ from __future__ import annotations
 
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
+
+from app.models.tenant import is_valid_tenant_id
 
 
 class ApiCredentialCallerType(StrEnum):
@@ -19,6 +27,7 @@ class ApiCredentialCreate(BaseModel):
     display_name: str | None = Field(default=None, max_length=500)
     roles: list[str] = Field(default_factory=list, max_length=100)
     expires_in_days: int = Field(default=30, ge=1, le=90)
+    tenant_id: str | None = Field(default=None, min_length=1, max_length=64)
 
     @field_validator("name", "subject", "display_name")
     @classmethod
@@ -49,6 +58,27 @@ class ApiCredentialCreate(BaseModel):
             raise ValueError("roles must not contain duplicates")
         return value
 
+    @field_validator("tenant_id")
+    @classmethod
+    def validate_tenant_id(cls, value: str | None) -> str | None:
+        if value is not None and not is_valid_tenant_id(value):
+            raise ValueError("tenant_id has an invalid format")
+        return value
+
+    @model_validator(mode="after")
+    def validate_tenant_binding_contract(self):
+        if (
+            self.caller_type is ApiCredentialCallerType.SERVICE_API
+            and self.tenant_id is None
+        ):
+            raise ValueError("tenant_id is required for service_api credentials")
+        if (
+            self.caller_type is ApiCredentialCallerType.HUMAN_API
+            and self.tenant_id is not None
+        ):
+            raise ValueError("tenant_id is not accepted for human_api credentials")
+        return self
+
 
 class ApiCredentialView(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -67,6 +97,7 @@ class ApiCredentialView(BaseModel):
     revoked_by_subject: str | None = None
     last_used_at: str | None = None
     updated_at: str
+    tenant_id: str | None = None
 
 
 class ApiCredentialCreated(ApiCredentialView):

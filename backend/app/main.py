@@ -50,6 +50,7 @@ from app.api.response_plan import router as response_plan_router
 from app.api.signals import router as signals_router
 from app.api.snapshots import router as snapshots_router
 from app.api.system import router as system_router
+from app.api.tenants import router as tenants_router
 from app.api.topology import router as topology_router
 from app.api.webhooks import router as webhooks_router
 from app.db.database import DATABASE_URL, SessionLocal, init_db
@@ -139,6 +140,7 @@ def create_app(
             "Authorization",
             "Content-Type",
             "X-Topo-CSRF",
+            "X-Topo-Tenant-ID",
         ],
     )
 
@@ -164,6 +166,7 @@ def create_app(
     application.include_router(investigation_plans_router)
     application.include_router(post_incident_reports_router)
     application.include_router(auth_router)
+    application.include_router(tenants_router)
     application.include_router(system_router)
     application.include_router(agents_router)
     application.include_router(agent_runtime_router)

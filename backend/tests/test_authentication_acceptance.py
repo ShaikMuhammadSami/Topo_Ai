@@ -117,18 +117,22 @@ def _create_named(
     caller_type: str,
     subject: str,
     roles: list[str],
+    tenant_id: str | None = None,
 ) -> dict:
+    payload = {
+        "name": name,
+        "caller_type": caller_type,
+        "subject": subject,
+        "display_name": name,
+        "roles": roles,
+        "expires_in_days": 30,
+    }
+    if tenant_id is not None:
+        payload["tenant_id"] = tenant_id
     response = client.post(
         "/api/v1/auth/api-credentials",
         headers=_bearer(bootstrap),
-        json={
-            "name": name,
-            "caller_type": caller_type,
-            "subject": subject,
-            "display_name": name,
-            "roles": roles,
-            "expires_in_days": 30,
-        },
+        json=payload,
     )
     assert response.status_code == 201
     return response.json()
@@ -169,16 +173,16 @@ def test_route_domain_inventory_is_complete_and_production_docs_are_absent(
         for method in route.methods
     ]
 
-    assert len(production_routes) == 136
-    assert len(production_pairs) == 136
-    assert sum(path.startswith("/api/") for _, path, _ in production_pairs) == 134
+    assert len(production_routes) == 143
+    assert len(production_pairs) == 143
+    assert sum(path.startswith("/api/") for _, path, _ in production_pairs) == 141
     assert Counter(
         domain for _, _, domain in production_pairs
     ) == Counter(
         {
             RouteAuthDomain.PUBLIC_LIVENESS: 1,
             RouteAuthDomain.PUBLIC_READINESS_MINIMAL: 1,
-            RouteAuthDomain.USER_AUTHENTICATED: 125,
+            RouteAuthDomain.USER_AUTHENTICATED: 132,
             RouteAuthDomain.AGENT_AUTHENTICATED: 8,
             RouteAuthDomain.PROVIDER_CALLBACK_AUTHENTICATED: 1,
         }
@@ -206,8 +210,8 @@ def test_route_domain_inventory_is_complete_and_production_docs_are_absent(
         for route in _registered_routes(development)
         for method in route.methods
     ]
-    assert len(_registered_routes(development)) == 140
-    assert len(development_pairs) == 144
+    assert len(_registered_routes(development)) == 147
+    assert len(development_pairs) == 151
     assert sum(
         domain is RouteAuthDomain.DISABLED_PRODUCTION
         for _, _, domain in development_pairs
@@ -222,6 +226,12 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
 ) -> None:
     application, session_factory, _, bootstrap, provider_secret = acceptance_app
     with TestClient(application, base_url=ORIGIN) as client:
+        tenant = client.post(
+            "/api/v1/tenants",
+            headers=_bearer(bootstrap),
+            json={"display_name": "PH-2F regression tenant"},
+        )
+        assert tenant.status_code == 201
         named_admin = _create_named(
             client,
             bootstrap,
@@ -245,6 +255,7 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
             caller_type="service_api",
             subject="service:ph2f",
             roles=["admin"],
+            tenant_id=tenant.json()["tenant_id"],
         )
 
         enrollment = client.post(
