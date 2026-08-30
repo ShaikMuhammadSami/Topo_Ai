@@ -21,8 +21,10 @@ from app.models.agents import (
 )
 from app.repositories.agent_repository import (
     AgentEnrollmentRejected,
+    authenticate_agent,
     create_enrollment_token,
     enroll_agent,
+    revoke_agent,
 )
 
 
@@ -153,3 +155,22 @@ def test_postgres_agent_insert_failure_rolls_back_token_consumption(
         response = enroll_agent(session, request=_request(raw_token, 2))
     assert response.agent_token.startswith("topo_agent_")
     assert _state(sessions, enrollment_id) == (1, 1)
+
+
+def test_postgres_agent_revocation_is_durable(sessions) -> None:
+    _, raw_enrollment = _token(sessions, 1)
+    with sessions() as session:
+        enrolled = enroll_agent(session, request=_request(raw_enrollment, 1))
+        assert authenticate_agent(
+            session,
+            token=enrolled.agent_token,
+        ) is not None
+        revoked = revoke_agent(session, agent_id=enrolled.agent_id)
+        assert revoked is not None
+        assert revoked.revoked_at is not None
+
+    with sessions() as restarted_session:
+        assert authenticate_agent(
+            restarted_session,
+            token=enrolled.agent_token,
+        ) is None

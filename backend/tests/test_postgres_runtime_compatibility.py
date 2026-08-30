@@ -148,7 +148,11 @@ from app.repositories.webhook_repository import (
     save_delivery_result,
 )
 from app.security.api_tokens import AuthPrincipal, token_digest
-from app.security.auth_config import load_auth_configuration
+from app.security.auth_config import (
+    AuthConfigurationError,
+    AuthConfigurationFailure,
+    load_auth_configuration,
+)
 from app.security.session_auth import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME
 from app.services.causal_rca import _confidence_level
 from app.services.auth_api_credential_service import (
@@ -609,6 +613,32 @@ def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
         assert resolved is not None
         assert resolved.principal.authentication_type == "human_api_token"
         assert resolved.record.last_used_at is not None
+        service = create_auth_api_credential(
+            session,
+            request=ApiCredentialCreate(
+                name="PostgreSQL service",
+                caller_type=ApiCredentialCallerType.SERVICE_API,
+                subject="service:postgres-automation",
+                display_name="PostgreSQL Automation",
+                roles=["admin"],
+                expires_in_days=30,
+            ),
+            created_by_subject="test:postgres-named-admin",
+            now=now,
+        )
+        expired = create_auth_api_credential(
+            session,
+            request=ApiCredentialCreate(
+                name="PostgreSQL expired human",
+                caller_type=ApiCredentialCallerType.HUMAN_API,
+                subject="test:postgres-expired",
+                display_name="PostgreSQL Expired Human",
+                roles=["admin"],
+                expires_in_days=1,
+            ),
+            created_by_subject="test:postgres-named-admin",
+            now=now - timedelta(days=2),
+        )
 
     monkeypatch.setenv("TOPO_AUTH_MODE", "required")
     monkeypatch.delenv("TOPO_AUTH_ENABLED", raising=False)
@@ -631,6 +661,23 @@ def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
         )
         assert identity.status_code == 200
         assert identity.json()["authentication_type"] == "human_api_token"
+        service_identity = client.get(
+            "/api/v1/system/whoami",
+            headers={"Authorization": f"Bearer {service.api_credential}"},
+        )
+        assert service_identity.status_code == 200
+        assert service_identity.json()["authentication_type"] == "service_api_token"
+        assert client.post(
+            "/api/v1/auth/session",
+            headers={
+                "Authorization": f"Bearer {service.api_credential}",
+                "Origin": "https://topo.test",
+            },
+        ).status_code == 403
+        assert client.get(
+            "/api/v1/system/whoami",
+            headers={"Authorization": f"Bearer {expired.api_credential}"},
+        ).status_code == 401
         login = client.post(
             "/api/v1/auth/session",
             headers={
@@ -655,6 +702,16 @@ def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
             "/api/v1/system/whoami",
             headers={"Authorization": f"Bearer {raw_secret}"},
         ).status_code == 401
+
+    no_human_admin = create_app(
+        auth_configuration=configuration,
+        session_factory=session_factory,
+        database_initializer=lambda: init_db(bind=postgres_engine),
+    )
+    with pytest.raises(AuthConfigurationError) as raised:
+        with TestClient(no_human_admin):
+            pass
+    assert raised.value.category is AuthConfigurationFailure.EMPTY_REQUIRED_AUTHORITY
 
 
 def test_exact_but_unstamped_schema_fails_closed() -> None:
