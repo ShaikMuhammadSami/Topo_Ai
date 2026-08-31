@@ -165,6 +165,12 @@ function isUnsafeMethod(method?: string): boolean {
   )
 }
 
+function requireCurrentTenant(path: string, requestTenant: string | null): void {
+  if (!path.startsWith("/api/v1/auth/") && requestTenant !== selectedTenantId) {
+    throw new TopoApiError("Tenant selection changed; reload this request.", { status: null, kind: "http" })
+  }
+}
+
 async function apiResponse(
   path: string,
   options?: RequestInit,
@@ -262,23 +268,26 @@ async function apiResponse(
     })
   }
 
-  if (!path.startsWith("/api/v1/auth/") && requestTenant !== selectedTenantId) {
-    throw new TopoApiError("Tenant selection changed; reload this request.", { status: null, kind: "http" })
-  }
+  requireCurrentTenant(path, requestTenant)
   return response
 }
 
 export async function apiRequest<T>(path: string, options?: RequestInit): Promise<T> {
+  const requestTenant = selectedTenantId
   const response = await apiResponse(path, options)
   if (response.status === 204) {
     return undefined as T
   }
-  return await response.json() as T
+  const value = await response.json() as T
+  requireCurrentTenant(path, requestTenant)
+  return value
 }
 
 export async function downloadApiFile(path: string, filename: string): Promise<void> {
+  const requestTenant = selectedTenantId
   const response = await apiResponse(path)
   const blob = await response.blob()
+  requireCurrentTenant(path, requestTenant)
   const url = URL.createObjectURL(blob)
   try {
     const link = document.createElement("a")

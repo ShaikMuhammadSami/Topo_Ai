@@ -80,6 +80,59 @@ test("a successful response from the previous tenant is discarded", async () => 
   }
 })
 
+test("PH-3G discards JSON when tenant switches during body consumption", async () => {
+  const originalFetch = globalThis.fetch
+  let releaseBody
+  let bodyStarted
+  const started = new Promise((resolve) => { bodyStarted = resolve })
+  const body = new Promise((resolve) => { releaseBody = resolve })
+  globalThis.fetch = async () => {
+    const response = Response.json({})
+    response.json = async () => { bodyStarted(); return body }
+    return response
+  }
+  try {
+    selectApiTenant("tenant:a")
+    const pending = apiRequest("/api/v1/incidents")
+    await started
+    selectApiTenant("tenant:b")
+    releaseBody({ private: "tenant a" })
+    await assert.rejects(pending, /Tenant selection changed/)
+  } finally {
+    selectApiTenant(null)
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("PH-3G prevents old-tenant download after delayed response body", async () => {
+  const originalFetch = globalThis.fetch
+  const originalDocument = globalThis.document
+  let releaseBody
+  let bodyStarted
+  let clicked = false
+  const started = new Promise((resolve) => { bodyStarted = resolve })
+  const body = new Promise((resolve) => { releaseBody = resolve })
+  globalThis.document = { createElement: () => ({ click() { clicked = true } }) }
+  globalThis.fetch = async () => {
+    const response = new Response("")
+    response.blob = async () => { bodyStarted(); return body }
+    return response
+  }
+  try {
+    selectApiTenant("tenant:a")
+    const pending = downloadApiFile("/api/v1/incidents/shared/reports/shared/export", "report.md")
+    await started
+    selectApiTenant("tenant:b")
+    releaseBody(new Blob(["A private report"]))
+    await assert.rejects(pending, /Tenant selection changed/)
+    assert.equal(clicked, false)
+  } finally {
+    selectApiTenant(null)
+    globalThis.fetch = originalFetch
+    globalThis.document = originalDocument
+  }
+})
+
 test("report downloads use the tenant-scoped transport, not a direct API anchor", async () => {
   const originalFetch = globalThis.fetch
   const originalDocument = globalThis.document

@@ -705,6 +705,7 @@ def test_historical_profile_uses_pinned_snapshot(
 ) -> None:
     outcome = _outcome()
     record = IncidentOutcomeRecord(
+        outcome_id=outcome.outcome_id,
         payload_json=outcome.model_dump_json(),
         source_json=json.dumps(
             {
@@ -720,6 +721,11 @@ def test_historical_profile_uses_pinned_snapshot(
         ),
     )
     loaded_snapshots = []
+    # This isolated profile test uses an object() session. Supply the newly
+    # required owned-source lookup while preserving all historical-pin checks.
+    monkeypatch.setattr(
+        memory, "load_incident_outcome_record", lambda *args, **kwargs: record,
+    )
     monkeypatch.setattr(
         memory,
         "load_incident_record",

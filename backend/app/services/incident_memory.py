@@ -2,6 +2,7 @@ from __future__ import annotations
 from app.repositories.tenant_scope import (
     DomainTenant,
     require_record_owner,
+    TenantResourceNotFound,
 )
 
 import hashlib
@@ -37,6 +38,7 @@ from app.repositories.causal_analysis_repository import (
 )
 from app.repositories.incident_outcome_repository import (
     outcome_source,
+    load_incident_outcome_record,
 )
 from app.repositories.incident_record_repository import (
     load_incident_record,
@@ -65,7 +67,7 @@ NEIGHBORHOOD_HOPS = 2
 FALLBACK_AFFECTED_HOPS = 5
 
 
-from app.services.tenant_world_model import tenant_world
+from app.services.tenant_world_model import bind_world_value, tenant_world
 
 def _value(value: Any) -> str | None:
     if value is None:
@@ -394,7 +396,7 @@ def _historical_analysis(
     return analysis
 
 
-@tenant_world(prefetched=('incident', 'analysis', 'operational_impact'))
+@tenant_world(prefetched=('incident', 'analysis', 'operational_impact', 'outcome'))
 def build_incident_feature_profile(
     session: Session,
     *,
@@ -406,6 +408,17 @@ def build_incident_feature_profile(
     operational_impact: IncidentOwnershipImpact | None = None,
     tenant_id: DomainTenant,
 ) -> HistoricalIncidentFeatureProfile:
+    if outcome_source_data is not None:
+        # A plain source dictionary has no ownership attestation. Validate it
+        # against the owned durable outcome before it supplies historical URLs
+        # or response context. Matching public IDs alone are not authority.
+        record = load_incident_outcome_record(
+            session, incident_id=incident.incident_id, tenant_id=tenant_id,
+        )
+        if (outcome is None or record is None
+                or record.outcome_id != outcome.outcome_id
+                or outcome_source_data != outcome_source(record)):
+            raise TenantResourceNotFound()
     warnings: list[str] = []
 
     if analysis is None:
@@ -815,6 +828,8 @@ def build_historical_incident_profile(
         return None
 
     outcome, source = completed
+    # The record owner was checked before decoding this historical payload.
+    bind_world_value(outcome, tenant_id=tenant_id)
     incident = load_incident_record(
         session=session,
         incident_id=outcome.incident_id,
