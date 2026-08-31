@@ -5,6 +5,7 @@ exercise machine authority explicitly seed the same real tenant. Isolation tests
 use two real tenants and real authentication instead of this convenience data.
 """
 
+from functools import wraps
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -70,7 +71,7 @@ def seed_domain_parents(engine, *references):
 
     with engine.begin() as connection:
         for table_name, identifier in references:
-            primary = next(iter(Base.metadata.tables[table_name].primary_key)).name
+            primary = next(column.name for column in Base.metadata.tables[table_name].primary_key if column.name != "tenant_id")
             _seed_pre_tenancy_row(
                 connection,
                 table_name,
@@ -99,3 +100,17 @@ def null_ownership_inventory(session):
             ),
         }
     return result
+
+
+def owned_world_fixture(function):
+    """Explicit ownership on mocked service results in single-tenant unit tests.
+
+    Real boundary tests use repositories and two tenants. This only replaces
+    the ownership attestation that an intentionally mocked producer would make.
+    """
+    from app.services.tenant_world_model import bind_world_value
+
+    @wraps(function)
+    def fixture(*args, **kwargs):
+        return bind_world_value(function(*args, **kwargs), tenant_id=TEST_TENANT)
+    return fixture

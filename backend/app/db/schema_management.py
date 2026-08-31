@@ -12,7 +12,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
 from alembic.util.exc import CommandError
-from sqlalchemy import MetaData, inspect
+from sqlalchemy import Column, MetaData, String, inspect
 from sqlalchemy.engine import Connection, Engine
 from sqlalchemy.schema import Constraint, Index, Table
 
@@ -285,6 +285,19 @@ def adopt_current_schema(connection: Connection) -> SchemaVerification:
             "Adoption refused: the existing schema is not an exact match."
         )
 
+    if connection.dialect.name == "postgresql" and len(before.expected_head) > 32:
+        # Only after strict unversioned-schema adoption has been approved.
+        # Alembic's default VARCHAR(32) cannot hold the specified PH-3F head.
+        # This table is bookkeeping; no domain row or identity is changed.
+        if "alembic_version" not in inspect(connection).get_table_names():
+            Table(
+                "alembic_version", MetaData(),
+                Column("version_num", String(64), nullable=False, primary_key=True),
+            ).create(connection)
+        else:
+            connection.exec_driver_sql(
+                "ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(64)"
+            )
     command.stamp(alembic_config(connection=connection), before.expected_head)
     after = inspect_schema_authority(connection)
     if not after.ok:

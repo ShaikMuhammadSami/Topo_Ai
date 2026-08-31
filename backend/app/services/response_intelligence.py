@@ -87,6 +87,8 @@ titles as evidence checks before a human decision.
 """.strip()
 
 
+from app.services.tenant_world_model import tenant_world
+
 def _normalized_action_text(*values: object) -> str:
     return " ".join(
         str(value)
@@ -992,6 +994,7 @@ def _unavailable_rollback_support(
     )
 
 
+@tenant_world(prefetched=('response_plan', 'historical_intelligence'))
 def build_incident_response_intelligence(
     session: Session,
     *,

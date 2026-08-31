@@ -22,6 +22,8 @@ from app.models.incident_records import (
 )
 
 
+from app.services.tenant_world_model import tenant_world
+
 def _to_view(
     record: IncidentRecord,
 ) -> IncidentRecordView:
@@ -187,6 +189,7 @@ def list_incidents_by_fingerprint(
     )
 
 
+@tenant_world(prefetched=())
 def load_incident_record(
     session: Session,
     incident_id: str,

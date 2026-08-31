@@ -470,20 +470,20 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 771
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
-        ) == 43
-        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 351
+        ) == 68
+        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 344
         assert sum(
             1
             for table in Base.metadata.tables.values()
             for index in table.indexes
             if index.unique
-        ) == 16
+        ) == 9
         assert sum(
             1
             for table in Base.metadata.tables.values()
             for constraint in table.constraints
             if constraint.__class__.__name__ == "UniqueConstraint"
-        ) == 24
+        ) == 14
 
         database_indexes = [
             item
@@ -491,8 +491,8 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for item in inspector.get_indexes(table_name)
             if not item.get("duplicates_constraint")
         ]
-        assert len(database_indexes) == 351
-        assert sum(bool(item["unique"]) for item in database_indexes) == 16
+        assert len(database_indexes) == 344
+        assert sum(bool(item["unique"]) for item in database_indexes) == 9
         assert sum(not item["unique"] for item in database_indexes) == 335
         assert all(
             inspector.get_pk_constraint(name).get("constrained_columns")
@@ -602,7 +602,7 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0007_machine_tenant_binding",)
+            assert current_revisions(connection) == ("0008_tenant_scoped_identity_namespace",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -737,7 +737,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0007_machine_tenant_binding",)
+            assert current_revisions(connection) == ("0008_tenant_scoped_identity_namespace",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43
@@ -747,7 +747,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
                     sa.MetaData(),
                     autoload_with=connection,
                 )
-                primary_key = next(iter(table.primary_key.columns))
+                primary_key = next(column for column in table.primary_key.columns if column.name != "tenant_id")
                 row = connection.execute(
                     sa.select(primary_key, table.c.tenant_id)
                 ).one()
@@ -1762,7 +1762,7 @@ def test_historical_snapshot_selection_uses_only_at_or_before_boundary(
             update={"collected_at": NOW - timedelta(minutes=10)}
         )
         save_snapshot(session, legacy, tenant_id=TEST_TENANT)
-        record = session.get(db_models.SnapshotRecord, legacy.snapshot_id)
+        record = session.get(db_models.SnapshotRecord, (TEST_TENANT, legacy.snapshot_id))
         assert record is not None
         record.collected_at = "2026-08-28T11:50:00"
         session.commit()
@@ -1902,7 +1902,7 @@ def test_realistic_identifiers_case_equality_and_varchar_boundary(
         session.add_all([first, second])
         session.commit()
         assert first.cloud_resource_id != second.cloud_resource_id
-        assert session.get(type(first), long_resource_id) is not None
+        assert session.get(type(first), (TEST_TENANT, long_resource_id)) is not None
 
         max_id = "s" * 255
         session.add(
@@ -1917,7 +1917,7 @@ def test_realistic_identifiers_case_equality_and_varchar_boundary(
             )
         )
         session.commit()
-        assert session.get(db_models.SnapshotRecord, max_id) is not None
+        assert session.get(db_models.SnapshotRecord, (TEST_TENANT, max_id)) is not None
         session.add(
             _mapped_instance(
                 "topology_snapshots",
@@ -1968,11 +1968,11 @@ def test_each_accepted_unique_index_is_enforced(
 
 
 REPRESENTATIVE_COMPOSITE_CONSTRAINTS = [
-    ("build_artifact_evidence", "uq_build_artifact_provider_fact"),
-    ("change_entity_links", "uq_change_event_entity_link"),
-    ("action_approval_events", "uq_action_approval_event_sequence"),
-    ("post_incident_reports", "uq_post_incident_report_version"),
-    ("webhook_deliveries", "uq_webhook_delivery_event"),
+    ("build_artifact_evidence", "uq_tenant_build_artifact_provider_fact"),
+    ("change_entity_links", "uq_tenant_change_event_entity_link"),
+    ("action_approval_events", "uq_tenant_action_approval_event_sequence"),
+    ("post_incident_reports", "uq_tenant_post_incident_report_version"),
+    ("webhook_deliveries", "uq_tenant_webhook_delivery_event"),
 ]
 
 
@@ -2019,7 +2019,7 @@ def test_transaction_rollback_and_causal_immutability(session_factory) -> None:
         session.add(transient)
         session.flush()
         session.rollback()
-        assert session.get(db_models.CloudAccountRecord, key) is None
+        assert session.get(db_models.CloudAccountRecord, (TEST_TENANT, key)) is None
 
         snapshot = _snapshot("snapshot:causal-immutable")
         save_snapshot(session, snapshot, tenant_id=TEST_TENANT)

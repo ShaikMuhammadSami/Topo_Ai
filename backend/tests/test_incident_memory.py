@@ -71,6 +71,8 @@ NOW = datetime(
 )
 
 
+from domain_tenant_fixtures import owned_world_fixture
+
 def _resolution(
     *,
     action_type: str = "rollback_deployment",
@@ -98,6 +100,7 @@ def _resolution(
     )
 
 
+@owned_world_fixture
 def _profile(
     incident_id: str,
     *,
@@ -503,6 +506,7 @@ def test_inconclusive_history_remains_labelled(
     )
 
 
+@owned_world_fixture
 def _incident(
     incident_id: str = "incident:old",
 ) -> IncidentRecordView:
@@ -529,6 +533,7 @@ def _incident(
     )
 
 
+@owned_world_fixture
 def _analysis() -> CausalAnalysisResponse:
     hypothesis = CausalHypothesis(
         hypothesis_id="hypothesis:1",

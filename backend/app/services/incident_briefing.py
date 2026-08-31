@@ -1640,6 +1640,9 @@ def build_incident_briefing(
             root_entity_id=root_entity_id,
             warning=warning,
         )
+        from app.services.tenant_world_model import bind_world_value
+
+        bind_world_value(history, tenant_id=tenant_id)
 
     response = None
 

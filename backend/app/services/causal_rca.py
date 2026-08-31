@@ -175,6 +175,7 @@ def _snapshot_for_incident(
         )
 
         if record is not None:
+            require_record_owner(record, tenant_id=tenant_id)
             return (
                 record,
                 GraphSnapshot
@@ -200,6 +201,7 @@ def _snapshot_for_incident(
     )
     if record is None:
         return None, None
+    require_record_owner(record, tenant_id=tenant_id)
     return (
         record,
         GraphSnapshot.model_validate_json(record.payload_json),

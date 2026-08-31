@@ -8,6 +8,7 @@ from sqlalchemy import create_engine, inspect, text
 from app.db.database import Base
 from app.db.domain_ownership import MACHINE_DEPENDENT_WRITERS
 from sqlalchemy import MetaData
+from frozen_schema_fixtures import frozen_0007_metadata
 from app.db.schema_management import (
     current_revisions,
     inspect_schema_authority,
@@ -33,7 +34,7 @@ REQUIRED_OWNERSHIP_TABLES = frozenset(
 def _frozen_0006_metadata():
     """Preserve 0006 regression assertions independently of the new head."""
     metadata = MetaData()
-    for table in Base.metadata.tables.values():
+    for table in frozen_0007_metadata().tables.values():
         copied = table.to_metadata(metadata)
         if copied.name in {"agent_enrollment_tokens", "topo_agents", "change_sources"}:
             copied.indexes.difference_update(

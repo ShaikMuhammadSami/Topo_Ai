@@ -394,6 +394,7 @@ def prepare_disposable_product_database(database_path: Path) -> None:
         raise ValueError("Refusing to prepare the frozen evaluation database.")
 
     connection = sqlite3.connect(database_path)
+    revisions = ()
     try:
         table_names = {
             str(row[0])
@@ -408,12 +409,13 @@ def prepare_disposable_product_database(database_path: Path) -> None:
                     "SELECT version_num FROM alembic_version"
                 )
             )
-            if revisions == ("0007_machine_tenant_binding",):
+            if revisions == ("0008_tenant_scoped_identity_namespace",):
                 return
-            raise ValueError(
-                "Disposable evaluation database has unexpected migration state."
-            )
-        if len(table_names) != 38:
+            if revisions != ("0007_machine_tenant_binding",):
+                raise ValueError(
+                    "Disposable evaluation database has unexpected migration state."
+                )
+        if not revisions and len(table_names) != 38:
             raise ValueError(
                 "Disposable evaluation database is not the accepted "
                 "38-table pre-tenancy fixture."
@@ -434,6 +436,9 @@ def prepare_disposable_product_database(database_path: Path) -> None:
         with engine.begin() as migration_connection:
             config = alembic_config(connection=migration_connection)
             config.cmd_opts = Namespace(x=[])
+            if revisions == ("0007_machine_tenant_binding",):
+                command.upgrade(config, "0008_tenant_scoped_identity_namespace")
+                return
             command.stamp(config, "0001_current_schema")
             command.upgrade(config, "0004_tenant_foundation")
             migration_connection.execute(
@@ -466,6 +471,8 @@ def prepare_disposable_product_database(database_path: Path) -> None:
                 f"legacy_machine_tenant_id={DISPOSABLE_EVALUATION_TENANT_ID}"
             ])
             command.upgrade(config, "0007_machine_tenant_binding")
+            config.cmd_opts = Namespace(x=[])
+            command.upgrade(config, "0008_tenant_scoped_identity_namespace")
     finally:
         engine.dispose()
 
@@ -661,15 +668,15 @@ def _golden_invariants(session: Any, analysis: Any) -> dict[str, bool]:
         )
         or 0
     )
-    golden = session.get(ChangeEventRecord, GOLDEN_EVENT_ID)
+    golden = session.get(ChangeEventRecord, (DISPOSABLE_EVALUATION_TENANT_ID, GOLDEN_EVENT_ID))
     metadata = _load_record_json(golden, "metadata_json") if golden is not None else {}
     mutation_ids = [
         str(item.get("mutation_id"))
         for item in metadata.get("source_file_mutations", [])
         if isinstance(item, dict)
     ]
-    incident = session.get(IncidentRecord, GOLDEN_INCIDENT_ID)
-    snapshot = session.get(SnapshotRecord, GOLDEN_SNAPSHOT_ID)
+    incident = session.get(IncidentRecord, (DISPOSABLE_EVALUATION_TENANT_ID, GOLDEN_INCIDENT_ID))
+    snapshot = session.get(SnapshotRecord, (DISPOSABLE_EVALUATION_TENANT_ID, GOLDEN_SNAPSHOT_ID))
     payload = _load_record_json(snapshot, "payload_json") if snapshot is not None else {}
     image_entity_id = f"artifact:container-image:{GOLDEN_IMAGE_DIGEST}"
     image_count = sum(
@@ -722,7 +729,7 @@ def _distractor_invariants(session: Any, items: Iterable[Mapping[str, Any]], ana
     values = list(items)
     expected_ids = [str(item["expected_event_id"]) for item in values]
     records = {
-        event_id: session.get(ChangeEventRecord, event_id) for event_id in expected_ids
+        event_id: session.get(ChangeEventRecord, (DISPOSABLE_EVALUATION_TENANT_ID, event_id)) for event_id in expected_ids
     }
     audit_by_id = {item.event_id: item for item in analysis.candidate_selection_audit}
     boundary = parse_utc(GOLDEN_INCIDENT_BOUNDARY)
@@ -811,7 +818,7 @@ def grade_analysis(session: Any, analysis: Any, items: Iterable[Mapping[str, Any
     golden_ledger = _ledger_summary(golden_hypothesis) if golden_hypothesis else _ledger_summary(type("NoHypothesis", (), {"evidence_ledger": None})())
     top_supported = supported[0] if supported else None
     top_event = (
-        session.get(ChangeEventRecord, top_supported.root_event_id)
+        session.get(ChangeEventRecord, (DISPOSABLE_EVALUATION_TENANT_ID, top_supported.root_event_id))
         if top_supported is not None
         else None
     )

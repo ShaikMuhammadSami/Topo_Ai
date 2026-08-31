@@ -65,6 +65,8 @@ NEIGHBORHOOD_HOPS = 2
 FALLBACK_AFFECTED_HOPS = 5
 
 
+from app.services.tenant_world_model import tenant_world
+
 def _value(value: Any) -> str | None:
     if value is None:
         return None
@@ -392,6 +394,7 @@ def _historical_analysis(
     return analysis
 
 
+@tenant_world(prefetched=('incident', 'analysis', 'operational_impact'))
 def build_incident_feature_profile(
     session: Session,
     *,
@@ -756,6 +759,7 @@ def build_incident_feature_profile(
     )
 
 
+@tenant_world(prefetched=('incident_record', 'causal_analysis', 'operational_impact'))
 def build_current_incident_profile(
     session: Session,
     *,
@@ -795,6 +799,7 @@ def build_current_incident_profile(
     )
 
 
+@tenant_world(prefetched=())
 def build_historical_incident_profile(
     session: Session,
     *,

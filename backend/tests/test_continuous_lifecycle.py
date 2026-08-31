@@ -429,7 +429,7 @@ def test_repeated_equivalent_failure_correlates_without_duplicate() -> None:
     assert _count(session, IncidentRecord) == 1
     incident = session.get(
         IncidentRecord,
-        first.results[0].incident_id,
+        (TEST_TENANT, first.results[0].incident_id),
     )
     assert incident is not None
     assert incident.occurrence_count == 2
@@ -921,7 +921,7 @@ def test_pending_topology_reconciles_only_with_safe_checkpoint() -> None:
         )
         == []
     )
-    incident = session.get(IncidentRecord, incident_id)
+    incident = session.get(IncidentRecord, (TEST_TENANT, incident_id))
     assert incident is not None
     assert incident.topology_snapshot_id is None
 
@@ -978,7 +978,7 @@ def test_explicit_incident_boundary_reconciles_after_failure() -> None:
     reconciled = reconcile_pending_incidents_for_checkpoint(
         session, snapshot_id=boundary.snapshot_id, tenant_id=TEST_TENANT
     )
-    incident = session.get(IncidentRecord, incident_id)
+    incident = session.get(IncidentRecord, (TEST_TENANT, incident_id))
 
     assert incident is not None
     assert len(reconciled) == 1
@@ -1020,7 +1020,7 @@ def test_future_automatic_checkpoint_without_signal_link_is_rejected() -> None:
         )
         == []
     )
-    incident = session.get(IncidentRecord, incident_id)
+    incident = session.get(IncidentRecord, (TEST_TENANT, incident_id))
     assert incident is not None
     assert incident.topology_snapshot_id is None
 
@@ -1053,7 +1053,7 @@ def test_ephemeral_pod_resolves_by_uid_not_name_guessing() -> None:
     )
     incident = session.get(
         IncidentRecord,
-        result.results[0].incident_id,
+        (TEST_TENANT, result.results[0].incident_id),
     )
 
     assert incident is not None
@@ -1107,7 +1107,7 @@ def test_pinned_snapshot_never_moves_on_later_correlated_signal() -> None:
     )
     incident = session.get(
         IncidentRecord,
-        first.results[0].incident_id,
+        (TEST_TENANT, first.results[0].incident_id),
     )
 
     assert incident is not None
@@ -1162,7 +1162,7 @@ def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
     )
     incident_id = watcher_result.results[0].incident_id
     assert incident_id is not None
-    incident = session.get(IncidentRecord, incident_id)
+    incident = session.get(IncidentRecord, (TEST_TENANT, incident_id))
     analysis = latest_causal_analysis(
         session, incident_id=incident_id, tenant_id=TEST_TENANT
     )

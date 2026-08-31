@@ -1192,8 +1192,9 @@ def test_database_tables_preserve_intent_and_event_history(
 
     assert "execution_intents" in table_names
     assert "execution_intent_events" in table_names
-    assert (
-        ExecutionIntentRecord.__table__
-        .c.idempotency_key.unique
-    )
-    assert ExecutionIntentRecord.__table__.c.approval_id.unique
+    unique_keys = {
+        tuple(column.name for column in index.columns)
+        for index in ExecutionIntentRecord.__table__.indexes if index.unique
+    }
+    assert ("tenant_id", "idempotency_key") in unique_keys
+    assert ("tenant_id", "approval_id") in unique_keys

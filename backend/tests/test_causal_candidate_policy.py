@@ -662,7 +662,7 @@ def test_legacy_analysis_loads_without_v1_claim_or_payload_rewrite(monkeypatch) 
     assert loaded is not None
     assert loaded.candidate_policy_version is None
     assert loaded.candidate_selection_audit == []
-    assert session.get(CausalAnalysisRecord, "causal-analysis:legacy").payload_json == legacy_json
+    assert session.get(CausalAnalysisRecord, (TEST_TENANT, "causal-analysis:legacy")).payload_json == legacy_json
 
 
 def test_13c_formula_coefficients_and_versions_remain_unchanged(monkeypatch) -> None:

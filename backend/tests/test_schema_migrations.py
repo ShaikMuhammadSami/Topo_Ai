@@ -26,7 +26,7 @@ from app.db.schema_management import (
 
 DOMAIN_TABLE_COUNT = 43
 DOMAIN_COLUMN_COUNT = 771
-EXPECTED_HEAD = "0007_machine_tenant_binding"
+EXPECTED_HEAD = "0008_tenant_scoped_identity_namespace"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"
@@ -99,7 +99,7 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
     assert sum(
         len(inspector.get_pk_constraint(table)["constrained_columns"])
         for table in domain_tables
-    ) == DOMAIN_TABLE_COUNT
+    ) == DOMAIN_TABLE_COUNT + 25
     assert sum(len(inspector.get_foreign_keys(table)) for table in domain_tables) == 0
     assert sum(
         column["default"] is not None
@@ -119,9 +119,9 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
         for table in domain_tables
         for index in inspector.get_indexes(table)
     ]
-    assert len(named_multi_column_uniques) == 21
-    assert sum(bool(index["unique"]) for index in indexes) == 16
-    assert len(indexes) == 351
+    assert len(named_multi_column_uniques) == 11
+    assert sum(bool(index["unique"]) for index in indexes) == 9
+    assert len(indexes) == 344
 
     with migration_engine.connect() as connection:
         assert schema_differences(connection) == ()

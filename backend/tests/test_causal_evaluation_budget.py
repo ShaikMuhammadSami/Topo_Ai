@@ -526,7 +526,7 @@ def test_historical_analysis_loads_without_fabricated_ar1_metadata(monkeypatch) 
     assert loaded.candidate_evaluation_audit == []
     assert loaded.evaluation_budget_audit is None
     assert session.get(
-        CausalAnalysisRecord, "causal-analysis:pre-ar1"
+        CausalAnalysisRecord, (TEST_TENANT, "causal-analysis:pre-ar1")
     ).payload_json == legacy_json
 
 

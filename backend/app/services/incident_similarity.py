@@ -71,6 +71,8 @@ Historical support is informative, not proof.
 """.strip()
 
 
+from app.services.tenant_world_model import tenant_world
+
 def _normalized(value: str | None) -> str | None:
     if value is None:
         return None
@@ -781,6 +783,7 @@ def _ai_payload(
     }
 
 
+@tenant_world(prefetched=('current_profile',))
 def build_historical_incident_intelligence(
     session: Session,
     *,
