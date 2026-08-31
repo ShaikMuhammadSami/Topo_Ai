@@ -22,6 +22,9 @@ from app.services.confidence_semantics import (
 )
 
 
+from app.services.tenant_world_model import tenant_world, bind_world_value
+
+@tenant_world(prefetched=())
 def save_causal_analysis(
     session: Session,
     *,
@@ -29,6 +32,7 @@ def save_causal_analysis(
     commit: bool = True,
     tenant_id: DomainTenant,
 ) -> CausalAnalysisResponse:
+    bind_world_value(analysis, tenant_id=tenant_id)
     analysis = ensure_analysis_confidence_semantics(analysis)
     record = tenant_get(
         session,
@@ -74,6 +78,7 @@ def save_causal_analysis(
     return analysis
 
 
+@tenant_world(prefetched=())
 def load_causal_analysis(
     session: Session,
     *,
@@ -95,6 +100,7 @@ def load_causal_analysis(
     )
 
 
+@tenant_world(prefetched=())
 def latest_causal_analysis(
     session: Session,
     *,

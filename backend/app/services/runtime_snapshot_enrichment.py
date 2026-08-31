@@ -86,6 +86,11 @@ def enrich_snapshot_with_runtime_dependencies(
     window_minutes: int = 30,
     tenant_id: DomainTenant,
 ) -> GraphSnapshot:
+    from app.repositories.tenant_scope import require_record_owner
+    from app.services.tenant_world_model import bind_world_value
+
+    require_record_owner(agent, tenant_id=tenant_id)
+    bind_world_value(snapshot, tenant_id=tenant_id)
     cutoff = (
         datetime.now(timezone.utc)
         - timedelta(

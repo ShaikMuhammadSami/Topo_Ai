@@ -30,6 +30,8 @@ CRITICALITY_PRIORITY = {
 }
 
 
+from app.services.tenant_world_model import tenant_world
+
 def _highest_criticality(
     values: list[
         ServiceCriticality
@@ -117,6 +119,7 @@ def _routing_recommendation(
     )
 
 
+@tenant_world(prefetched=())
 def calculate_incident_ownership_impact(
     session: Session,
     incident_id: str,

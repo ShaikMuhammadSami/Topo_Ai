@@ -473,7 +473,7 @@ def test_legacy_payload_loads_without_projection_reconstruction() -> None:
         )
         stored_json = session.get(
             CausalAnalysisRecord,
-            payload["analysis_id"],
+            (TEST_TENANT, payload["analysis_id"]),
         ).payload_json
 
     assert loaded is not None

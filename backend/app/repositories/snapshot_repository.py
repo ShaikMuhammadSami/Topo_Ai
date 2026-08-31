@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import SnapshotRecord
 from app.models.topology import GraphSnapshot
+from app.services.tenant_world_model import bind_world_value, snapshot_from_owned_record
 from app.models.temporal import TimeOrigin
 from app.services.temporal_semantics import (
     observation_temporal_metadata,
@@ -102,6 +103,7 @@ def save_snapshot(
     """
     Persist one complete graph snapshot.
     """
+    bind_world_value(snapshot, tenant_id=tenant_id)
     recorded_at = utc_now()
     persisted = _stamp_snapshot_temporal(
         snapshot,
@@ -180,6 +182,4 @@ def load_snapshot(
     if record is None:
         return None
 
-    return GraphSnapshot.model_validate_json(
-        record.payload_json
-    )
+    return snapshot_from_owned_record(record, tenant_id=tenant_id)

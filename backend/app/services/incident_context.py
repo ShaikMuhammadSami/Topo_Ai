@@ -31,6 +31,8 @@ from app.services.ownership_resolver import (
 )
 
 
+from app.services.tenant_world_model import tenant_world
+
 def _deduplicated(
     values: list[str | None],
 ) -> list[str]:
@@ -187,6 +189,7 @@ def _escalation_targets(
     return _deduplicated(values)
 
 
+@tenant_world(prefetched=('causal_analysis', 'ownership_impact'))
 def build_incident_operational_context(
     session: Session,
     incident_id: str,

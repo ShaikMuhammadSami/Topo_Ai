@@ -13,6 +13,7 @@ from app.repositories.tenant_scope import (
     TenantResourceNotFound,
     tenant_commit,
     tenant_get,
+    local_primary_key,
 )
 from app.security.tenant_context import require_tenant_context
 from app.security.tenant_routing import (
@@ -113,7 +114,7 @@ def test_every_domain_get_scopes_before_identity_lookup(two_tenants, table_name)
         for mapper in models.Base.registry.mappers
         if mapper.local_table.name == table_name
     )
-    primary = inspect(model).primary_key[0].key
+    primary = local_primary_key(model).key
     with factory.begin() as session:
         _seed_pre_tenancy_row(
             session.connection(), table_name, **{primary: "foreign-row", "tenant_id": b}
@@ -364,7 +365,7 @@ def test_background_lifecycle_propagates_owned_root_and_correlates_in_tenant(
             tenant_id=a,
         )
         incident_id = result.results[0].incident_id
-        incident = session.get(models.IncidentRecord, incident_id)
+        incident = session.get(models.IncidentRecord, (a, incident_id))
         assert (
             incident.tenant_id == a
             and incident.topology_snapshot_id == snapshot.snapshot_id

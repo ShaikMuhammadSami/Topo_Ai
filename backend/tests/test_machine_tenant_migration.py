@@ -14,6 +14,7 @@ from app.db.schema_management import (
     schema_differences, script_directory, SchemaAuthorityError, verify_database_revision,
 )
 from test_domain_tenant_migration import TENANT_A, TENANT_B, _seed_tenant, _seed_pre_tenancy_row
+from frozen_schema_fixtures import frozen_0007_metadata
 
 HEAD = "0007_machine_tenant_binding"
 PARENT = "0006_domain_tenant_enforcement"
@@ -53,7 +54,7 @@ def test_fresh_38_owned_tables_no_defaults_and_downgrade_parity(machine_engine):
     assert len(Base.metadata.tables) == 43
     with machine_engine.connect() as c:
         assert current_revisions(c) == (HEAD,)
-        assert schema_differences(c) == ()
+        assert schema_differences(c, metadata=frozen_0007_metadata()) == ()
         for name in sorted(REQUIRED_OWNERSHIP_TABLES):
             column = next(x for x in inspect(c).get_columns(name) if x["name"] == "tenant_id")
             assert column["nullable"] is False
@@ -75,7 +76,7 @@ def test_fresh_38_owned_tables_no_defaults_and_downgrade_parity(machine_engine):
             assert next(x for x in inspect(c).get_columns(name) if x["name"] == "tenant_id")["nullable"]
     migrate(machine_engine)
     with machine_engine.connect() as c:
-        assert schema_differences(c) == ()
+        assert schema_differences(c, metadata=frozen_0007_metadata()) == ()
 
 
 @pytest.mark.parametrize("target,status,error", [

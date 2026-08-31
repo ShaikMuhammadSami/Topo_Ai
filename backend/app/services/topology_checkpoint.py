@@ -24,6 +24,7 @@ from app.models.lifecycle_automation import (
     TopologyCheckpointResult,
 )
 from app.models.topology import GraphSnapshot
+from app.services.tenant_world_model import snapshot_from_owned_record, bind_world_value
 from app.repositories.change_repository import (
     save_changes,
 )
@@ -198,9 +199,7 @@ def latest_checkpoint_at_or_before(
     if record is None:
         return None
 
-    return GraphSnapshot.model_validate_json(
-        record.payload_json
-    )
+    return snapshot_from_owned_record(record, tenant_id=tenant_id)
 
 
 def checkpoint_metadata(
@@ -231,6 +230,7 @@ def persist_topology_checkpoint(
     force: bool = False,
     tenant_id: DomainTenant,
 ) -> TopologyCheckpointResult:
+    bind_world_value(snapshot, tenant_id=tenant_id)
     trigger_ids = list(
         dict.fromkeys(trigger_event_ids or [])
     )

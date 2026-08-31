@@ -303,6 +303,10 @@ def resolve_entity_ownership(
     *,
     tenant_id: DomainTenant,
 ) -> EntityOwnershipResolution:
+    from app.services.tenant_world_model import bind_world_value
+
+    bind_world_value(snapshot, tenant_id=tenant_id)
+    bind_world_value(entity, tenant_id=tenant_id)
     service_name = stable_service_name(
         entity
     )

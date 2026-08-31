@@ -82,6 +82,8 @@ class _EventContext:
     record_found: bool
 
 
+from app.services.tenant_world_model import tenant_world
+
 def _enum_value(
     value: Any,
 ) -> str | None:
@@ -1657,6 +1659,7 @@ def _recommended_actions(
     return _rank_actions(actions)
 
 
+@tenant_world(prefetched=('incident_record', 'causal_analysis', 'operational_context'))
 def build_incident_response_plan(
     session: Session,
     incident_id: str,

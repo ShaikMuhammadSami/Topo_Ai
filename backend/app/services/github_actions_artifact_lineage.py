@@ -376,6 +376,10 @@ def enrich_snapshot_with_github_actions_provider_evidence(
 ) -> tuple[GraphSnapshot, dict[str, Any], BuildArtifactLineageStats]:
     """Collect, retain, and reconcile explicit provider build evidence."""
 
+    from app.services.tenant_world_model import bind_world_value
+
+    bind_world_value(snapshot, tenant_id=tenant_id)
+
     observed = observed_at or datetime.now(timezone.utc)
     repository_name = str(
         repository.get("full_name") or connector.settings.full_name

@@ -48,6 +48,8 @@ from app.security.api_tokens import (
 )
 
 
+from domain_tenant_fixtures import owned_world_fixture
+
 def _impact() -> IncidentOwnershipImpact:
     return IncidentOwnershipImpact(
         incident_id="incident:1",
@@ -102,6 +104,7 @@ def _action(
     )
 
 
+@owned_world_fixture
 def _plan(
     *,
     confidence: float = 0.9,
@@ -255,6 +258,7 @@ def _match(
     )
 
 
+@owned_world_fixture
 def _history(
     matches: list[HistoricalIncidentMatch],
 ) -> IncidentHistoricalIntelligence:

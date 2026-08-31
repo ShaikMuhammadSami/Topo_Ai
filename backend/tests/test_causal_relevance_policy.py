@@ -625,7 +625,7 @@ def test_legacy_analysis_loads_without_relevance_claim(monkeypatch) -> None:
     )
     assert loaded.causal_relevance_policy_version is None
     assert loaded.candidate_relevance_audit == []
-    assert session.get(CausalAnalysisRecord, "causal-analysis:legacy-cr1").payload_json == legacy_json
+    assert session.get(CausalAnalysisRecord, (TEST_TENANT, "causal-analysis:legacy-cr1")).payload_json == legacy_json
 
 
 def test_historical_pin_ignores_a_later_unrelated_snapshot(monkeypatch) -> None:

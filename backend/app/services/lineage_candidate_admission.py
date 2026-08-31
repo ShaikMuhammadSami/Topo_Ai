@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import ChangeEventRecord, IncidentRecord, SnapshotRecord
+from app.services.tenant_world_model import snapshot_from_owned_record
 from app.models.build_artifacts import BuildArtifactEvidenceCompleteness
 from app.models.causal_candidates import (
     CandidateAdmissionBasis,
@@ -543,7 +544,7 @@ def evaluate_lineage_candidate_admission(
         )
     if not incident.affected_entity_id:
         return _incomplete(LineageAdmissionReason.AFFECTED_ENTITY_MISSING)
-    snapshot = GraphSnapshot.model_validate_json(snapshot_record.payload_json)
+    snapshot = snapshot_from_owned_record(snapshot_record, tenant_id=tenant_id)
     runtime = _runtime_path(
         session,
         incident=incident,

@@ -249,7 +249,7 @@ def test_fresh_sqlite_requires_no_legacy_tenant_and_creates_none(
     _upgrade(migration_engine)
 
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == ("0007_machine_tenant_binding",)
+        assert current_revisions(connection) == ("0008_tenant_scoped_identity_namespace",)
         assert connection.scalar(text("SELECT COUNT(*) FROM tenants")) == 0
         assert schema_differences(connection) == ()
         assert inspect_schema_authority(connection).ok
@@ -335,7 +335,7 @@ def test_two_tenant_sqlite_backfill_uses_only_explicit_target_and_preserves_ids(
                 MetaData(),
                 autoload_with=connection,
             )
-            primary_key = next(iter(table.primary_key.columns))
+            primary_key = next(column for column in table.primary_key.columns if column.name != "tenant_id")
             row = connection.execute(
                 sa.select(primary_key, table.c.tenant_id)
             ).one()
@@ -424,7 +424,7 @@ def test_sqlite_downgrade_and_explicit_reupgrade_preserve_logical_ids(
 def test_parallel_tenant_unique_rules_preserve_global_compatibility_rules(
     migration_engine: Engine,
 ) -> None:
-    _upgrade(migration_engine)
+    _upgrade(migration_engine, DOMAIN_OWNERSHIP_REVISION)
     revision_module = _revision_module()
     inspector = inspect(migration_engine)
 

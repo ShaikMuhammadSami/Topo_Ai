@@ -316,7 +316,7 @@ def test_snapshot_collection_and_persistence_are_distinct() -> None:
     save_snapshot(
         session, _snapshot("snapshot:temporal", SNAPSHOT_AT), tenant_id=TEST_TENANT
     )
-    record = session.get(SnapshotRecord, "snapshot:temporal")
+    record = session.get(SnapshotRecord, (TEST_TENANT, "snapshot:temporal"))
     loaded = load_snapshot(session, "snapshot:temporal", tenant_id=TEST_TENANT)
     assert record is not None and loaded is not None
     assert loaded.collected_at == SNAPSHOT_AT
@@ -355,7 +355,7 @@ def test_signal_source_observation_and_backend_record_time() -> None:
     save_signals(session, [_signal()], tenant_id=TEST_TENANT)
     from app.db.models import SignalRecord
 
-    record = session.get(SignalRecord, "signal:tc3")
+    record = session.get(SignalRecord, (TEST_TENANT, "signal:tc3"))
     payload = NormalizedSignal.model_validate_json(record.payload_json)
     assert payload.temporal is not None
     assert payload.temporal.source_event_at == INCIDENT_AT

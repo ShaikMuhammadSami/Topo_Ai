@@ -988,14 +988,14 @@ def test_late_evidence_does_not_rewrite_historical_snapshot_analysis_or_pin():
     )
     session.commit()
     before_snapshot = load_snapshot(session, "snapshot:pinned", tenant_id=TEST_TENANT)
-    before_payload = session.get(CausalAnalysisRecord, "analysis:pinned").payload_json
+    before_payload = session.get(CausalAnalysisRecord, (TEST_TENANT, "analysis:pinned")).payload_json
     _session_value, _current, *_rest = _exercise()
     assert (
         load_snapshot(session, "snapshot:pinned", tenant_id=TEST_TENANT)
         == before_snapshot
     )
-    assert session.get(IncidentRecord, "incident:pinned").topology_snapshot_id == "snapshot:pinned"
-    assert session.get(CausalAnalysisRecord, "analysis:pinned").payload_json == before_payload
+    assert session.get(IncidentRecord, (TEST_TENANT, "incident:pinned")).topology_snapshot_id == "snapshot:pinned"
+    assert session.get(CausalAnalysisRecord, (TEST_TENANT, "analysis:pinned")).payload_json == before_payload
 
 
 @pytest.mark.parametrize(

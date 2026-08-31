@@ -17,6 +17,7 @@ from app.db.models import (
     ChangeEventRecord,
     ChangeRecord,
     RuntimeDependencyRecord,
+    TopoAgentRecord,
 )
 from app.models.agents import AgentSnapshotSubmission
 from app.models.build_artifacts import (
@@ -828,6 +829,13 @@ def test_tetragon_edge_references_real_runtime_dependency_record(
         ),
     )
     session = _session()
+    from test_domain_tenant_migration import _seed_pre_tenancy_row
+
+    _seed_pre_tenancy_row(session.connection(), "topo_agents",
+                         agent_id="agent:tetragon", tenant_id=TEST_TENANT,
+                         environment="production")
+    session.commit()
+    agent = session.get(TopoAgentRecord, "agent:tetragon")
     session.add(
         RuntimeDependencyRecord(
             runtime_dependency_id="runtime-dependency:one",
@@ -872,10 +880,7 @@ def test_tetragon_edge_references_real_runtime_dependency_record(
     )
     snapshot = enrich_snapshot_with_runtime_dependencies(
         session,
-        agent=SimpleNamespace(
-            agent_id="agent:tetragon",
-            environment="production",
-        ),
+        agent=agent,
         snapshot=GraphSnapshot(
             snapshot_id="snapshot:tetragon",
             collected_at=NOW,

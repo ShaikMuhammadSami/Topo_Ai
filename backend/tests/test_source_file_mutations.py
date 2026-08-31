@@ -265,7 +265,7 @@ def test_signed_push_provider_evidence_survives_durable_round_trip(
         event_id = receipt.event_ids[0]
 
     with sessions() as session:
-        record = session.get(ChangeEventRecord, event_id)
+        record = session.get(ChangeEventRecord, (TEST_TENANT, event_id))
         assert record is not None
         event = change_event_view(session, record=record, tenant_id=TEST_TENANT)
         mutation = _mutation(event)
@@ -377,7 +377,7 @@ def test_provider_shaped_responses_flow_through_real_connector_and_ingest(
     sessions = _session_factory()
     with sessions() as session:
         receipt = _ingest(session, monkeypatch, connector)
-        record = session.get(ChangeEventRecord, receipt.event_ids[0])
+        record = session.get(ChangeEventRecord, (TEST_TENANT, receipt.event_ids[0]))
         assert record is not None
         mutation = _mutation(
             change_event_view(session, record=record, tenant_id=TEST_TENANT)
@@ -432,7 +432,7 @@ def test_provider_failure_preserves_parent_event_with_explicit_unavailability(
     sessions = _session_factory()
     with sessions() as session:
         receipt = _ingest(session, monkeypatch, UnavailableProvider())
-        record = session.get(ChangeEventRecord, receipt.event_ids[0])
+        record = session.get(ChangeEventRecord, (TEST_TENANT, receipt.event_ids[0]))
         assert record is not None
         event = change_event_view(session, record=record, tenant_id=TEST_TENANT)
         capture = event.metadata["source_file_mutation_enrichment"]
@@ -458,7 +458,7 @@ def test_parent_event_identity_is_stable_when_enrichment_later_succeeds(
         )
         assert first.event_ids == second.event_ids
         assert session.scalar(select(func.count()).select_from(ChangeEventRecord)) == 1
-        record = session.get(ChangeEventRecord, first.event_ids[0])
+        record = session.get(ChangeEventRecord, (TEST_TENANT, first.event_ids[0]))
         assert record is not None
         assert record.observation_count == 2
         assert len(json.loads(record.metadata_json)["source_file_mutations"]) == 1
@@ -478,7 +478,7 @@ def test_later_provider_failure_does_not_erase_richer_durable_evidence(
             session, monkeypatch, UnavailableProvider(), delivery="delivery-b"
         )
         assert first.event_ids == second.event_ids
-        record = session.get(ChangeEventRecord, first.event_ids[0])
+        record = session.get(ChangeEventRecord, (TEST_TENANT, first.event_ids[0]))
         assert record is not None
         metadata = json.loads(record.metadata_json)
         assert metadata["source_file_mutation_enrichment"]["completeness"] == (
@@ -494,7 +494,7 @@ def test_same_delivery_replay_does_not_duplicate_event_or_mutation(
     provider = _provider()
     with sessions() as session:
         first = _ingest(session, monkeypatch, provider)
-        first_record = session.get(ChangeEventRecord, first.event_ids[0])
+        first_record = session.get(ChangeEventRecord, (TEST_TENANT, first.event_ids[0]))
         first_metadata = first_record.metadata_json
         second = _ingest(session, monkeypatch, provider)
         assert second.duplicate is True

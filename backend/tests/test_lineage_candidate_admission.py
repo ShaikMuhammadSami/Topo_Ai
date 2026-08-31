@@ -378,6 +378,7 @@ def _add_source_change(
     revision: str = REVISION,
     repository: str = REPOSITORY,
     metadata: dict | None = None,
+    tenant_id: str = TEST_TENANT,
 ) -> str:
     receipt = ingest_change_event(
         session,
@@ -395,7 +396,7 @@ def _add_source_change(
         auto_correlate=False,
         source_time_trusted=True,
         observed_at=(occurred_at + timedelta(minutes=1)).isoformat(),
-        tenant_id=TEST_TENANT,
+        tenant_id=tenant_id,
     )
     return receipt.event_id
 
@@ -413,6 +414,7 @@ def _add_provider(
     completeness: BuildArtifactEvidenceCompleteness = (
         BuildArtifactEvidenceCompleteness.COMPLETE
     ),
+    tenant_id: str = TEST_TENANT,
 ) -> None:
     temporal = build_temporal_metadata(
         source_event_at=effective_at,
@@ -457,7 +459,7 @@ def _add_provider(
             temporal=temporal,
             completeness=completeness,
         ),
-        tenant_id=TEST_TENANT,
+        tenant_id=tenant_id,
     )
 
 
@@ -744,7 +746,7 @@ def test_latest_snapshot_never_substitutes_for_incident_pin():
 
 def test_missing_incident_pin_never_uses_repository_latest_snapshot():
     session, _ = _world()
-    incident = session.get(IncidentRecord, "incident:sc2")
+    incident = session.get(IncidentRecord, (TEST_TENANT, "incident:sc2"))
     incident.topology_snapshot_id = None
     session.commit()
     result = _analysis(session)
@@ -853,7 +855,7 @@ def test_declared_tag_semantics_cannot_replace_derived_digest_provenance():
 
 def test_exact_deployment_affected_entity_uses_workload_image_without_rewrite():
     session, event_id = _world()
-    incident = session.get(IncidentRecord, "incident:sc2")
+    incident = session.get(IncidentRecord, (TEST_TENANT, "incident:sc2"))
     incident.affected_entity_id = "deployment:app"
     session.commit()
     result = _analysis(session)
@@ -866,7 +868,7 @@ def test_exact_deployment_affected_entity_uses_workload_image_without_rewrite():
 
 def test_missing_affected_entity_is_explicit_and_does_not_guess_from_signal():
     session, _ = _world()
-    incident = session.get(IncidentRecord, "incident:sc2")
+    incident = session.get(IncidentRecord, (TEST_TENANT, "incident:sc2"))
     incident.affected_entity_id = None
     session.commit()
     result = _analysis(session)
@@ -878,7 +880,7 @@ def test_missing_affected_entity_is_explicit_and_does_not_guess_from_signal():
 
 def test_noncanonical_affected_entity_reference_is_not_fuzzily_resolved():
     session, _ = _world()
-    incident = session.get(IncidentRecord, "incident:sc2")
+    incident = session.get(IncidentRecord, (TEST_TENANT, "incident:sc2"))
     incident.affected_entity_id = "app"
     session.commit()
     result = _analysis(session)
@@ -890,7 +892,7 @@ def test_noncanonical_affected_entity_reference_is_not_fuzzily_resolved():
 
 def test_missing_pinned_snapshot_record_does_not_search_for_replacement():
     session, _ = _world()
-    session.delete(session.get(SnapshotRecord, "snapshot:pinned"))
+    session.delete(session.get(SnapshotRecord, (TEST_TENANT, "snapshot:pinned")))
     session.commit()
     result = _analysis(session)
     assert result.candidates == []
@@ -970,7 +972,7 @@ def test_source_repository_identity_must_match_provider_record():
 
 def test_source_external_identity_must_be_canonical():
     session, event_id = _world()
-    event = session.get(ChangeEventRecord, event_id)
+    event = session.get(ChangeEventRecord, (TEST_TENANT, event_id))
     event.external_id = "github:wrong/repository:" + REVISION
     session.commit()
     result = _analysis(session)
@@ -1158,7 +1160,7 @@ def test_historical_causal_analysis_payload_without_sc2_fields_still_loads():
 
 def test_lineage_candidate_can_still_safely_abstain():
     session, event_id = _world()
-    event = session.get(ChangeEventRecord, event_id)
+    event = session.get(ChangeEventRecord, (TEST_TENANT, event_id))
     event.status = "no_change"
     session.commit()
     analysis = analyze_causal_rca(

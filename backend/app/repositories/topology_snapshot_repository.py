@@ -64,6 +64,7 @@ from sqlalchemy.orm import Session
 
 from app.db.models import SnapshotRecord
 from app.models.topology import GraphSnapshot
+from app.services.tenant_world_model import snapshot_from_owned_record
 
 
 def load_topology_snapshot(
@@ -83,10 +84,4 @@ def load_topology_snapshot(
     if record is None:
         return None
 
-    payload = json.loads(
-        record.payload_json
-    )
-
-    return GraphSnapshot.model_validate(
-        payload
-    )
+    return snapshot_from_owned_record(record, tenant_id=tenant_id)

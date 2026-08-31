@@ -562,14 +562,23 @@ def test_backup_restore_preserves_representative_history() -> None:
                 with restored.connect() as connection:
                     assert inspect_schema_authority(connection).ok
                 with Session(restored) as session:
-                    snapshot = session.get(
-                        db_models.SnapshotRecord, expected["snapshot_id"]
+                    def restored_row(model, row_number, identifier):
+                        # Preserve the exact synthetic fixture owner on restore;
+                        # a tenant-local ID alone is no longer an ORM identity.
+                        owner = _column_value(
+                            model.__tablename__, model.__table__.c.tenant_id,
+                            row_number,
+                        )
+                        return session.get(model, (owner, identifier))
+
+                    snapshot = restored_row(
+                        db_models.SnapshotRecord, 1, expected["snapshot_id"]
                     )
-                    incident = session.get(
-                        db_models.IncidentRecord, expected["incident_id"]
+                    incident = restored_row(
+                        db_models.IncidentRecord, 3, expected["incident_id"]
                     )
-                    analysis = session.get(
-                        db_models.CausalAnalysisRecord, expected["analysis_id"]
+                    analysis = restored_row(
+                        db_models.CausalAnalysisRecord, 4, expected["analysis_id"]
                     )
                     assert snapshot is not None
                     assert incident is not None
@@ -578,14 +587,14 @@ def test_backup_restore_preserves_representative_history() -> None:
                     assert snapshot.collected_at == NOW
                     assert incident.topology_snapshot_id == expected["snapshot_id"]
                     assert analysis.payload_json == expected["causal_payload"]
-                    assert session.get(
-                        db_models.SignalRecord, expected["signal_id"]
+                    assert restored_row(
+                        db_models.SignalRecord, 2, expected["signal_id"]
                     ) is not None
-                    assert session.get(
-                        db_models.ChangeEventRecord, expected["change_event_id"]
+                    assert restored_row(
+                        db_models.ChangeEventRecord, 5, expected["change_event_id"]
                     ) is not None
-                    assert session.get(
-                        db_models.OwnershipMappingRecord, expected["ownership_id"]
+                    assert restored_row(
+                        db_models.OwnershipMappingRecord, 6, expected["ownership_id"]
                     ) is not None
             finally:
                 restored.dispose()

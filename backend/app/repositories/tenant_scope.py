@@ -19,6 +19,14 @@ DomainTenant = str
 Record = TypeVar("Record")
 
 
+def local_primary_key(model: type[Record]):
+    """Address the public/local ID, independently of composite PK ordering."""
+    keys = [column for column in inspect(model).primary_key if column.key != "tenant_id"]
+    if len(keys) != 1:
+        raise ValueError("UNSUPPORTED_DOMAIN_IDENTITY")
+    return keys[0]
+
+
 class TenantResourceNotFound(LookupError):
     """A resource or authoritative reference is absent in this boundary."""
 
@@ -44,7 +52,7 @@ def tenant_get(
     *,
     tenant_id: DomainTenant,
 ) -> Record | None:
-    primary_key = inspect(model).primary_key[0]
+    primary_key = local_primary_key(model)
     # A lookup must not flush a pending child before the explicit writer guard.
     # This also protects callers using an injected autoflush=True Session.
     with session.no_autoflush:
@@ -79,8 +87,8 @@ def tenant_add(
 ) -> None:
     """Own new rows; never reassign an existing/detached foreign row.
 
-    Global PK/unique restrictions remain in force until PH-3F. A collision
-    must fail at the database boundary, never become an unscoped upsert.
+    Deterministic IDs use (tenant, local ID) database identity. Opaque auth
+    locators stay global. Neither kind permits an unscoped upsert.
     """
     state = inspect(record)
     value = tenant_value(tenant_id)
@@ -227,7 +235,7 @@ def validate_tenant_writes(session: Session, *, tenant_id: DomainTenant) -> None
                 found = False
                 for name in names:
                     model = getattr(models, name)
-                    pk = inspect(model).primary_key[0].key
+                    pk = local_primary_key(model).key
                     if (
                         any(
                             isinstance(parent, model)

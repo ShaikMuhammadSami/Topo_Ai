@@ -102,6 +102,9 @@ NOW = datetime(
 )
 
 
+from domain_tenant_fixtures import owned_world_fixture
+
+@owned_world_fixture
 def _incident(
     status: IncidentStatus = IncidentStatus.OPEN,
 ) -> IncidentRecordView:
@@ -152,6 +155,7 @@ def _entity(
     )
 
 
+@owned_world_fixture
 def _snapshot(
     snapshot_id: str = "snapshot:incident-time",
 ) -> GraphSnapshot:
@@ -206,6 +210,7 @@ def _snapshot(
     )
 
 
+@owned_world_fixture
 def _analysis(
     *,
     confidence: float = 0.9,
@@ -595,6 +600,7 @@ def _impact(
     )
 
 
+@owned_world_fixture
 def _context(
     *,
     root_resolved: bool = True,
@@ -655,6 +661,7 @@ def _action(
     )
 
 
+@owned_world_fixture
 def _plan(
     *,
     confidence: float = 0.9,
@@ -768,6 +775,7 @@ def _plan(
     )
 
 
+@owned_world_fixture
 def _history(
     *,
     warning: str | None = None,
