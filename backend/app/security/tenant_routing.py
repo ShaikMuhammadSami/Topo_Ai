@@ -1,7 +1,7 @@
-"""Reviewed PH-3D route classification; authentication remains PH-2's job.
+"""Reviewed tenant route classification; authentication remains PH-2's job.
 
-Machine administration is NOT tenant isolated. These exceptions need the
-server-owned enrollment/agent/source bindings reserved for PH-3E.
+Human machine administration requires TenantContext. Machine data planes derive
+ownership from persisted credential/source bindings, never human selectors.
 """
 
 from enum import StrEnum
@@ -11,8 +11,7 @@ from app.security.auth_routing import RouteAuthDomain, classify_route
 
 class TenantRouteDomain(StrEnum):
     PH3D_TENANT_REQUIRED = "PH3D_TENANT_REQUIRED"
-    MACHINE_AUTHORITY_DEFERRED = "MACHINE_AUTHORITY_DEFERRED"
-    MACHINE_DEFERRED = "MACHINE_DEFERRED"
+    MACHINE_BOUND = "MACHINE_BOUND"
     TENANT_CONTROL = "TENANT_CONTROL"
     SECURITY_GLOBAL = "SECURITY_GLOBAL"
     PUBLIC = "PUBLIC"
@@ -54,11 +53,9 @@ def classify_tenant_route(method: str, path: str) -> TenantRouteDomain | None:
         RouteAuthDomain.AGENT_AUTHENTICATED,
         RouteAuthDomain.PROVIDER_CALLBACK_AUTHENTICATED,
     }:
-        return TenantRouteDomain.MACHINE_DEFERRED
+        return TenantRouteDomain.MACHINE_BOUND
     if authentication is not RouteAuthDomain.USER_AUTHENTICATED:
         return None
-    if (method.upper(), path) in MACHINE_AUTHORITY_ROUTES:
-        return TenantRouteDomain.MACHINE_AUTHORITY_DEFERRED
     if path in TENANT_CONTROL_PATHS:
         return TenantRouteDomain.TENANT_CONTROL
     if path.startswith("/api/v1/auth/") or path in {

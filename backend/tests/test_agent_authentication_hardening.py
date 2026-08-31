@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, TEST_HEADERS, seed_domain_tenant
 
 import json
 import secrets
@@ -46,6 +47,7 @@ def file_sessions(tmp_path):
         },
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine, subject="test:admin")
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     try:
         yield factory
@@ -72,6 +74,7 @@ def _token(
     with sessions() as session:
         issued = create_enrollment_token(
             session,
+            tenant_id=TEST_TENANT,
             request=AgentEnrollmentTokenCreateRequest(
                 label="security-test",
                 expires_in_minutes=30,
@@ -288,7 +291,7 @@ def test_agent_and_human_domains_remain_separate_and_revocation_is_durable(
         agent_token = enrolled["agent_token"]
         agent_id = enrolled["agent_id"]
         agent_headers = {"Authorization": f"Bearer {agent_token}"}
-        human_headers = {"Authorization": f"Bearer {human_token}"}
+        human_headers = {"Authorization": f"Bearer {human_token}", **TEST_HEADERS}
 
         assert client.get("/api/v1/agent/config", headers=agent_headers).status_code == 200
         assert client.get("/api/v1/agent/config").status_code == 401

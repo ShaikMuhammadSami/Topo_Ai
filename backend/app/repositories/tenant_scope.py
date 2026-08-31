@@ -1,13 +1,11 @@
-"""Explicit SQL ownership predicates, including the bounded PH-3E quarantine.
+"""Explicit SQL ownership predicates.
 
 There is no session/global current tenant and no ORM event filter here. Callers
-must supply authority on every operation. Only authenticated machine entry
-points may select the unowned quarantine while PH-3E binding is deferred.
+must supply server-authoritative ownership on every operation.
 """
 
 from __future__ import annotations
 
-from enum import Enum
 import json
 from typing import TypeVar
 
@@ -17,12 +15,7 @@ from sqlalchemy.orm import Session
 from app.models.tenant import is_valid_tenant_id
 
 
-class DeferredMachineAuthority(Enum):
-    UNOWNED = "ph3e_unowned_machine"
-
-
-UNOWNED_MACHINE = DeferredMachineAuthority.UNOWNED
-DomainTenant = str | DeferredMachineAuthority
+DomainTenant = str
 Record = TypeVar("Record")
 
 
@@ -33,9 +26,7 @@ class TenantResourceNotFound(LookupError):
         super().__init__("Resource not found.")
 
 
-def tenant_value(tenant_id: DomainTenant) -> str | None:
-    if tenant_id is UNOWNED_MACHINE:
-        return None
+def tenant_value(tenant_id: DomainTenant) -> str:
     if not isinstance(tenant_id, str) or not is_valid_tenant_id(tenant_id):
         raise ValueError("TENANT_CONTEXT_REQUIRED")
     return tenant_id
@@ -43,8 +34,6 @@ def tenant_value(tenant_id: DomainTenant) -> str | None:
 
 def tenant_predicate(model: type[Record], tenant_id: DomainTenant):
     value = tenant_value(tenant_id)
-    if value is None:
-        return model.tenant_id.is_(None)
     return model.tenant_id == value
 
 
@@ -105,12 +94,15 @@ def tenant_add(
 
 
 # Only durable application references; source-native entity IDs inside a
-# tenant-proven snapshot keep their Truth Contract meaning. Machine authority
-# (agent/source configuration) is deliberately absent until PH-3E.
+# tenant-proven snapshot keep their Truth Contract meaning.
 _PARENTS = {
     "identity_resolutions": {"snapshot_id": ("SnapshotRecord",)},
     "signals": {"payload_json.topology_snapshot_id": ("SnapshotRecord",)},
-    "change_events": {"origin_change_id": ("ChangeRecord",)},
+    "topology_snapshots": {"scope_json.agent_id": ("TopoAgentRecord",)},
+    "change_events": {
+        "origin_change_id": ("ChangeRecord",),
+        "agent_id": ("TopoAgentRecord",),
+    },
     "changes": {
         "from_snapshot_id": ("SnapshotRecord",),
         "to_snapshot_id": ("SnapshotRecord",),
@@ -186,9 +178,19 @@ _PARENTS = {
         "execution_id": ("ExecutionIntentRecord",),
     },
     "webhook_deliveries": {"webhook_id": ("WebhookEndpointRecord",)},
-    "change_source_dead_letters": {"delivery_id": ("ChangeSourceDeliveryRecord",)},
-    "runtime_dependencies": {"sensor_id": ("RuntimeSensorRecord",)},
-    "runtime_processes": {"sensor_id": ("RuntimeSensorRecord",)},
+    "change_source_deliveries": {"source_id": ("ChangeSourceRecord",)},
+    "change_source_dead_letters": {
+        "delivery_id": ("ChangeSourceDeliveryRecord",),
+        "source_id": ("ChangeSourceRecord",),
+    },
+    "runtime_sensors": {"agent_id": ("TopoAgentRecord",)},
+    "runtime_dependencies": {
+        "sensor_id": ("RuntimeSensorRecord",), "agent_id": ("TopoAgentRecord",),
+    },
+    "runtime_processes": {
+        "sensor_id": ("RuntimeSensorRecord",), "agent_id": ("TopoAgentRecord",),
+    },
+    "cloud_resources": {"agent_id": ("TopoAgentRecord",)},
 }
 
 

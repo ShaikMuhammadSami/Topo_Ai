@@ -189,7 +189,7 @@ def test_disposable_product_schema_preparation_preserves_frozen_seed(
     try:
         assert connection.execute(
             "SELECT version_num FROM alembic_version"
-        ).fetchone() == ("0006_domain_tenant_enforcement",)
+        ).fetchone() == ("0007_machine_tenant_binding",)
         assert connection.execute(
             "SELECT tenant_id FROM tenants"
         ).fetchall() == [(DISPOSABLE_EVALUATION_TENANT_ID,)]
@@ -213,7 +213,7 @@ def test_disposable_product_schema_preparation_preserves_frozen_seed(
                     f'SELECT COUNT(*) FROM "{table_name}" '
                     "WHERE tenant_id IS NULL"
                 ).fetchone() == (0,)
-        assert len(domain_tables) == 35
+        assert len(domain_tables) == 38
     finally:
         connection.close()
 

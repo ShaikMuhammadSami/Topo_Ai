@@ -11,7 +11,6 @@ from app.db import models
 from app.models.incident_records import IncidentSeverity
 from app.repositories.tenant_scope import (
     TenantResourceNotFound,
-    UNOWNED_MACHINE,
     tenant_commit,
     tenant_get,
 )
@@ -82,14 +81,13 @@ def test_route_accounting_and_real_dependency_graph(tenant_app):
             counts[classification] += 1
             if classification is TenantRouteDomain.PH3D_TENANT_REQUIRED:
                 assert _has_tenant_dependency(route.dependant), (method, route.path)
-            if classification is TenantRouteDomain.MACHINE_AUTHORITY_DEFERRED:
+            if (method, route.path) in MACHINE_AUTHORITY_ROUTES:
                 deferred.add((method, route.path))
-                assert not _has_tenant_dependency(route.dependant)
+                assert _has_tenant_dependency(route.dependant)
     assert deferred == set(MACHINE_AUTHORITY_ROUTES)
     assert counts == {
-        TenantRouteDomain.PH3D_TENANT_REQUIRED: 104,
-        TenantRouteDomain.MACHINE_AUTHORITY_DEFERRED: 12,
-        TenantRouteDomain.MACHINE_DEFERRED: 9,
+        TenantRouteDomain.PH3D_TENANT_REQUIRED: 116,
+        TenantRouteDomain.MACHINE_BOUND: 9,
         TenantRouteDomain.TENANT_CONTROL: 7,
         TenantRouteDomain.SECURITY_GLOBAL: 9,
         TenantRouteDomain.PUBLIC: 2,
@@ -123,9 +121,8 @@ def test_every_domain_get_scopes_before_identity_lookup(two_tenants, table_name)
     with factory() as session:
         assert tenant_get(session, model, "foreign-row", tenant_id=a) is None
         assert tenant_get(session, model, "foreign-row", tenant_id=b) is not None
-        assert (
-            tenant_get(session, model, "foreign-row", tenant_id=UNOWNED_MACHINE) is None
-        )
+        with pytest.raises(ValueError, match="TENANT_CONTEXT_REQUIRED"):
+            tenant_get(session, model, "foreign-row", tenant_id="ph3e_unowned_machine")
         with pytest.raises(ValueError, match="TENANT_CONTEXT_REQUIRED"):
             tenant_get(session, model, "foreign-row", tenant_id=None)
 
@@ -310,7 +307,7 @@ def test_cross_tenant_domain_ids_and_delete_are_absent(two_tenants):
         )
 
 
-def test_snapshot_latest_and_unowned_quarantine(two_tenants):
+def test_snapshot_latest_and_unowned_rejection(two_tenants):
     from datetime import timedelta
     from app.repositories.snapshot_repository import list_snapshots, save_snapshot
     from app.services.lifecycle_status import build_lifecycle_status
@@ -324,11 +321,13 @@ def test_snapshot_latest_and_unowned_quarantine(two_tenants):
             _snapshot("snapshot:b", observed_at=NOW + timedelta(minutes=1)),
             tenant_id=b,
         )
-        save_snapshot(
-            session,
-            _snapshot("snapshot:unowned", observed_at=NOW + timedelta(minutes=2)),
-            tenant_id=UNOWNED_MACHINE,
-        )
+        with pytest.raises(ValueError, match="TENANT_CONTEXT_REQUIRED"):
+            save_snapshot(
+                session,
+                _snapshot("snapshot:unowned", observed_at=NOW + timedelta(minutes=2)),
+                tenant_id=None,
+            )
+        session.rollback()
         assert [
             s.snapshot_id for s in list_snapshots(session, limit=1, tenant_id=a)
         ] == ["snapshot:a"]

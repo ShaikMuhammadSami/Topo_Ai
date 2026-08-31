@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import tenant_get, tenant_value, tenant_commit
 from app.repositories.tenant_scope import (
     DomainTenant,
     tenant_predicate,
@@ -184,6 +185,7 @@ def create_change_source(
     session: Session,
     *,
     request: ChangeSourceCreate,
+    tenant_id: DomainTenant,
 ) -> ChangeSourceView:
     if not SECRET_REF_PATTERN.fullmatch(
         request.secret_ref
@@ -196,6 +198,7 @@ def create_change_source(
     now = utc_now_iso()
 
     record = ChangeSourceRecord(
+        tenant_id=tenant_value(tenant_id),
         source_id=_source_id(
             request.source_type.value,
             request.name,
@@ -226,7 +229,7 @@ def create_change_source(
     )
 
     session.add(record)
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return change_source_view(
         record
@@ -237,10 +240,10 @@ def load_change_source(
     session: Session,
     *,
     source_id: str,
+    tenant_id: DomainTenant,
 ) -> ChangeSourceRecord | None:
-    return session.get(
-        ChangeSourceRecord,
-        source_id,
+    return tenant_get(
+        session, ChangeSourceRecord, source_id, tenant_id=tenant_id,
     )
 
 
@@ -248,10 +251,12 @@ def get_change_source(
     session: Session,
     *,
     source_id: str,
+    tenant_id: DomainTenant,
 ) -> ChangeSourceView | None:
     record = load_change_source(
         session,
         source_id=source_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -262,9 +267,13 @@ def get_change_source(
 
 def list_change_sources(
     session: Session,
+    *,
+    tenant_id: DomainTenant,
 ) -> list[ChangeSourceView]:
     statement = (
-        select(ChangeSourceRecord)
+        select(ChangeSourceRecord).where(
+                tenant_predicate(ChangeSourceRecord, tenant_id)
+            )
         .order_by(
             ChangeSourceRecord.name.asc()
         )
@@ -284,10 +293,12 @@ def update_change_source(
     *,
     source_id: str,
     request: ChangeSourceUpdate,
+    tenant_id: DomainTenant,
 ) -> ChangeSourceView:
     record = load_change_source(
         session,
         source_id=source_id,
+        tenant_id=tenant_id,
     )
 
     if record is None:
@@ -332,7 +343,7 @@ def update_change_source(
 
     record.updated_at = utc_now_iso()
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return change_source_view(record)
 
@@ -425,3 +436,16 @@ def list_dead_letters(
             statement
         ).all()
     ]
+
+
+def load_change_source_for_authentication(
+    session: Session, *, source_id: str,
+) -> ChangeSourceRecord | None:
+    """MACHINE_AUTH_DERIVATION_LOOKUP: exact provider receiver ID only.
+
+    Not an administration loader. Caller must verify the provider credential
+    before parsing, persisting, or deriving the active tenant from this row.
+    """
+    return session.scalar(
+        select(ChangeSourceRecord).where(ChangeSourceRecord.source_id == source_id)
+    )

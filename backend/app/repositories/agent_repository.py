@@ -13,6 +13,12 @@ from uuid import uuid4
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
+from app.repositories.tenant_scope import (
+    DomainTenant, tenant_value, tenant_predicate, tenant_get, tenant_commit,
+    require_record_owner,
+)
+from app.security.machine_tenant import machine_tenant_is_active
+
 from app.db.models import (
     AgentEnrollmentTokenRecord,
     TopoAgentRecord,
@@ -207,6 +213,7 @@ def create_enrollment_token(
     request:
         AgentEnrollmentTokenCreateRequest,
     created_by: str | None,
+    tenant_id: DomainTenant,
 ) -> AgentEnrollmentTokenResponse:
     raw_token = (
         "topo_enroll_"
@@ -216,6 +223,7 @@ def create_enrollment_token(
     now = _now()
 
     record = AgentEnrollmentTokenRecord(
+        tenant_id=tenant_value(tenant_id),
         enrollment_token_id=(
             "agent-enrollment:"
             + uuid4().hex
@@ -246,7 +254,7 @@ def create_enrollment_token(
     )
 
     session.add(record)
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return AgentEnrollmentTokenResponse(
         enrollment_token_id=(
@@ -269,12 +277,14 @@ def enroll_agent(
     digest = _token_hash(
         request.enrollment_token
     )
+    # MACHINE_AUTH_DERIVATION_LOOKUP: exact credential digest only.
     observed = session.execute(
         select(
             AgentEnrollmentTokenRecord.expires_at,
             AgentEnrollmentTokenRecord.revoked_at,
             AgentEnrollmentTokenRecord.use_count,
             AgentEnrollmentTokenRecord.max_uses,
+            AgentEnrollmentTokenRecord.tenant_id,
         ).where(
             AgentEnrollmentTokenRecord.token_hash == digest
         )
@@ -283,6 +293,10 @@ def enroll_agent(
     if observed is None:
         session.rollback()
         raise AgentEnrollmentRejected("unknown")
+
+    if not machine_tenant_is_active(session, tenant_id=observed.tenant_id):
+        session.rollback()
+        raise AgentEnrollmentRejected("tenant_unavailable")
 
     expires_at = _parse_datetime(observed.expires_at)
     consumption_time = _now()
@@ -303,6 +317,7 @@ def enroll_agent(
             update(AgentEnrollmentTokenRecord)
             .where(
                 AgentEnrollmentTokenRecord.token_hash == digest,
+                tenant_predicate(AgentEnrollmentTokenRecord, observed.tenant_id),
                 AgentEnrollmentTokenRecord.revoked_at.is_(None),
                 AgentEnrollmentTokenRecord.expires_at > consumption_time_iso,
                 AgentEnrollmentTokenRecord.use_count
@@ -322,6 +337,7 @@ def enroll_agent(
         raw_agent_token = "topo_agent_" + secrets.token_urlsafe(40)
         record = TopoAgentRecord(
             agent_id="agent:" + uuid4().hex,
+            tenant_id=observed.tenant_id,
             name=request.name,
             agent_type=request.agent_type,
             cluster_name=request.cluster_name,
@@ -348,7 +364,7 @@ def enroll_agent(
             updated_at=consumption_time_iso,
         )
         session.add(record)
-        session.commit()
+        tenant_commit(session, tenant_id=observed.tenant_id)
     except Exception:
         session.rollback()
         raise
@@ -368,6 +384,7 @@ def authenticate_agent(
 ) -> TopoAgentRecord | None:
     digest = _token_hash(token)
 
+    # MACHINE_AUTH_DERIVATION_LOOKUP: exact credential digest only.
     statement = select(
         TopoAgentRecord
     ).where(
@@ -382,6 +399,7 @@ def authenticate_agent(
     if (
         record is None
         or record.revoked_at
+        or not machine_tenant_is_active(session, tenant_id=record.tenant_id)
     ):
         return None
 
@@ -393,9 +411,11 @@ def list_agents(
     *,
     limit: int = 100,
     offset: int = 0,
+    tenant_id: DomainTenant,
 ) -> list[AgentSummary]:
     statement = (
         select(TopoAgentRecord)
+        .where(tenant_predicate(TopoAgentRecord, tenant_id))
         .order_by(
             TopoAgentRecord
             .created_at
@@ -417,10 +437,10 @@ def load_agent(
     session: Session,
     *,
     agent_id: str,
+    tenant_id: DomainTenant,
 ) -> AgentDetail | None:
-    record = session.get(
-        TopoAgentRecord,
-        agent_id,
+    record = tenant_get(
+        session, TopoAgentRecord, agent_id, tenant_id=tenant_id,
     )
 
     if record is None:
@@ -433,10 +453,10 @@ def load_agent_record(
     session: Session,
     *,
     agent_id: str,
+    tenant_id: DomainTenant,
 ) -> TopoAgentRecord | None:
-    return session.get(
-        TopoAgentRecord,
-        agent_id,
+    return tenant_get(
+        session, TopoAgentRecord, agent_id, tenant_id=tenant_id,
     )
 
 
@@ -445,7 +465,9 @@ def record_heartbeat(
     *,
     record: TopoAgentRecord,
     request: AgentHeartbeatRequest,
+    tenant_id: DomainTenant,
 ) -> AgentHeartbeatResponse:
+    require_record_owner(record, tenant_id=tenant_id)
     now = utc_now_iso()
 
     record.status = (
@@ -490,7 +512,7 @@ def record_heartbeat(
 
     record.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return AgentHeartbeatResponse(
         agent_id=record.agent_id,
@@ -504,7 +526,9 @@ def record_snapshot_success(
     session: Session,
     *,
     record: TopoAgentRecord,
+    tenant_id: DomainTenant,
 ) -> None:
+    require_record_owner(record, tenant_id=tenant_id)
     now = utc_now_iso()
 
     record.status = (
@@ -519,17 +543,17 @@ def record_snapshot_success(
     record.last_error = None
     record.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
 
 def revoke_agent(
     session: Session,
     *,
     agent_id: str,
+    tenant_id: DomainTenant,
 ) -> AgentDetail | None:
-    record = session.get(
-        TopoAgentRecord,
-        agent_id,
+    record = tenant_get(
+        session, TopoAgentRecord, agent_id, tenant_id=tenant_id,
     )
 
     if record is None:
@@ -543,7 +567,7 @@ def revoke_agent(
     record.revoked_at = now
     record.updated_at = now
 
-    session.commit()
+    tenant_commit(session, tenant_id=tenant_id)
 
     return _to_detail(record)
 
@@ -552,10 +576,10 @@ def agent_health(
     session: Session,
     *,
     agent_id: str,
+    tenant_id: DomainTenant,
 ) -> AgentHealthResponse | None:
-    record = session.get(
-        TopoAgentRecord,
-        agent_id,
+    record = tenant_get(
+        session, TopoAgentRecord, agent_id, tenant_id=tenant_id,
     )
 
     if record is None:
@@ -586,10 +610,10 @@ def agent_plugins(
     session: Session,
     *,
     agent_id: str,
+    tenant_id: DomainTenant,
 ) -> AgentPluginsResponse | None:
-    record = session.get(
-        TopoAgentRecord,
-        agent_id,
+    record = tenant_get(
+        session, TopoAgentRecord, agent_id, tenant_id=tenant_id,
     )
 
     if record is None:

@@ -55,10 +55,12 @@ def create(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeSourceView:
     try:
         return create_change_source(
             session,
+            tenant_id=tenant_context.tenant_id,
             request=request,
         )
 
@@ -79,9 +81,10 @@ def list_all(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[ChangeSourceView]:
     return list_change_sources(
-        session
+        session, tenant_id=tenant_context.tenant_id,
     )
 
 
@@ -174,9 +177,11 @@ def get_one(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeSourceView:
     value = get_change_source(
         session,
+        tenant_id=tenant_context.tenant_id,
         source_id=source_id,
     )
 
@@ -201,10 +206,12 @@ def patch(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeSourceView:
     try:
         return update_change_source(
             session,
+            tenant_id=tenant_context.tenant_id,
             source_id=source_id,
             request=request,
         )
@@ -227,9 +234,11 @@ def doctor(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeSourceDoctorResponse:
     record = load_change_source(
         session,
+        tenant_id=tenant_context.tenant_id,
         source_id=source_id,
     )
 

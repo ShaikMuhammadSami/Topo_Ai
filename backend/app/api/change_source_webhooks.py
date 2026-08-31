@@ -15,7 +15,7 @@ from app.models.change_sources import (
     ChangeSourceDeliveryReceipt,
 )
 from app.repositories.change_source_repository import (
-    load_change_source,
+    load_change_source_for_authentication,
 )
 from app.services.change_source_ingest import (
     ingest_change_source_webhook,
@@ -50,7 +50,7 @@ async def receive(
         get_session
     ),
 ) -> ChangeSourceDeliveryReceipt:
-    source = load_change_source(
+    source = load_change_source_for_authentication(
         session,
         source_id=source_id,
     )

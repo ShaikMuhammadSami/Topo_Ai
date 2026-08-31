@@ -6,7 +6,8 @@ import pytest
 from sqlalchemy import create_engine, inspect, text
 
 from app.db.database import Base
-from app.db.domain_ownership import REQUIRED_OWNERSHIP_TABLES, MACHINE_DEPENDENT_WRITERS
+from app.db.domain_ownership import MACHINE_DEPENDENT_WRITERS
+from sqlalchemy import MetaData
 from app.db.schema_management import (
     current_revisions,
     inspect_schema_authority,
@@ -24,6 +25,24 @@ from test_domain_tenant_migration import (
 
 REVISION = "0006_domain_tenant_enforcement"
 PARENT = "0005_domain_tenant_ownership"
+REQUIRED_OWNERSHIP_TABLES = frozenset(
+    script_directory().get_revision(REVISION).module.REQUIRED_OWNERSHIP_TABLES
+)
+
+
+def _frozen_0006_metadata():
+    """Preserve 0006 regression assertions independently of the new head."""
+    metadata = MetaData()
+    for table in Base.metadata.tables.values():
+        copied = table.to_metadata(metadata)
+        if copied.name in {"agent_enrollment_tokens", "topo_agents", "change_sources"}:
+            copied.indexes.difference_update(
+                index for index in list(copied.indexes) if "tenant_id" in index.columns
+            )
+            copied._columns.remove(copied.c.tenant_id)
+        elif copied.name in MACHINE_DEPENDENT_WRITERS:
+            copied.c.tenant_id.nullable = True
+    return metadata
 
 
 @pytest.fixture(params=["sqlite", "postgres"])
@@ -51,9 +70,9 @@ def test_inventory_has_no_ambiguous_writer_or_default():
     assert not REQUIRED_OWNERSHIP_TABLES & residual
     revision = script_directory().get_revision(REVISION).module
     assert set(revision.REQUIRED_OWNERSHIP_TABLES) == REQUIRED_OWNERSHIP_TABLES
-    assert script_directory().get_heads() == [REVISION]
+    assert script_directory().get_revision("0007_machine_tenant_binding").down_revision == REVISION
     for name in PH3C_DOMAIN:
-        column = Base.metadata.tables[name].c.tenant_id
+        column = _frozen_0006_metadata().tables[name].c.tenant_id
         assert column.nullable is (name in residual)
         assert column.default is None and column.server_default is None
 
@@ -62,10 +81,10 @@ def test_closure_fresh_upgrade_downgrade_and_parity(closure_engine):
     _upgrade(closure_engine, PARENT)
     with closure_engine.connect() as connection:
         assert not inspect_schema_authority(connection).ok
-    _upgrade(closure_engine)
+    _upgrade(closure_engine, REVISION)
     with closure_engine.connect() as connection:
         assert current_revisions(connection) == (REVISION,)
-        assert schema_differences(connection) == ()
+        assert schema_differences(connection, metadata=_frozen_0006_metadata()) == ()
         assert connection.scalar(text("SELECT COUNT(*) FROM tenants")) == 0
         inspector = inspect(connection)
         for name in PH3C_DOMAIN:
@@ -81,9 +100,9 @@ def test_closure_fresh_upgrade_downgrade_and_parity(closure_engine):
                 for c in inspect(connection).get_columns(name)
                 if c["name"] == "tenant_id"
             )["nullable"]
-    _upgrade(closure_engine)
+    _upgrade(closure_engine, REVISION)
     with closure_engine.connect() as connection:
-        assert schema_differences(connection) == ()
+        assert schema_differences(connection, metadata=_frozen_0006_metadata()) == ()
 
 
 @pytest.mark.parametrize("table_name", sorted(REQUIRED_OWNERSHIP_TABLES))
@@ -96,7 +115,7 @@ def test_null_preflight_never_assigns_or_stamps(closure_engine, table_name):
         RuntimeError, match=f"TENANT_OWNERSHIP_NULL_ROWS_PRESENT: {table_name}=1"
     ):
         # A legacy argument belongs to 0005 and cannot assign rows in 0006.
-        _upgrade(closure_engine, legacy_tenant_id=TENANT_A)
+        _upgrade(closure_engine, REVISION, legacy_tenant_id=TENANT_A)
     with closure_engine.connect() as connection:
         assert current_revisions(connection) == (PARENT,)
         table = Base.metadata.tables[table_name]

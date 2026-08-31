@@ -1,7 +1,7 @@
-"""PH-3D writer inventory, not a tenant selection or authorization mechanism.
+"""Writer inventory, not a tenant selection or authorization mechanism.
 
-Every listed writer now receives an explicit boundary. Machine-dependent
-writers retain NULL only at the authenticated, unbound PH-3E entry points.
+Machine-origin writers inherit ownership from authenticated agent/source rows.
+All 38 customer-owned tables require ownership; security/control rows do not.
 """
 
 # Human/service or background work rooted in an already tenant-owned object.
@@ -33,7 +33,7 @@ MACHINE_DEPENDENT_WRITERS = {
     "signals": "agent signals / snapshot failure detection -> continuous_lifecycle",
     "incidents": "agent signals / snapshot failure detection -> continuous_lifecycle",
     "causal_analyses": "machine-origin continuous_lifecycle -> analyze_causal_rca",
-    "build_artifact_evidence": "change_source_ingest -> GitHub Actions provider lineage",
+    "build_artifact_evidence": "authenticated github discovery -> GitHub Actions provider lineage (historical residual)",
     "change_events": "agent change-events / provider change_source_ingest",
     "change_entity_links": "agent/provider event ingestion and checkpoint correlation",
     "change_source_deliveries": "authenticated provider change_source_ingest",
@@ -46,4 +46,12 @@ MACHINE_DEPENDENT_WRITERS = {
     "webhook_deliveries": "machine-origin continuous_lifecycle -> publish_event_safely",
 }
 
-REQUIRED_OWNERSHIP_TABLES = frozenset(REQUIRED_OWNERSHIP_WRITERS)
+MACHINE_AUTHORITY_WRITERS = {
+    "agent_enrollment_tokens": "tenant-authorized agent administration",
+    "topo_agents": "atomic enrollment inherits authenticated token ownership",
+    "change_sources": "tenant-authorized change-source administration",
+}
+
+REQUIRED_OWNERSHIP_TABLES = frozenset(
+    REQUIRED_OWNERSHIP_WRITERS | MACHINE_DEPENDENT_WRITERS | MACHINE_AUTHORITY_WRITERS
+)
