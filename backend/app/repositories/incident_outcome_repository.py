@@ -19,6 +19,7 @@ from app.db.models import (
 from app.models.incident_outcome import (
     IncidentOutcome,
 )
+from app.services.tenant_world_model import bind_world_value, tenant_world
 
 
 def load_incident_outcome_record(
@@ -82,6 +83,7 @@ def list_incident_outcome_records(
     )
 
 
+@tenant_world()
 def load_incident_outcome(
     session: Session,
     *,
@@ -125,6 +127,9 @@ def save_incident_outcome(
     source: dict[str, Any],
     tenant_id: DomainTenant,
 ) -> IncidentOutcomeRecord:
+    # New producer output may be bound here; an already loaded foreign outcome
+    # must not be relabeled and overwrite the same incident ID in another tenant.
+    bind_world_value(outcome, tenant_id=tenant_id)
     record = load_incident_outcome_record(
         session,
         incident_id=outcome.incident_id,
