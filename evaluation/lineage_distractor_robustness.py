@@ -408,7 +408,7 @@ def prepare_disposable_product_database(database_path: Path) -> None:
                     "SELECT version_num FROM alembic_version"
                 )
             )
-            if revisions == ("0006_domain_tenant_enforcement",):
+            if revisions == ("0007_machine_tenant_binding",):
                 return
             raise ValueError(
                 "Disposable evaluation database has unexpected migration state."
@@ -460,6 +460,12 @@ def prepare_disposable_product_database(database_path: Path) -> None:
             command.upgrade(config, "0005_domain_tenant_ownership")
             config.cmd_opts = Namespace(x=[])
             command.upgrade(config, "0006_domain_tenant_enforcement")
+            # Explicit assertion for this isolated single-scenario copy only.
+            # Never migrate the frozen source or infer from fixture identities.
+            config.cmd_opts = Namespace(x=[
+                f"legacy_machine_tenant_id={DISPOSABLE_EVALUATION_TENANT_ID}"
+            ])
+            command.upgrade(config, "0007_machine_tenant_binding")
     finally:
         engine.dispose()
 

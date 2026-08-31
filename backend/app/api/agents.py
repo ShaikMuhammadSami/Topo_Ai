@@ -1,7 +1,6 @@
 from __future__ import annotations
 from app.repositories.tenant_scope import (
     tenant_commit,
-    UNOWNED_MACHINE,
 )
 from app.security.tenant_context import TenantContext, require_tenant_context
 from fastapi import Depends
@@ -121,9 +120,11 @@ def get_agent_cloud_status(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentCloudStatusResponse:
     result = agent_cloud_status(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         agent_id=agent_id,
         provider=provider,
     )
@@ -194,11 +195,13 @@ def create_token(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentEnrollmentTokenResponse:
     _require_admin(request)
 
     return create_enrollment_token(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         request=request_body,
         created_by=(
             _principal_subject(request)
@@ -252,9 +255,11 @@ def get_agents(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[AgentSummary]:
     return list_agents(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         limit=limit,
         offset=offset,
     )
@@ -269,9 +274,11 @@ def get_agent(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentDetail:
     result = load_agent(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         agent_id=agent_id,
     )
 
@@ -293,9 +300,11 @@ def get_agent_health(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentHealthResponse:
     result = agent_health(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         agent_id=agent_id,
     )
 
@@ -318,11 +327,13 @@ def revoke(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentDetail:
     _require_admin(request)
 
     result = revoke_agent(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         agent_id=agent_id,
     )
 
@@ -380,6 +391,7 @@ def heartbeat(
     return record_heartbeat(
         session=session,
         record=agent,
+        tenant_id=agent.tenant_id,
         request=request,
     )
 
@@ -433,9 +445,11 @@ def get_agent_plugins(
     session: Session = Depends(
         get_session
     ),
+    tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentPluginsResponse:
     result = agent_plugins(
         session=session,
+        tenant_id=tenant_context.tenant_id,
         agent_id=agent_id,
     )
 
@@ -461,7 +475,7 @@ def runtime_sensor_heartbeat(
         session=session,
         agent=agent,
         request=request,
-        tenant_id=UNOWNED_MACHINE,
+        tenant_id=agent.tenant_id,
     )
 
 
@@ -480,7 +494,7 @@ def runtime_event_batch(
             session=session,
             agent=agent,
             request=request,
-            tenant_id=UNOWNED_MACHINE,
+            tenant_id=agent.tenant_id,
         )
 
     except ValueError as exc:
@@ -500,8 +514,7 @@ def get_runtime_sensors(
     *,
     tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> list[RuntimeSensorView]:
-    # Domain evidence is independently owned. Do not disclose the existence
-    # of an unbound PH-3E agent while listing this tenant's sensor records.
+    # Unknown/foreign agent selectors expose no evidence outside this tenant.
     return list_runtime_sensors(
         session=session,
         agent_id=agent_id,
@@ -601,7 +614,7 @@ def submit_change_events(
                 # Commit the complete
                 # batch atomically.
                 commit=False,
-                tenant_id=UNOWNED_MACHINE,
+                tenant_id=agent.tenant_id,
             )
 
             event_ids.append(
@@ -616,7 +629,7 @@ def submit_change_events(
             ):
                 topology_affecting_count += 1
 
-        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
+        tenant_commit(session, tenant_id=agent.tenant_id)
 
     except ValueError as exc:
         session.rollback()
@@ -693,5 +706,5 @@ def submit_failure_signals(
     return ingest_failure_signal_batch(
         session=session,
         signals=request.signals,
-        tenant_id=UNOWNED_MACHINE,
+        tenant_id=agent.tenant_id,
     )

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, TEST_HEADERS, seed_domain_tenant
 
 import hashlib
 import hmac
@@ -62,6 +63,7 @@ def acceptance_app(monkeypatch):
     )
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine, subject="test:bootstrap-admin")
     application = create_app(
         auth_configuration=configuration,
         session_factory=session_factory,
@@ -76,6 +78,7 @@ def acceptance_app(monkeypatch):
     with session_factory() as session:
         session.add(
             ChangeSourceRecord(
+                tenant_id=TEST_TENANT,
                 source_id="source:ph2f-github",
                 name="PH-2F GitHub source",
                 source_type="github",
@@ -260,7 +263,7 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
 
         enrollment = client.post(
             "/api/v1/agents/enrollment-tokens",
-            headers=_bearer(bootstrap),
+            headers={**_bearer(bootstrap), "X-Topo-Tenant-ID": tenant.json()["tenant_id"]},
             json={"label": "PH-2F matrix", "max_uses": 1},
         )
         assert enrollment.status_code == 201

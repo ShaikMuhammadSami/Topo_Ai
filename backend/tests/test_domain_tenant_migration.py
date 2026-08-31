@@ -229,7 +229,7 @@ def test_domain_table_partition_and_nullable_orm_ownership_are_exact() -> None:
         )
     )
 
-    for table_name in PH3C_DOMAIN:
+    for table_name in PH3C_DOMAIN | PH3E_MACHINE_AUTHORITY:
         column = Base.metadata.tables[table_name].c.tenant_id
         assert column.nullable is (table_name not in REQUIRED_OWNERSHIP_TABLES)
         assert column.type.length == 255
@@ -239,7 +239,7 @@ def test_domain_table_partition_and_nullable_orm_ownership_are_exact() -> None:
             index.name == f"ix_{table_name}_tenant_id"
             for index in Base.metadata.tables[table_name].indexes
         )
-    for table_name in PH3E_MACHINE_AUTHORITY | SECURITY_GLOBAL:
+    for table_name in SECURITY_GLOBAL:
         assert "tenant_id" not in Base.metadata.tables[table_name].c
 
 
@@ -249,7 +249,7 @@ def test_fresh_sqlite_requires_no_legacy_tenant_and_creates_none(
     _upgrade(migration_engine)
 
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == ("0006_domain_tenant_enforcement",)
+        assert current_revisions(connection) == ("0007_machine_tenant_binding",)
         assert connection.scalar(text("SELECT COUNT(*) FROM tenants")) == 0
         assert schema_differences(connection) == ()
         assert inspect_schema_authority(connection).ok
@@ -465,7 +465,7 @@ def test_parallel_tenant_unique_rules_preserve_global_compatibility_rules(
 def test_transitional_new_domain_row_may_still_have_null_tenant(
     migration_engine: Engine,
 ) -> None:
-    _upgrade(migration_engine)
+    _upgrade(migration_engine, DOMAIN_OWNERSHIP_REVISION)
     with migration_engine.begin() as connection:
         _seed_pre_tenancy_row(
             connection,

@@ -20,10 +20,10 @@ def utc_now_iso() -> str:
 
 
 class TenantOwnedRecordMixin:
-    """Explicit PH-3D ownership; only proven machine-dependent rows stay nullable."""
+    """Server-authoritative ownership, required for every customer-owned row."""
 
     @declared_attr
-    def tenant_id(cls) -> Mapped[str | None]:
+    def tenant_id(cls) -> Mapped[str]:
         return mapped_column(
             String(255),
             nullable=cls.__tablename__ not in REQUIRED_OWNERSHIP_TABLES,
@@ -2128,7 +2128,7 @@ class ReportActionItemRecord(TenantOwnedRecordMixin, Base):
     )
 
 
-class AgentEnrollmentTokenRecord(Base):
+class AgentEnrollmentTokenRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "agent_enrollment_tokens"
 
     enrollment_token_id: Mapped[str] = mapped_column(
@@ -2199,7 +2199,7 @@ class AgentEnrollmentTokenRecord(Base):
     )
 
 
-class TopoAgentRecord(Base):
+class TopoAgentRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "topo_agents"
 
     agent_id: Mapped[str] = mapped_column(
@@ -3527,7 +3527,7 @@ class ChangeEntityLinkRecord(TenantOwnedRecordMixin, Base):
     )
 
 
-class ChangeSourceRecord(Base):
+class ChangeSourceRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "change_sources"
 
     source_id: Mapped[str] = mapped_column(

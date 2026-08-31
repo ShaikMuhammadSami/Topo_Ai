@@ -1,8 +1,8 @@
 from __future__ import annotations
+from app.security.machine_tenant import machine_tenant_is_active
 from app.repositories.tenant_scope import (
     tenant_commit,
     DomainTenant,
-    UNOWNED_MACHINE,
     tenant_value,
     tenant_predicate,
     tenant_get,
@@ -628,6 +628,10 @@ def ingest_change_source_webhook(
         headers=headers,
     )
 
+    tenant_id = source.tenant_id
+    if not machine_tenant_is_active(session, tenant_id=tenant_id):
+        raise WebhookAuthenticationError("Provider authentication failed.")
+
     try:
         payload = json.loads(
             body.decode("utf-8")
@@ -673,7 +677,7 @@ def ingest_change_source_webhook(
     existing = _existing_delivery(
         session,
         delivery_key=delivery_key,
-        tenant_id=UNOWNED_MACHINE,
+        tenant_id=tenant_id,
     )
 
     if existing is not None:
@@ -705,7 +709,7 @@ def ingest_change_source_webhook(
         ),
         event_ids_json="[]",
         received_at=now,
-        tenant_id=tenant_value(UNOWNED_MACHINE),
+        tenant_id=tenant_value(tenant_id),
     )
 
     session.add(delivery)
@@ -717,7 +721,7 @@ def ingest_change_source_webhook(
     # Preserve authenticated delivery
     # even if normalization later fails.
     try:
-        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
+        tenant_commit(session, tenant_id=tenant_id)
 
     except IntegrityError:
         session.rollback()
@@ -725,7 +729,7 @@ def ingest_change_source_webhook(
         existing = _existing_delivery(
             session,
             delivery_key=delivery_key,
-            tenant_id=UNOWNED_MACHINE,
+            tenant_id=tenant_id,
         )
 
         if existing is not None:
@@ -769,7 +773,7 @@ def ingest_change_source_webhook(
                 source_time_trusted=True,
                 observed_at=delivery.received_at,
                 commit=False,
-                tenant_id=UNOWNED_MACHINE,
+                tenant_id=tenant_id,
             )
 
             event_ids.append(
@@ -780,12 +784,11 @@ def ingest_change_source_webhook(
             session,
             ChangeSourceDeliveryRecord,
             delivery.delivery_id,
-            tenant_id=UNOWNED_MACHINE,
+            tenant_id=tenant_id,
         )
 
-        source = session.get(
-            ChangeSourceRecord,
-            source.source_id,
+        source = tenant_get(
+            session, ChangeSourceRecord, source.source_id, tenant_id=tenant_id,
         )
 
         if (
@@ -819,7 +822,7 @@ def ingest_change_source_webhook(
 
         source.last_error = None
 
-        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
+        tenant_commit(session, tenant_id=tenant_id)
 
         return _receipt(
             delivery,
@@ -833,12 +836,11 @@ def ingest_change_source_webhook(
             session,
             ChangeSourceDeliveryRecord,
             delivery.delivery_id,
-            tenant_id=UNOWNED_MACHINE,
+            tenant_id=tenant_id,
         )
 
-        source = session.get(
-            ChangeSourceRecord,
-            source.source_id,
+        source = tenant_get(
+            session, ChangeSourceRecord, source.source_id, tenant_id=tenant_id,
         )
 
         if delivery is None or source is None:
@@ -870,12 +872,12 @@ def ingest_change_source_webhook(
             attempt_count=0,
             status="pending",
             created_at=(utc_now_iso()),
-            tenant_id=tenant_value(UNOWNED_MACHINE),
+            tenant_id=tenant_value(tenant_id),
         )
 
         session.add(dead_letter)
 
-        tenant_commit(session, tenant_id=UNOWNED_MACHINE)
+        tenant_commit(session, tenant_id=tenant_id)
 
         raise
 
@@ -898,9 +900,8 @@ def replay_dead_letter(
             "Dead letter not found."
         )
 
-    source = session.get(
-        ChangeSourceRecord,
-        dead_letter.source_id,
+    source = tenant_get(
+        session, ChangeSourceRecord, dead_letter.source_id, tenant_id=tenant_id,
     )
 
     delivery = tenant_get(

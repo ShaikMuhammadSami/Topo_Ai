@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app.repositories.tenant_scope import require_record_owner
 from app.repositories.tenant_scope import (
     tenant_commit,
     DomainTenant,
@@ -235,6 +236,7 @@ def _touch_sensor(
     batch: bool,
     tenant_id: DomainTenant,
 ) -> RuntimeSensorRecord:
+    require_record_owner(agent, tenant_id=tenant_id)
     now = utc_now_iso()
 
     record = tenant_get(

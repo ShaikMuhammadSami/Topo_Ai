@@ -7,7 +7,7 @@ inputs to this suite, not things this suite is permitted to rewrite.
 """
 
 from __future__ import annotations
-from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT
+from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT, seed_domain_tenant
 
 import json
 import os
@@ -467,11 +467,11 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
         assert len(_domain_table_names(connection)) == 43
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 768
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 771
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
         ) == 43
-        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 348
+        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 351
         assert sum(
             1
             for table in Base.metadata.tables.values()
@@ -491,9 +491,9 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for item in inspector.get_indexes(table_name)
             if not item.get("duplicates_constraint")
         ]
-        assert len(database_indexes) == 348
+        assert len(database_indexes) == 351
         assert sum(bool(item["unique"]) for item in database_indexes) == 16
-        assert sum(not item["unique"] for item in database_indexes) == 332
+        assert sum(not item["unique"] for item in database_indexes) == 335
         assert all(
             inspector.get_pk_constraint(name).get("constrained_columns")
             for name in DOMAIN_TABLE_NAMES
@@ -602,7 +602,7 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0006_domain_tenant_enforcement",)
+            assert current_revisions(connection) == ("0007_machine_tenant_binding",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -737,7 +737,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0006_domain_tenant_enforcement",)
+            assert current_revisions(connection) == ("0007_machine_tenant_binding",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43
@@ -1542,6 +1542,7 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
             row=80,
             agent_id="agent:runtime-postgres",
             cluster_name="cluster-a",
+            tenant_id=TEST_TENANT,
         )
         session.add(agent)
         session.commit()
@@ -2042,9 +2043,11 @@ def test_authenticated_change_source_receipt_survives_downstream_failure(
     monkeypatch,
 ) -> None:
     """The commit before normalization is an intentional durability boundary."""
+    seed_domain_tenant(session_factory.kw["bind"])
     with session_factory() as session:
         source_view = create_change_source(
             session,
+            tenant_id=TEST_TENANT,
             request=ChangeSourceCreate(
                 name="PH-1C GitHub source",
                 source_type=ChangeSourceType.GITHUB,
@@ -2052,7 +2055,7 @@ def test_authenticated_change_source_receipt_survives_downstream_failure(
                 config={"repository": "acme/payment-api"},
             ),
         )
-        source = load_change_source(session, source_id=source_view.source_id)
+        source = load_change_source(session, source_id=source_view.source_id, tenant_id=TEST_TENANT)
         assert source is not None
 
         monkeypatch.setattr(change_source_ingest, "_verify", lambda **_: None)
@@ -2096,7 +2099,7 @@ def test_authenticated_change_source_receipt_survives_downstream_failure(
             )
         )
         persisted_source = load_change_source(
-            session, source_id=source_view.source_id
+            session, source_id=source_view.source_id, tenant_id=TEST_TENANT
         )
         assert delivery is not None
         assert delivery.status == "dead_letter"

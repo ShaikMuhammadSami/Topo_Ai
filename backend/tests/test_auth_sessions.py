@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_HEADERS, seed_domain_tenant
 
 import json
 import secrets
@@ -73,6 +74,8 @@ def session_app(monkeypatch):
     )
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine, subject="test:browser-operator")
+    seed_domain_tenant(engine, subject="test:browser-viewer")
     application = create_app(
         auth_configuration=configuration,
         session_factory=factory,
@@ -242,14 +245,14 @@ def test_session_introspection_precedence_csrf_and_logout(session_app) -> None:
         accepted = client.post(
             target,
             json={"max_uses": 1},
-            headers={"X-Topo-CSRF": csrf},
+            headers={"X-Topo-CSRF": csrf, **TEST_HEADERS},
         )
         assert accepted.status_code == 201
 
         bearer_post = client.post(
             target,
             json={"max_uses": 1},
-            headers={"Authorization": f"Bearer {bootstrap}"},
+            headers={"Authorization": f"Bearer {bootstrap}", **TEST_HEADERS},
         )
         assert bearer_post.status_code == 201
 
@@ -295,7 +298,7 @@ def test_session_app_isolates_agent_route_from_default_database(
         response = client.post(
             "/api/v1/agents/enrollment-tokens",
             json={"max_uses": 1},
-            headers={"X-Topo-CSRF": csrf},
+            headers={"X-Topo-CSRF": csrf, **TEST_HEADERS},
         )
 
     assert response.status_code == 201
@@ -520,7 +523,7 @@ def test_session_cookie_never_authenticates_agent_or_provider(
     )
     monkeypatch.setattr(
         webhook_api,
-        "load_change_source",
+        "load_change_source_for_authentication",
         lambda *args, **kwargs: SimpleNamespace(source_id="source:test"),
     )
 

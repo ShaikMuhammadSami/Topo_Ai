@@ -8,24 +8,15 @@ from app.db.domain_ownership import REQUIRED_OWNERSHIP_TABLES, MACHINE_DEPENDENT
 
 APP = Path(__file__).resolve().parents[1] / "app"
 GLOBAL_REPOSITORIES = {
-    "agent_repository",
     "auth_session_repository",
     "auth_api_credential_repository",
     "tenant_repository",
     "tenant_scope",
 }
 MACHINE_FUNCTIONS = {
-    "cloud_repository.agent_cloud_status",
-    *(
-        "change_source_repository." + name
-        for name in (
-            "create_change_source",
-            "load_change_source",
-            "get_change_source",
-            "list_change_sources",
-            "update_change_source",
-        )
-    ),
+    "agent_repository.enroll_agent",
+    "agent_repository.authenticate_agent",
+    "change_source_repository.load_change_source_for_authentication",
 }
 
 
@@ -76,19 +67,10 @@ def test_domain_get_cannot_use_unscoped_session_identity_map():
 
 
 def test_unowned_authority_is_not_a_public_input_or_default():
-    for path in (APP / "models").glob("*.py"):
-        assert "UNOWNED_MACHINE" not in path.read_text(encoding="utf-8-sig")
-    for path in (APP / "api").glob("*.py"):
+    for path in APP.rglob("*.py"):
         source = path.read_text(encoding="utf-8-sig")
-        if "UNOWNED_MACHINE" in source and path.name != "agents.py":
-            # Unused mechanical imports are cleaned before final acceptance.
-            tree = ast.parse(source)
-            assert not any(
-                isinstance(n, ast.Name)
-                and isinstance(n.ctx, ast.Load)
-                and n.id == "UNOWNED_MACHINE"
-                for n in ast.walk(tree)
-            ), path.name
+        for marker in ("UNOWNED_MACHINE", "DeferredMachineAuthority", "ph3e_unowned_machine"):
+            assert marker not in source, path.name
 
 
 def test_owned_sql_predicates_precede_query_execution():
@@ -101,7 +83,7 @@ def test_owned_sql_predicates_precede_query_execution():
         if mapper.local_table.name
         in REQUIRED_OWNERSHIP_TABLES | MACHINE_DEPENDENT_WRITERS.keys()
     }
-    assert len(owned) == 35
+    assert len(owned) == 38
     checked = 0
     for directory in ("repositories", "services"):
         for path in (APP / directory).glob("*.py"):
@@ -133,6 +115,22 @@ def test_owned_sql_predicates_precede_query_execution():
                     and ast.unparse(item.func) == "tenant_predicate"
                     and item.args
                 }
+                # Only three exact authentication derivation SELECTs precede
+                # known tenant authority. Their equality predicate is audited
+                # here; conditional enrollment UPDATE still requires tenancy.
+                parent = node
+                while parent in parents and not isinstance(parent, ast.FunctionDef):
+                    parent = parents[parent]
+                function = path.stem + "." + getattr(parent, "name", "")
+                if function in MACHINE_FUNCTIONS and ast.unparse(node.func) == "select":
+                    expected = {
+                        "agent_repository.enroll_agent": "AgentEnrollmentTokenRecord.token_hash == digest",
+                        "agent_repository.authenticate_agent": "TopoAgentRecord.token_hash == digest",
+                        "change_source_repository.load_change_source_for_authentication": "ChangeSourceRecord.source_id == source_id",
+                    }[function]
+                    assert any(isinstance(item, ast.Compare) and ast.unparse(item) == expected
+                               for item in ast.walk(chain)), (function, node.lineno)
+                    continue
                 assert selected <= predicates, (path.name, node.lineno, selected)
                 checked += 1
     assert checked >= 35

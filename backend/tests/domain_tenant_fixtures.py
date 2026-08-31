@@ -1,7 +1,7 @@
 """Opt-in single-boundary fixtures for pre-tenancy domain regressions.
 
 No autouse fixture, production default, or authorization override. Tests that
-exercise machine authority opt into UNOWNED_MACHINE separately. Isolation tests
+exercise machine authority explicitly seed the same real tenant. Isolation tests
 use two real tenants and real authentication instead of this convenience data.
 """
 

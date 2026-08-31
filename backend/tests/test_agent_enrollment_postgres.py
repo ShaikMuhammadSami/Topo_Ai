@@ -1,6 +1,7 @@
 """Opt-in PostgreSQL 16 proof for atomic agent enrollment consumption."""
 
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, TEST_HEADERS, seed_domain_tenant
 
 import os
 from concurrent.futures import ThreadPoolExecutor
@@ -57,6 +58,7 @@ def sessions(postgres_engine: Engine):
     with postgres_engine.begin() as connection:
         connection.execute(text("DELETE FROM topo_agents"))
         connection.execute(text("DELETE FROM agent_enrollment_tokens"))
+    seed_domain_tenant(postgres_engine, subject="test:postgres-security")
     factory = sessionmaker(bind=postgres_engine, expire_on_commit=False)
     yield factory
     with postgres_engine.begin() as connection:
@@ -77,6 +79,7 @@ def _token(sessions, max_uses: int) -> tuple[str, str]:
     with sessions() as session:
         issued = create_enrollment_token(
             session,
+            tenant_id=TEST_TENANT,
             request=AgentEnrollmentTokenCreateRequest(
                 max_uses=max_uses,
                 expires_in_minutes=30,
@@ -170,7 +173,7 @@ def test_postgres_agent_revocation_is_durable(sessions) -> None:
             session,
             token=enrolled.agent_token,
         ) is not None
-        revoked = revoke_agent(session, agent_id=enrolled.agent_id)
+        revoked = revoke_agent(session, agent_id=enrolled.agent_id, tenant_id=TEST_TENANT)
         assert revoked is not None
         assert revoked.revoked_at is not None
 

@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_TENANT, TEST_HEADERS, seed_domain_tenant
 
 import base64
 import hashlib
@@ -42,6 +43,7 @@ def provider_app(monkeypatch):
         poolclass=StaticPool,
     )
     Base.metadata.create_all(engine)
+    seed_domain_tenant(engine, subject="test:provider-admin")
     sessions = sessionmaker(bind=engine, expire_on_commit=False)
     human_token = "human-provider-test-" + secrets.token_urlsafe(32)
     monkeypatch.setenv("TOPO_AUTH_MODE", "required")
@@ -91,6 +93,7 @@ def _source(
     config: dict | None = None,
 ) -> ChangeSourceRecord:
     record = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id=source_id,
         name=f"{source_type} security test",
         source_type=source_type,
@@ -314,6 +317,7 @@ def test_every_supported_provider_verifier_accepts_only_its_credential(
     monkeypatch.setenv("TOPO_PROVIDER_TEST_SECRET", secret)
 
     github = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id="source:github",
         name="github",
         source_type="github",
@@ -328,6 +332,7 @@ def test_every_supported_provider_verifier_accepts_only_its_credential(
     _verify(source=github, body=body, headers=_github_headers(secret, body))
 
     terraform = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id="source:terraform",
         name="terraform",
         source_type="terraform_cloud",
@@ -350,6 +355,7 @@ def test_every_supported_provider_verifier_accepts_only_its_credential(
     )
 
     jenkins = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id="source:jenkins",
         name="jenkins",
         source_type="jenkins",
@@ -371,6 +377,7 @@ def test_every_supported_provider_verifier_accepts_only_its_credential(
     )
 
     azure = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id="source:azure",
         name="azure",
         source_type="azure_devops",
@@ -393,6 +400,7 @@ def test_every_supported_provider_verifier_accepts_only_its_credential(
     gitlab_secret = "whsec_" + base64.b64encode(gitlab_key).decode()
     monkeypatch.setenv("TOPO_PROVIDER_GITLAB_SECRET", gitlab_secret)
     gitlab = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id="source:gitlab",
         name="gitlab",
         source_type="gitlab",
@@ -440,6 +448,7 @@ def test_every_supported_provider_verifier_accepts_only_its_credential(
         )
 
     gitlab_secret_token = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id="source:gitlab-secret-token",
         name="gitlab secret token",
         source_type="gitlab",

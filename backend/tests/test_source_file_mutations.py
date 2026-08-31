@@ -1,5 +1,4 @@
 from __future__ import annotations
-from app.repositories.tenant_scope import UNOWNED_MACHINE
 from domain_tenant_fixtures import TEST_TENANT, seed_domain_tenant
 
 import base64
@@ -200,6 +199,7 @@ def _session_factory():
 
 def _source(session: Session) -> ChangeSourceRecord:
     source = ChangeSourceRecord(
+        tenant_id=TEST_TENANT,
         source_id="change-source:github:test",
         name="GitHub test",
         source_type="github",
@@ -267,7 +267,7 @@ def test_signed_push_provider_evidence_survives_durable_round_trip(
     with sessions() as session:
         record = session.get(ChangeEventRecord, event_id)
         assert record is not None
-        event = change_event_view(session, record=record, tenant_id=UNOWNED_MACHINE)
+        event = change_event_view(session, record=record, tenant_id=TEST_TENANT)
         mutation = _mutation(event)
         assert event.repository == REPOSITORY
         assert event.commit_sha == CHILD_SHA
@@ -380,7 +380,7 @@ def test_provider_shaped_responses_flow_through_real_connector_and_ingest(
         record = session.get(ChangeEventRecord, receipt.event_ids[0])
         assert record is not None
         mutation = _mutation(
-            change_event_view(session, record=record, tenant_id=UNOWNED_MACHINE)
+            change_event_view(session, record=record, tenant_id=TEST_TENANT)
         )
         assert (
             mutation["before"]["content_sha256"]
@@ -434,7 +434,7 @@ def test_provider_failure_preserves_parent_event_with_explicit_unavailability(
         receipt = _ingest(session, monkeypatch, UnavailableProvider())
         record = session.get(ChangeEventRecord, receipt.event_ids[0])
         assert record is not None
-        event = change_event_view(session, record=record, tenant_id=UNOWNED_MACHINE)
+        event = change_event_view(session, record=record, tenant_id=TEST_TENANT)
         capture = event.metadata["source_file_mutation_enrichment"]
         assert capture["completeness"] == "unavailable"
         assert capture["reasons"] == ["permission_denied"]

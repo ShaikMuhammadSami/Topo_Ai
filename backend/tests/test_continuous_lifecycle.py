@@ -1,5 +1,4 @@
 from __future__ import annotations
-from app.repositories.tenant_scope import UNOWNED_MACHINE
 from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT, seed_domain_tenant
 
 import inspect
@@ -779,6 +778,7 @@ def test_automation_status_endpoint_uses_standard_authentication(
 def _agent(session: Session) -> TopoAgentRecord:
     now = utc_now_iso()
     record = TopoAgentRecord(
+        tenant_id=TEST_TENANT,
         agent_id="agent:lifecycle-integration",
         name="lifecycle-integration",
         agent_type="kubernetes",
@@ -1158,13 +1158,13 @@ def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
         update={"category": SignalCategory.IMAGE}
     )
     watcher_result = ingest_failure_signal_batch(
-        session, signals=[watcher_signal], tenant_id=UNOWNED_MACHINE
+        session, signals=[watcher_signal], tenant_id=TEST_TENANT
     )
     incident_id = watcher_result.results[0].incident_id
     assert incident_id is not None
     incident = session.get(IncidentRecord, incident_id)
     analysis = latest_causal_analysis(
-        session, incident_id=incident_id, tenant_id=UNOWNED_MACHINE
+        session, incident_id=incident_id, tenant_id=TEST_TENANT
     )
 
     assert incident is not None
@@ -1178,10 +1178,10 @@ def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
     assert _count(session, CausalAnalysisRecord) == 1
 
     second = ingest_failure_signal_batch(
-        session, signals=[watcher_signal], tenant_id=UNOWNED_MACHINE
+        session, signals=[watcher_signal], tenant_id=TEST_TENANT
     )
     reused = latest_causal_analysis(
-        session, incident_id=incident_id, tenant_id=UNOWNED_MACHINE
+        session, incident_id=incident_id, tenant_id=TEST_TENANT
     )
     assert second.results[0].automatic_analysis_state == (
         AutomaticAnalysisState.REUSED
@@ -1191,7 +1191,7 @@ def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
     assert _count(session, CausalAnalysisRecord) == 1
 
     briefing = build_incident_briefing(
-        session, incident_id=incident_id, include_ai=False, tenant_id=UNOWNED_MACHINE
+        session, incident_id=incident_id, include_ai=False, tenant_id=TEST_TENANT
     )
     assert briefing.incident.incident_id == incident_id
     assert briefing.root_cause.causal_analysis_id == (

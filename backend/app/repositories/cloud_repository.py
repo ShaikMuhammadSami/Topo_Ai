@@ -5,6 +5,7 @@ from app.repositories.tenant_scope import (
     tenant_value,
     tenant_predicate,
     tenant_get,
+    require_record_owner,
 )
 
 import hashlib
@@ -70,6 +71,7 @@ def persist_cloud_inventory(
     submission: AgentSnapshotSubmission,
     tenant_id: DomainTenant,
 ) -> None:
+    require_record_owner(agent, tenant_id=tenant_id)
     inventory = submission.inventory
 
     account_resource_types = {
@@ -644,10 +646,10 @@ def agent_cloud_status(
     *,
     agent_id: str,
     provider: str = "aws",
+    tenant_id: DomainTenant,
 ) -> AgentCloudStatusResponse | None:
-    record = session.get(
-        TopoAgentRecord,
-        agent_id,
+    record = tenant_get(
+        session, TopoAgentRecord, agent_id, tenant_id=tenant_id,
     )
 
     if record is None:

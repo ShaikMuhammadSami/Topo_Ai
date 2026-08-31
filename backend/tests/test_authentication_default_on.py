@@ -1,4 +1,5 @@
 from __future__ import annotations
+from domain_tenant_fixtures import TEST_HEADERS, seed_domain_tenant
 
 import json
 from types import SimpleNamespace
@@ -46,6 +47,7 @@ def _required_app(
     monkeypatch,
     *,
     roles: tuple[str, ...] = ("admin", "operator"),
+    tenant_admin: bool = False,
 ):
     token = "ph2b-human-bearer-" + ("h" * 32)
     monkeypatch.setenv("TOPO_AUTH_MODE", "required")
@@ -54,7 +56,21 @@ def _required_app(
         "TOPO_API_TOKEN_HASHES_JSON",
         _registry(token, roles=roles),
     )
-    return create_app(database_initializer=lambda: None), token
+    if not tenant_admin:
+        return create_app(database_initializer=lambda: None), token
+    # Explicit opt-in for the two machine-administration authorization tests.
+    # Real membership; no TenantContext override or production DB access.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from app.db.database import Base
+
+    engine = create_engine("sqlite://", poolclass=StaticPool,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    seed_domain_tenant(engine, subject="test:operator")
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    return create_app(database_initializer=lambda: None, session_factory=factory), token
 
 
 def _clear_auth_environment(monkeypatch) -> None:
@@ -242,10 +258,10 @@ def test_required_human_bearer_contract(monkeypatch) -> None:
 
 
 def test_non_admin_is_forbidden_on_admin_route(monkeypatch) -> None:
-    application, token = _required_app(monkeypatch, roles=("viewer",))
+    application, token = _required_app(monkeypatch, roles=("viewer",), tenant_admin=True)
     response = TestClient(application).post(
         "/api/v1/agents/enrollment-tokens",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", **TEST_HEADERS},
         json={"max_uses": 1},
     )
 
@@ -253,7 +269,7 @@ def test_non_admin_is_forbidden_on_admin_route(monkeypatch) -> None:
 
 
 def test_valid_admin_preserves_admin_route(monkeypatch) -> None:
-    application, token = _required_app(monkeypatch, roles=("admin",))
+    application, token = _required_app(monkeypatch, roles=("admin",), tenant_admin=True)
     monkeypatch.setattr(
         agents_api,
         "create_enrollment_token",
@@ -270,7 +286,7 @@ def test_valid_admin_preserves_admin_route(monkeypatch) -> None:
 
     response = TestClient(application).post(
         "/api/v1/agents/enrollment-tokens",
-        headers={"Authorization": f"Bearer {token}"},
+        headers={"Authorization": f"Bearer {token}", **TEST_HEADERS},
         json={"max_uses": 1},
     )
 
@@ -340,7 +356,7 @@ def test_provider_callback_uses_only_provider_authentication(monkeypatch) -> Non
     application, human_token = _required_app(monkeypatch)
     monkeypatch.setattr(
         webhook_api,
-        "load_change_source",
+        "load_change_source_for_authentication",
         lambda *args, **kwargs: SimpleNamespace(source_id="source:test"),
     )
     monkeypatch.setattr(
