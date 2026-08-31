@@ -51,7 +51,7 @@ def migrate(engine, revision=HEAD, target=None, *, downgrade=False):
 def test_fresh_38_owned_tables_no_defaults_and_downgrade_parity(machine_engine):
     migrate(machine_engine)
     assert len(REQUIRED_OWNERSHIP_TABLES) == 38
-    assert len(Base.metadata.tables) == 43
+    assert len(frozen_0007_metadata().tables) == 43
     with machine_engine.connect() as c:
         assert current_revisions(c) == (HEAD,)
         assert schema_differences(c, metadata=frozen_0007_metadata()) == ()

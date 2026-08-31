@@ -191,7 +191,11 @@ pytestmark = pytest.mark.skipif(
 )
 
 NOW = datetime(2026, 8, 28, 12, 0, tzinfo=UTC)
-DOMAIN_TABLE_NAMES = tuple(sorted(Base.metadata.tables))
+from frozen_schema_fixtures import frozen_0008_metadata
+
+# Preserve this accepted 43-table PH-1/PH-3 generic fixture verbatim. PH-4B's
+# constrained binary store has its own real-engine corpus, not fabricated strings.
+DOMAIN_TABLE_NAMES = tuple(sorted(frozen_0008_metadata().tables))
 DOMAIN_OWNERSHIP_REVISION = "0005_domain_tenant_ownership"
 TENANT_FOUNDATION_REVISION = "0004_tenant_foundation"
 PH3C_DOMAIN_TABLE_NAMES = tuple(
@@ -467,10 +471,10 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
         assert len(_domain_table_names(connection)) == 43
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 771
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 803
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
-        ) == 68
+        ) == 71
         assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 344
         assert sum(
             1
@@ -483,7 +487,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for table in Base.metadata.tables.values()
             for constraint in table.constraints
             if constraint.__class__.__name__ == "UniqueConstraint"
-        ) == 14
+        ) == 16
 
         database_indexes = [
             item
@@ -532,7 +536,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         ]
         timestamp_columns = [
             (table.name, column.name)
-            for table in Base.metadata.tables.values()
+            for table in frozen_0008_metadata().tables.values()
             for column in table.columns
             if column.name.endswith("_at")
         ]
@@ -602,7 +606,7 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0008_tenant_scoped_identity_namespace",)
+            assert current_revisions(connection) == ("0009_secret_store",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -737,7 +741,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0008_tenant_scoped_identity_namespace",)
+            assert current_revisions(connection) == ("0009_secret_store",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43

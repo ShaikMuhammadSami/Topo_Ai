@@ -79,9 +79,12 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
     assert [path for path, _ in raw] == ["db/schema_management.py"]
     assert [path for path, _ in legacy_queries] == ["repositories/topology_snapshot_repository.py"]
     assert len(llm) == 12  # eight central callers + four legacy Groq branches
-    assert len(models.Base.metadata.tables) == 43
+    assert len(models.Base.metadata.tables) == 45
     owned = [t for t in models.Base.metadata.tables.values() if "tenant_id" in t.c and t.name not in {
-        "tenants", "tenant_memberships", "service_api_tenant_bindings"}]
+        "tenants", "tenant_memberships", "service_api_tenant_bindings", "secret_records"}]
+    # PH-4B's explicit dual-scope store is not an ordinary PH-3 domain table.
+    assert models.Base.metadata.tables["secret_records"].c.tenant_id.nullable
+    assert "tenant_id" not in models.Base.metadata.tables["secret_versions"].c
     assert len(owned) == 38
     assert all(not t.c.tenant_id.nullable and t.c.tenant_id.default is None and t.c.tenant_id.server_default is None for t in owned)
     print("PH3G_STATIC_INVENTORY " + json.dumps({"repository_audited": len(entries),

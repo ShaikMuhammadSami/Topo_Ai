@@ -20,7 +20,7 @@ from app.db.schema_management import (
     verify_database_revision, SchemaAuthorityError,
 )
 from app.repositories.tenant_scope import tenant_get, local_primary_key
-from frozen_schema_fixtures import frozen_0007_metadata
+from frozen_schema_fixtures import frozen_0007_metadata, frozen_0008_metadata
 from test_domain_tenant_migration import TENANT_A, TENANT_B, _seed_pre_tenancy_row, _seed_tenant
 
 HEAD = "0008_tenant_scoped_identity_namespace"
@@ -65,9 +65,9 @@ def test_selective_identity_inventory():
 def test_fresh_upgrade_parity_clean_downgrade_and_reupgrade(identity_engine):
     migrate(identity_engine)
     with identity_engine.connect() as c:
-        assert schema_differences(c) == ()
+        assert schema_differences(c, metadata=frozen_0008_metadata()) == ()
         assert current_revisions(c) == (HEAD,)
-        assert len(Base.metadata.tables) == 43
+        assert len(frozen_0008_metadata().tables) == 43
         for name in REQUIRED_OWNERSHIP_TABLES:
             tenant = next(col for col in inspect(c).get_columns(name) if col["name"] == "tenant_id")
             assert not tenant["nullable"] and tenant["default"] is None
@@ -79,7 +79,7 @@ def test_fresh_upgrade_parity_clean_downgrade_and_reupgrade(identity_engine):
         verify_database_revision(identity_engine)
     migrate(identity_engine)
     with identity_engine.connect() as c:
-        assert schema_differences(c) == ()
+        assert schema_differences(c, metadata=frozen_0008_metadata()) == ()
 
 
 def test_populated_upgrade_changes_no_row_values(identity_engine):
@@ -89,10 +89,10 @@ def test_populated_upgrade_changes_no_row_values(identity_engine):
         for name in REQUIRED_OWNERSHIP_TABLES:
             _seed_pre_tenancy_row(c, name, tenant_id=TENANT_A)
         before = {name: [dict(row) for row in c.execute(text(f'SELECT * FROM "{name}"')).mappings()]
-                  for name in Base.metadata.tables}
+                  for name in frozen_0008_metadata().tables}
     migrate(identity_engine)
     with identity_engine.connect() as c:
-        assert schema_differences(c) == ()
+        assert schema_differences(c, metadata=frozen_0008_metadata()) == ()
         for name, rows in before.items():
             assert [dict(row) for row in c.execute(text(f'SELECT * FROM "{name}"')).mappings()] == rows
     migrate(identity_engine, PARENT, downgrade=True)
@@ -146,7 +146,7 @@ def test_equal_local_ids_coexist_orm_identity_and_downgrade_gate(identity_engine
     with identity_engine.connect() as c:
         assert current_revisions(c) == (HEAD,)
         assert c.scalar(text(f'SELECT COUNT(*) FROM "{table_name}"')) == 2
-        assert schema_differences(c) == ()
+        assert schema_differences(c, metadata=frozen_0008_metadata()) == ()
 
 
 @pytest.mark.parametrize("table_name,column", [

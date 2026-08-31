@@ -9,12 +9,73 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     PrimaryKeyConstraint,
+    CheckConstraint,
+    ForeignKey,
 )
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
 
 from app.db.database import Base
 from app.db.domain_ownership import REQUIRED_OWNERSHIP_TABLES
 from app.db.tenant_identity import TENANT_LOCAL_PRIMARY_KEYS
+from app.db.secret_types import SecretBinary
+
+
+class SecretRecord(Base):
+    """Custody metadata only; intentionally outside the frozen domain mixin."""
+
+    __tablename__ = "secret_records"
+    __table_args__ = (
+        UniqueConstraint("scope_kind", "scope_id", "owner_type", "owner_id", "purpose", name="uq_secret_records_binding"),
+        CheckConstraint("(scope_kind = 'tenant' AND tenant_id IS NOT NULL AND scope_id = tenant_id) OR (scope_kind = 'installation' AND tenant_id IS NULL)", name="ck_secret_records_scope"),
+        CheckConstraint("status IN ('active', 'revoked') AND active_version >= 1 AND row_version >= 1", name="ck_secret_records_state"),
+        CheckConstraint("(previous_version IS NULL AND previous_accept_until IS NULL) OR (previous_version IS NOT NULL AND previous_accept_until IS NOT NULL AND previous_version >= 1 AND previous_version < active_version)", name="ck_secret_records_previous"),
+    )
+    secret_ref: Mapped[str] = mapped_column(String(64), primary_key=True)
+    scope_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    scope_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    owner_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    owner_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(80), nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    active_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    previous_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    previous_accept_until: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    row_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    updated_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    revoked_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
+    def __repr__(self):
+        return "SecretRecord(<metadata>)"
+
+
+class SecretVersionRecord(Base):
+    __tablename__ = "secret_versions"
+    __table_args__ = (
+        UniqueConstraint("secret_ref", "operation_id", name="uq_secret_versions_operation"),
+        CheckConstraint("version >= 1 AND envelope_revision >= 1 AND overlap_seconds >= 0 AND overlap_seconds <= 86400", name="ck_secret_versions_state"),
+    )
+    secret_ref: Mapped[str] = mapped_column(String(64), ForeignKey("secret_records.secret_ref", name="fk_secret_versions_record"), primary_key=True)
+    version: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    algorithm: Mapped[str] = mapped_column(String(20), nullable=False)
+    envelope_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    nonce: Mapped[bytes] = mapped_column(SecretBinary(12), nullable=False)
+    ciphertext: Mapped[bytes] = mapped_column(SecretBinary(), nullable=False)
+    operation_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    operation_kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    overlap_seconds: Mapped[int] = mapped_column(Integer, nullable=False)
+    envelope_revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    created_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    rewrapped_at: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    rewrapped_by_subject: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    def __repr__(self):
+        return "SecretVersionRecord(<protected>)"
 
 
 def utc_now_iso() -> str:
