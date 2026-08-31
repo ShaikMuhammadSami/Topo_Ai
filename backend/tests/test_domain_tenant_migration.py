@@ -205,7 +205,9 @@ def _seed_representative_domain(connection: Connection) -> dict[str, str]:
 
 
 def test_domain_table_partition_and_nullable_orm_ownership_are_exact() -> None:
-    all_tables = set(Base.metadata.tables)
+    from frozen_schema_fixtures import frozen_0008_metadata, SECRET_STORE_TABLES
+    all_tables = set(frozen_0008_metadata().tables)
+    assert set(Base.metadata.tables) == all_tables | SECRET_STORE_TABLES
     assert len(all_tables) == 43
     assert len(PH3C_DOMAIN) == 35
     assert len(PH3E_MACHINE_AUTHORITY) == 3
@@ -249,7 +251,7 @@ def test_fresh_sqlite_requires_no_legacy_tenant_and_creates_none(
     _upgrade(migration_engine)
 
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == ("0008_tenant_scoped_identity_namespace",)
+        assert current_revisions(connection) == ("0009_secret_store",)
         assert connection.scalar(text("SELECT COUNT(*) FROM tenants")) == 0
         assert schema_differences(connection) == ()
         assert inspect_schema_authority(connection).ok

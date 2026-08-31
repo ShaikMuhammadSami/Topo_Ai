@@ -66,6 +66,8 @@ from app.services.auth_api_credential_service import (
     has_active_human_admin_credential,
 )
 from app.repositories.tenant_scope import TenantResourceNotFound
+from app.security.secret_keyring import load_secret_store_configuration
+from app.services.secret_store import EncryptedDatabaseSecretStore
 
 LOGGER = logging.getLogger(__name__)
 
@@ -77,6 +79,10 @@ load_dotenv()
 async def lifespan(application: FastAPI):
     application.state.ready = False
     application.state.database_initializer()
+    store = EncryptedDatabaseSecretStore(load_secret_store_configuration())
+    with application.state.session_factory() as session:
+        store.validate_readiness(session)
+    application.state.secret_store = store
     configuration = application.state.auth_configuration
     if (
         configuration.mode is AuthMode.REQUIRED

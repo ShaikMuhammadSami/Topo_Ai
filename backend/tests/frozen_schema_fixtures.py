@@ -10,10 +10,22 @@ from app.db.database import Base
 from app.db.schema_management import script_directory
 
 
+SECRET_STORE_TABLES = {"secret_records", "secret_versions"}
+
+
+def frozen_0008_metadata():
+    """PH-3's exact 43-table contract, before the additive secret store."""
+    metadata = MetaData()
+    for table in Base.metadata.tables.values():
+        if table.name not in SECRET_STORE_TABLES:
+            table.to_metadata(metadata)
+    return metadata
+
+
 def frozen_0007_metadata():
     metadata = MetaData()
     namespace = script_directory().get_revision("0008_tenant_scoped_identity_namespace").module
-    for table in Base.metadata.tables.values():
+    for table in frozen_0008_metadata().tables.values():
         copied = table.to_metadata(metadata)
         key = namespace.LOCAL_KEYS.get(table.name)
         if key:

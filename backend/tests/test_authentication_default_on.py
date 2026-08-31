@@ -48,6 +48,7 @@ def _required_app(
     *,
     roles: tuple[str, ...] = ("admin", "operator"),
     tenant_admin: bool = False,
+    with_schema: bool = False,
 ):
     token = "ph2b-human-bearer-" + ("h" * 32)
     monkeypatch.setenv("TOPO_AUTH_MODE", "required")
@@ -56,9 +57,9 @@ def _required_app(
         "TOPO_API_TOKEN_HASHES_JSON",
         _registry(token, roles=roles),
     )
-    if not tenant_admin:
+    if not (tenant_admin or with_schema):
         return create_app(database_initializer=lambda: None), token
-    # Explicit opt-in for the two machine-administration authorization tests.
+    # Explicit opt-in for machine administration and real startup readiness.
     # Real membership; no TenantContext override or production DB access.
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
@@ -68,7 +69,8 @@ def _required_app(
     engine = create_engine("sqlite://", poolclass=StaticPool,
                            connect_args={"check_same_thread": False})
     Base.metadata.create_all(engine)
-    seed_domain_tenant(engine, subject="test:operator")
+    if tenant_admin:
+        seed_domain_tenant(engine, subject="test:operator")
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     return create_app(database_initializer=lambda: None, session_factory=factory), token
 
@@ -399,7 +401,7 @@ def test_provider_callback_uses_only_provider_authentication(monkeypatch) -> Non
 
 
 def test_health_and_readiness_are_public_and_minimal(monkeypatch) -> None:
-    application, _ = _required_app(monkeypatch)
+    application, _ = _required_app(monkeypatch, with_schema=True)
     client = TestClient(application)
 
     health = client.get("/health")

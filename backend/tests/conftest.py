@@ -49,4 +49,19 @@ def required_auth_app(monkeypatch):
     monkeypatch.setenv("TOPO_AUTH_MODE", "required")
     monkeypatch.delenv("TOPO_AUTH_ENABLED", raising=False)
     monkeypatch.setenv("TOPO_API_TOKEN_HASHES_JSON", json.dumps(registry))
-    return create_app(database_initializer=lambda: None)
+    # Startup now verifies SecretStore emptiness even when disabled. Keep this
+    # auth fixture independent of the protected developer database and supply a
+    # real disposable schema instead of bypassing the readiness invariant.
+    from sqlalchemy import create_engine
+    from sqlalchemy.orm import sessionmaker
+    from sqlalchemy.pool import StaticPool
+    from app.db.database import Base
+
+    engine = create_engine("sqlite://", poolclass=StaticPool,
+                           connect_args={"check_same_thread": False})
+    Base.metadata.create_all(engine)
+    try:
+        yield create_app(database_initializer=lambda: None,
+                         session_factory=sessionmaker(engine))
+    finally:
+        engine.dispose()
