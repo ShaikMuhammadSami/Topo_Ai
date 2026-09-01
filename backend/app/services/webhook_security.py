@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
-import os
 import time
 
 
@@ -17,26 +16,6 @@ class WebhookAuthenticationUnavailableError(
     RuntimeError
 ):
     pass
-
-
-def resolve_secret(
-    secret_ref: str | None,
-) -> str:
-    if not secret_ref:
-        raise WebhookAuthenticationUnavailableError(
-            "Provider authentication is unavailable."
-        )
-
-    secret = os.getenv(
-        secret_ref
-    )
-
-    if not secret:
-        raise WebhookAuthenticationUnavailableError(
-            "Provider authentication is unavailable."
-        )
-
-    return secret
 
 
 def verify_github(

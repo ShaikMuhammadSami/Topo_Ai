@@ -146,6 +146,7 @@ class TopoClient:
         *,
         params: dict[str, Any] | None = None,
         json_body: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
     ) -> JsonValue:
         clean_params = (
                 {
@@ -164,6 +165,7 @@ class TopoClient:
                   url=path,
                   params=clean_params,
                   json=json_body,
+                  headers=headers,
                 ),
                 max_retries=(
                     self.max_retries
@@ -2250,6 +2252,24 @@ class TopoClient:
                 "response."
             )
 
+        return value
+
+
+    def update_change_source(
+        self,
+        source_id: str,
+        payload: dict[str, Any],
+        *,
+        idempotency_key: str,
+    ) -> dict[str, Any]:
+        value = self._request(
+            "PATCH",
+            "/api/v1/change-sources/" + self._encode_identifier(source_id),
+            json_body=payload,
+            headers={"Idempotency-Key": idempotency_key},
+        )
+        if not isinstance(value, dict):
+            raise ApiFailure("Invalid change-source response.")
         return value
 
 

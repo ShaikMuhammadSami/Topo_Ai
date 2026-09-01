@@ -1373,6 +1373,18 @@ class OwnershipMappingRecord(TenantOwnedRecordMixin, Base):
 
 class WebhookEndpointRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "webhook_endpoints"
+    __table_args__ = (
+        CheckConstraint(
+            "signing_secret_ref IS NULL OR "
+            "(length(signing_secret_ref) = 43 AND substr(signing_secret_ref, 1, 7) = 'secret:')",
+            name="ck_webhook_signing_secret_ref",
+        ),
+        CheckConstraint(
+            "protected_headers_secret_ref IS NULL OR "
+            "(length(protected_headers_secret_ref) = 43 AND substr(protected_headers_secret_ref, 1, 7) = 'secret:')",
+            name="ck_webhook_headers_secret_ref",
+        ),
+    )
 
     webhook_id: Mapped[str] = mapped_column(
         String(255),
@@ -1394,18 +1406,20 @@ class WebhookEndpointRecord(TenantOwnedRecordMixin, Base):
         nullable=False,
     )
 
-    headers_json: Mapped[str] = mapped_column(
-        Text,
-        nullable=False,
-        default="{}",
+    signing_secret_ref: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
     )
 
-    # Development implementation.
-    # Move this to encrypted storage or a secret
-    # manager before production use.
-    signing_secret: Mapped[str | None] = mapped_column(
-        Text,
+    protected_headers_secret_ref: Mapped[str | None] = mapped_column(
+        String(64),
         nullable=True,
+    )
+
+    protected_header_names_json: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+        default="[]",
     )
 
     active: Mapped[bool] = mapped_column(
@@ -3601,6 +3615,17 @@ class ChangeEntityLinkRecord(TenantOwnedRecordMixin, Base):
 
 class ChangeSourceRecord(TenantOwnedRecordMixin, Base):
     __tablename__ = "change_sources"
+    __table_args__ = (
+        CheckConstraint(
+            "secret_ref IS NULL OR "
+            "(length(secret_ref) = 43 AND substr(secret_ref, 1, 7) = 'secret:')",
+            name="ck_change_sources_secret_ref",
+        ),
+        CheckConstraint(
+            "NOT enabled OR secret_ref IS NOT NULL",
+            name="ck_change_sources_enabled_secret",
+        ),
+    )
 
     source_id: Mapped[str] = mapped_column(
         String(255),
@@ -3627,7 +3652,7 @@ class ChangeSourceRecord(TenantOwnedRecordMixin, Base):
     )
 
     secret_ref: Mapped[str | None] = mapped_column(
-        String(255),
+        String(64),
         nullable=True,
     )
 

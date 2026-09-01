@@ -70,6 +70,12 @@ def init_db(*, bind: Engine | None = None) -> None:
 
     target = bind or engine
     if target.dialect.name == "sqlite":
+        from sqlalchemy import inspect
+        from app.db.schema_management import verify_database_revision
+
+        if "alembic_version" in inspect(target).get_table_names():
+            verify_database_revision(target)
+            return
         Base.metadata.create_all(bind=target)
         return
 

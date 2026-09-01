@@ -22,6 +22,11 @@ from app.db.models import (
     ChangeSourceRecord,
 )
 from app.main import create_app
+from app import main as main_module
+from app.models.secret_store import SecretMaterial
+from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
+from app.services.secret_consumer_policy import source_binding
+from app.services.secret_store import EncryptedDatabaseSecretStore
 from app.security.api_tokens import token_digest
 from app.security.auth_config import load_auth_configuration
 from app.services.change_source_ingest import _verify
@@ -65,6 +70,12 @@ def provider_app(monkeypatch):
         json.dumps([ORIGIN]),
     )
     configuration = load_auth_configuration(database_url="sqlite://")
+    store = EncryptedDatabaseSecretStore(
+        SecretStoreConfiguration(
+            "encrypted_db", SecretKeyring({"test": secrets.token_bytes(32)}, "test")
+        )
+    )
+    monkeypatch.setattr(main_module, "load_secret_store_configuration", lambda: store.configuration)
     application = create_app(
         auth_configuration=configuration,
         session_factory=sessions,
@@ -77,7 +88,7 @@ def provider_app(monkeypatch):
 
     application.dependency_overrides[get_session] = override_session
     try:
-        yield application, sessions, human_token
+        yield application, sessions, human_token, store
     finally:
         application.dependency_overrides.clear()
         engine.dispose()
@@ -86,9 +97,11 @@ def provider_app(monkeypatch):
 def _source(
     sessions,
     *,
+    store: EncryptedDatabaseSecretStore,
     source_id: str = "source:github",
     source_type: str = "github",
-    secret_ref: str = "TOPO_PROVIDER_TEST_SECRET",
+    secret: str | None = "provider-test-secret-material",
+    unavailable: bool = False,
     enabled: bool = True,
     config: dict | None = None,
 ) -> ChangeSourceRecord:
@@ -98,7 +111,7 @@ def _source(
         name=f"{source_type} security test",
         source_type=source_type,
         enabled=enabled,
-        secret_ref=secret_ref,
+        secret_ref=None,
         config_json=json.dumps(config or {}),
         filters_json="{}",
         status="configured",
@@ -108,6 +121,17 @@ def _source(
         updated_at="2026-08-29T00:00:00+00:00",
     )
     with sessions() as session:
+        if unavailable:
+            record.secret_ref = "secret:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        elif secret is not None:
+            binding = source_binding(
+                tenant_id=TEST_TENANT, source_id=source_id,
+                source_type=source_type, config=config or {},
+            )
+            record.secret_ref = store.put(
+                session, binding, SecretMaterial(secret.encode()),
+                operation_id=f"test:{source_id}", actor="test",
+            ).secret_ref
         session.add(record)
         session.commit()
     return record
@@ -145,19 +169,22 @@ def test_provider_source_states_have_safe_outward_semantics(
     provider_app,
     monkeypatch,
 ) -> None:
-    application, sessions, _ = provider_app
+    application, sessions, _, store = provider_app
     _source(
         sessions,
+        store=store,
         source_id="source:disabled",
         enabled=False,
     )
     _source(
         sessions,
+        store=store,
         source_id="source:unavailable",
-        secret_ref="TOPO_PROVIDER_ABSENT_SECRET",
+        unavailable=True,
     )
     _source(
         sessions,
+        store=store,
         source_id="source:bad-config",
     )
     monkeypatch.delenv("TOPO_PROVIDER_ABSENT_SECRET", raising=False)
@@ -188,8 +215,11 @@ def test_provider_source_states_have_safe_outward_semantics(
 
     assert unknown.status_code == disabled.status_code == 401
     assert unknown.json() == disabled.json() == AUTH_FAILED
-    assert unavailable.status_code == 503
-    assert unavailable.json() == AUTH_UNAVAILABLE
+    # A missing/foreign durable reference is indistinguishable from any other
+    # provider authentication failure.  Only a global SecretStore outage may
+    # use the generic service-unavailable boundary.
+    assert unavailable.status_code == 401
+    assert unavailable.json() == AUTH_FAILED
     assert bad_config.status_code == 503
     assert bad_config.json() == AUTH_UNAVAILABLE
     assert "TOPO_PROVIDER_ABSENT_SECRET" not in unavailable.text
@@ -199,10 +229,10 @@ def test_signature_is_authoritative_before_json_or_persistence(
     provider_app,
     monkeypatch,
 ) -> None:
-    application, sessions, _ = provider_app
+    application, sessions, _, store = provider_app
     secret = secrets.token_urlsafe(32)
     monkeypatch.setenv("TOPO_PROVIDER_TEST_SECRET", secret)
-    _source(sessions)
+    _source(sessions, store=store, secret=secret)
     malformed = b"{not-json"
 
     with TestClient(application) as client:
@@ -230,10 +260,10 @@ def test_authenticated_exact_replay_has_one_delivery_and_no_duplicate_effect(
     provider_app,
     monkeypatch,
 ) -> None:
-    application, sessions, _ = provider_app
+    application, sessions, _, store = provider_app
     secret = secrets.token_urlsafe(32)
     monkeypatch.setenv("TOPO_PROVIDER_TEST_SECRET", secret)
-    _source(sessions)
+    _source(sessions, store=store, secret=secret)
     body = b"{}"
     headers = _github_headers(secret, body, "exact-replay")
 
@@ -260,10 +290,10 @@ def test_human_session_bearer_and_agent_material_cannot_substitute_provider_auth
     provider_app,
     monkeypatch,
 ) -> None:
-    application, sessions, human_token = provider_app
+    application, sessions, human_token, store = provider_app
     secret = secrets.token_urlsafe(32)
     monkeypatch.setenv("TOPO_PROVIDER_TEST_SECRET", secret)
-    _source(sessions)
+    _source(sessions, store=store, secret=secret)
 
     with TestClient(application, base_url=ORIGIN) as client:
         login = client.post(
@@ -310,107 +340,31 @@ def test_human_session_bearer_and_agent_material_cannot_substitute_provider_auth
 
 
 def test_every_supported_provider_verifier_accepts_only_its_credential(
-    monkeypatch,
+    provider_app,
 ) -> None:
+    _, sessions, _, store = provider_app
     body = b"{}"
     secret = secrets.token_urlsafe(32)
-    monkeypatch.setenv("TOPO_PROVIDER_TEST_SECRET", secret)
-
-    github = ChangeSourceRecord(
-        tenant_id=TEST_TENANT,
-        source_id="source:github",
-        name="github",
-        source_type="github",
-        enabled=True,
-        secret_ref="TOPO_PROVIDER_TEST_SECRET",
-        config_json="{}",
-        filters_json="{}",
-        status="configured",
-        delivery_count=0,
-        failure_count=0,
+    github = _source(sessions, store=store, secret=secret)
+    terraform = _source(
+        sessions, store=store, source_id="source:terraform",
+        source_type="terraform_cloud", secret=secret,
     )
-    _verify(source=github, body=body, headers=_github_headers(secret, body))
-
-    terraform = ChangeSourceRecord(
-        tenant_id=TEST_TENANT,
-        source_id="source:terraform",
-        name="terraform",
-        source_type="terraform_cloud",
-        enabled=True,
-        secret_ref="TOPO_PROVIDER_TEST_SECRET",
-        config_json="{}",
-        filters_json="{}",
-        status="configured",
-        delivery_count=0,
-        failure_count=0,
+    jenkins = _source(
+        sessions, store=store, source_id="source:jenkins",
+        source_type="jenkins", secret=secret,
     )
-    _verify(
-        source=terraform,
-        body=body,
-        headers={
-            "X-TFE-Notification-Signature": hmac.new(
-                secret.encode(), body, hashlib.sha512
-            ).hexdigest()
-        },
-    )
-
-    jenkins = ChangeSourceRecord(
-        tenant_id=TEST_TENANT,
-        source_id="source:jenkins",
-        name="jenkins",
-        source_type="jenkins",
-        enabled=True,
-        secret_ref="TOPO_PROVIDER_TEST_SECRET",
-        config_json="{}",
-        filters_json="{}",
-        status="configured",
-        delivery_count=0,
-        failure_count=0,
-    )
-    _verify(
-        source=jenkins,
-        body=body,
-        headers={
-            "X-Topo-Signature-256": "sha256="
-            + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        },
-    )
-
-    azure = ChangeSourceRecord(
-        tenant_id=TEST_TENANT,
-        source_id="source:azure",
-        name="azure",
-        source_type="azure_devops",
-        enabled=True,
-        secret_ref="TOPO_PROVIDER_TEST_SECRET",
-        config_json=json.dumps({"username": "topo-webhook"}),
-        filters_json="{}",
-        status="configured",
-        delivery_count=0,
-        failure_count=0,
+    azure = _source(
+        sessions, store=store, source_id="source:azure",
+        source_type="azure_devops", secret=secret,
+        config={"username": "topo-webhook"},
     )
     basic = base64.b64encode(f"topo-webhook:{secret}".encode()).decode()
-    _verify(
-        source=azure,
-        body=body,
-        headers={"Authorization": f"Basic {basic}"},
-    )
-
     gitlab_key = secrets.token_bytes(32)
     gitlab_secret = "whsec_" + base64.b64encode(gitlab_key).decode()
-    monkeypatch.setenv("TOPO_PROVIDER_GITLAB_SECRET", gitlab_secret)
-    gitlab = ChangeSourceRecord(
-        tenant_id=TEST_TENANT,
-        source_id="source:gitlab",
-        name="gitlab",
-        source_type="gitlab",
-        enabled=True,
-        secret_ref="TOPO_PROVIDER_GITLAB_SECRET",
-        config_json=json.dumps({"signature_max_age": 300}),
-        filters_json="{}",
-        status="configured",
-        delivery_count=0,
-        failure_count=0,
+    gitlab = _source(
+        sessions, store=store, source_id="source:gitlab", source_type="gitlab",
+        secret=gitlab_secret, config={"signature_max_age": 300},
     )
     timestamp = str(int(time.time()))
     webhook_id = "gitlab-delivery"
@@ -426,45 +380,37 @@ def test_every_supported_provider_verifier_accepts_only_its_credential(
         "Webhook-Timestamp": timestamp,
         "Webhook-Signature": signature,
     }
-    _verify(source=gitlab, body=body, headers=headers)
-
-    stale_timestamp = str(int(time.time()) - 301)
-    stale_signature = "v1," + base64.b64encode(
-        hmac.new(
-            gitlab_key,
-            f"{webhook_id}.{stale_timestamp}.".encode() + body,
-            hashlib.sha256,
-        ).digest()
-    ).decode()
-    with pytest.raises(WebhookAuthenticationError):
+    gitlab_secret_token = _source(
+        sessions, store=store, source_id="source:gitlab-secret-token",
+        source_type="gitlab", secret=secret,
+        config={"auth_mode": "secret_token"},
+    )
+    with sessions() as session:
+        _verify(session, source=github, body=body, headers=_github_headers(secret, body), secret_store=store)
         _verify(
-            source=gitlab,
-            body=body,
-            headers={
-                "Webhook-Id": webhook_id,
-                "Webhook-Timestamp": stale_timestamp,
-                "Webhook-Signature": stale_signature,
-            },
+            session, source=terraform, body=body,
+            headers={"X-TFE-Notification-Signature": hmac.new(secret.encode(), body, hashlib.sha512).hexdigest()},
+            secret_store=store,
         )
+        _verify(
+            session, source=jenkins, body=body,
+            headers={"X-Topo-Signature-256": "sha256=" + hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()},
+            secret_store=store,
+        )
+        _verify(session, source=azure, body=body, headers={"Authorization": f"Basic {basic}"}, secret_store=store)
+        _verify(session, source=gitlab, body=body, headers=headers, secret_store=store)
+        _verify(session, source=gitlab_secret_token, body=body, headers={"X-Gitlab-Token": secret}, secret_store=store)
 
-    gitlab_secret_token = ChangeSourceRecord(
-        tenant_id=TEST_TENANT,
-        source_id="source:gitlab-secret-token",
-        name="gitlab secret token",
-        source_type="gitlab",
-        enabled=True,
-        secret_ref="TOPO_PROVIDER_TEST_SECRET",
-        config_json=json.dumps({"auth_mode": "secret_token"}),
-        filters_json="{}",
-        status="configured",
-        delivery_count=0,
-        failure_count=0,
-    )
-    _verify(
-        source=gitlab_secret_token,
-        body=body,
-        headers={"X-Gitlab-Token": secret},
-    )
+        stale_timestamp = str(int(time.time()) - 301)
+        stale_signature = "v1," + base64.b64encode(
+            hmac.new(gitlab_key, f"{webhook_id}.{stale_timestamp}.".encode() + body, hashlib.sha256).digest()
+        ).decode()
+        with pytest.raises(WebhookAuthenticationError):
+            _verify(
+                session, source=gitlab, body=body,
+                headers={"Webhook-Id": webhook_id, "Webhook-Timestamp": stale_timestamp, "Webhook-Signature": stale_signature},
+                secret_store=store,
+            )
 
 
 def test_invalid_provider_credentials_are_not_logged(
@@ -472,11 +418,11 @@ def test_invalid_provider_credentials_are_not_logged(
     monkeypatch,
     caplog,
 ) -> None:
-    application, sessions, _ = provider_app
+    application, sessions, _, store = provider_app
     secret = secrets.token_urlsafe(32)
     signature_marker = "sha256=" + secrets.token_hex(32)
     monkeypatch.setenv("TOPO_PROVIDER_TEST_SECRET", secret)
-    _source(sessions)
+    _source(sessions, store=store, secret=secret)
 
     with TestClient(application) as client:
         response = client.post(

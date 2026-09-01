@@ -1,13 +1,11 @@
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from urllib.parse import urlparse
-
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    field_validator,
+    SecretStr,
 )
 
 
@@ -77,15 +75,11 @@ class WebhookEndpointCreate(BaseModel):
             list(DEFAULT_EVENT_TYPES)
     )
 
-    headers: dict[str, str] = Field(
+    headers: dict[str, SecretStr] = Field(
         default_factory=dict
     )
 
-    signing_secret: str | None = Field(
-        default=None,
-        min_length=16,
-        max_length=1000,
-    )
+    signing_secret: SecretStr | None = None
 
     active: bool = True
 
@@ -100,32 +94,6 @@ class WebhookEndpointCreate(BaseModel):
         ge=1,
         le=5,
     )
-
-    @field_validator("url")
-    @classmethod
-    def validate_url(
-        cls,
-        value: str,
-    ) -> str:
-        parsed = urlparse(value)
-
-        if parsed.scheme not in {
-            "http",
-            "https",
-        }:
-            raise ValueError(
-                "Webhook URL must use "
-                "http or https."
-            )
-
-        if not parsed.hostname:
-            raise ValueError(
-                "Webhook URL must include "
-                "a hostname."
-            )
-
-        return value
-
 
 class WebhookEndpointUpdate(BaseModel):
     model_config = ConfigDict(
@@ -146,14 +114,10 @@ class WebhookEndpointUpdate(BaseModel):
 
     headers: dict[
         str,
-        str,
+        SecretStr,
     ] | None = None
 
-    signing_secret: str | None = Field(
-        default=None,
-        min_length=16,
-        max_length=1000,
-    )
+    signing_secret: SecretStr | None = None
 
     active: bool | None = None
 
@@ -180,9 +144,9 @@ class WebhookEndpointView(BaseModel):
         WebhookEventType
     ]
 
-    headers: dict[str, str]
-
     has_signing_secret: bool
+    has_protected_headers: bool
+    protected_header_names: list[str]
 
     active: bool
 

@@ -68,6 +68,7 @@ from app.services.auth_api_credential_service import (
 from app.repositories.tenant_scope import TenantResourceNotFound
 from app.security.secret_keyring import load_secret_store_configuration
 from app.services.secret_store import EncryptedDatabaseSecretStore
+from app.services.secret_runtime import configure_runtime_secret_store
 
 LOGGER = logging.getLogger(__name__)
 
@@ -83,6 +84,7 @@ async def lifespan(application: FastAPI):
     with application.state.session_factory() as session:
         store.validate_readiness(session)
     application.state.secret_store = store
+    configure_runtime_secret_store(store)
     configuration = application.state.auth_configuration
     if (
         configuration.mode is AuthMode.REQUIRED
@@ -102,6 +104,7 @@ async def lifespan(application: FastAPI):
         yield
     finally:
         application.state.ready = False
+        configure_runtime_secret_store(None)
 
 
 def create_app(
@@ -149,6 +152,7 @@ def create_app(
             "Accept",
             "Authorization",
             "Content-Type",
+            "Idempotency-Key",
             "X-Topo-CSRF",
             "X-Topo-Tenant-ID",
         ],

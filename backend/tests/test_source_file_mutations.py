@@ -26,6 +26,10 @@ from app.db.models import (
     ChangeSourceRecord,
 )
 from app.repositories.change_event_repository import change_event_view
+from app.models.secret_store import SecretMaterial
+from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
+from app.services.secret_consumer_policy import source_binding
+from app.services.secret_store import EncryptedDatabaseSecretStore
 from app.services.change_source_ingest import ingest_change_source_webhook
 from app.services.github_source_file_enrichment import (
     DEFAULT_MAX_BYTES_PER_FILE,
@@ -194,6 +198,9 @@ def _session_factory():
     )
     Base.metadata.create_all(engine)
     seed_domain_tenant(engine)
+    engine._ph4c_secret_store = EncryptedDatabaseSecretStore(SecretStoreConfiguration(
+        "encrypted_db", SecretKeyring({"test": __import__("os").urandom(32)}, "test")
+    ))
     return sessionmaker(bind=engine, expire_on_commit=False)
 
 
@@ -204,7 +211,7 @@ def _source(session: Session) -> ChangeSourceRecord:
         name="GitHub test",
         source_type="github",
         enabled=True,
-        secret_ref="TOPO_SC1_WEBHOOK_SECRET",
+        secret_ref=None,
         config_json="{}",
         filters_json="{}",
         status="configured",
@@ -213,6 +220,16 @@ def _source(session: Session) -> ChangeSourceRecord:
         created_at="2026-08-24T09:00:00+00:00",
         updated_at="2026-08-24T09:00:00+00:00",
     )
+    store = session.get_bind()._ph4c_secret_store
+    source.secret_ref = store.put(
+        session,
+        source_binding(
+            tenant_id=TEST_TENANT, source_id=source.source_id,
+            source_type=source.source_type, config={},
+        ),
+        SecretMaterial(WEBHOOK_SECRET.encode()),
+        operation_id="test:source-file-mutations", actor="test",
+    ).secret_ref
     session.add(source)
     session.commit()
     return source
@@ -237,7 +254,6 @@ def _ingest(
     payload: dict[str, Any] | None = None,
     delivery: str = "delivery-1",
 ):
-    monkeypatch.setenv("TOPO_SC1_WEBHOOK_SECRET", WEBHOOK_SECRET)
     source = session.get(ChangeSourceRecord, "change-source:github:test")
     if source is None:
         source = _source(session)
@@ -247,6 +263,7 @@ def _ingest(
         source=source,
         body=body,
         headers=_signed_headers(body, delivery),
+        secret_store=session.get_bind()._ph4c_secret_store,
         github_provider_factory=lambda repository, config: provider,
     )
 
@@ -398,7 +415,6 @@ def test_invalid_signature_is_rejected_before_provider_or_persistence(
 ) -> None:
     sessions = _session_factory()
     provider = _provider()
-    monkeypatch.setenv("TOPO_SC1_WEBHOOK_SECRET", WEBHOOK_SECRET)
     with sessions() as session:
         source = _source(session)
         body = json.dumps(_payload()).encode()
@@ -412,6 +428,7 @@ def test_invalid_signature_is_rejected_before_provider_or_persistence(
                     "X-GitHub-Delivery": "invalid",
                     "X-Hub-Signature-256": "sha256=invalid",
                 },
+                secret_store=session.get_bind()._ph4c_secret_store,
                 github_provider_factory=lambda repository, config: provider,
             )
         assert provider.content_calls == []

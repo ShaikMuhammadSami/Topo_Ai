@@ -76,6 +76,7 @@ async def receive(
                 source=source,
                 body=body,
                 headers=headers,
+                secret_store=getattr(request.app.state, "secret_store", None),
             )
         )
 

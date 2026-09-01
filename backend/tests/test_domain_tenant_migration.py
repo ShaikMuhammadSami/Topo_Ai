@@ -185,6 +185,14 @@ def _seed_representative_domain(connection: Connection) -> dict[str, str]:
             "snapshot_id": "snapshot:legacy",
         },
         "ownership_mappings": {"ownership_id": "ownership:legacy"},
+        # PH-3C's representative row has no reversible webhook material.  A
+        # populated legacy secret is intentionally rejected by PH-4C's later
+        # conversion gate and is covered by the PH-4C migration tests.
+        "webhook_endpoints": {
+            "url": "https://legacy.example.test/topo-events",
+            "headers_json": "{}",
+            "signing_secret": None,
+        },
         "post_incident_reports": {
             "report_id": "report:legacy",
             "incident_id": "incident:legacy",
@@ -251,7 +259,7 @@ def test_fresh_sqlite_requires_no_legacy_tenant_and_creates_none(
     _upgrade(migration_engine)
 
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == ("0009_secret_store",)
+        assert current_revisions(connection) == ("0011_secret_enforce",)
         assert connection.scalar(text("SELECT COUNT(*) FROM tenants")) == 0
         assert schema_differences(connection) == ()
         assert inspect_schema_authority(connection).ok
