@@ -40,12 +40,11 @@ def _endpoint_to_view(
                 record.event_types_json
             )
         ],
-        headers=json.loads(
-            record.headers_json
-        ),
         has_signing_secret=bool(
-            record.signing_secret
+            record.signing_secret_ref
         ),
+        has_protected_headers=bool(record.protected_headers_secret_ref),
+        protected_header_names=json.loads(record.protected_header_names_json or "[]"),
         active=record.active,
         timeout_seconds=(
             record.timeout_seconds
@@ -98,28 +97,7 @@ def create_webhook_endpoint(
     *,
     tenant_id: DomainTenant,
 ) -> WebhookEndpointView:
-    now = utc_now_iso()
-
-    record = WebhookEndpointRecord(
-        webhook_id=(f"webhook:{uuid4().hex}"),
-        name=request.name,
-        url=request.url,
-        event_types_json=json.dumps([value.value for value in request.event_types]),
-        headers_json=json.dumps(request.headers),
-        signing_secret=(request.signing_secret),
-        active=request.active,
-        timeout_seconds=(request.timeout_seconds),
-        max_attempts=(request.max_attempts),
-        created_at=now,
-        updated_at=now,
-        tenant_id=tenant_value(tenant_id),
-    )
-
-    session.add(record)
-    tenant_commit(session, tenant_id=tenant_id)
-    session.refresh(record)
-
-    return _endpoint_to_view(record)
+    raise ValueError("SecretStore consumer service is required.")
 
 
 def load_webhook_endpoint_record(
@@ -206,67 +184,7 @@ def update_webhook_endpoint(
     *,
     tenant_id: DomainTenant,
 ) -> WebhookEndpointView | None:
-    record = load_webhook_endpoint_record(
-        session=session,
-        webhook_id=webhook_id,
-        tenant_id=tenant_id,
-    )
-
-    if record is None:
-        return None
-
-    values = request.model_dump(
-        exclude_unset=True
-    )
-
-    if "name" in values:
-        record.name = values["name"]
-
-    if "url" in values:
-        record.url = values["url"]
-
-    if "event_types" in values:
-        record.event_types_json = (
-            json.dumps(
-                [
-                    value.value
-                    if hasattr(value, "value")
-                    else value
-                    for value in
-                    values["event_types"]
-                ]
-            )
-        )
-
-    if "headers" in values:
-        record.headers_json = json.dumps(
-            values["headers"]
-        )
-
-    if "signing_secret" in values:
-        record.signing_secret = (
-            values["signing_secret"]
-        )
-
-    if "active" in values:
-        record.active = values["active"]
-
-    if "timeout_seconds" in values:
-        record.timeout_seconds = (
-            values["timeout_seconds"]
-        )
-
-    if "max_attempts" in values:
-        record.max_attempts = (
-            values["max_attempts"]
-        )
-
-    record.updated_at = utc_now_iso()
-
-    tenant_commit(session, tenant_id=tenant_id)
-    session.refresh(record)
-
-    return _endpoint_to_view(record)
+    raise ValueError("SecretStore consumer service is required.")
 
 
 def find_delivery_record(

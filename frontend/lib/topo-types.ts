@@ -1035,9 +1035,9 @@ export type WebhookEndpointView = {
 
   event_types: WebhookEventType[]
 
-  headers: Record<string, string>
-
   has_signing_secret: boolean
+  has_protected_headers: boolean
+  protected_header_names: string[]
 
   active: boolean
   timeout_seconds: number

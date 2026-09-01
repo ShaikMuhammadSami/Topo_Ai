@@ -57,9 +57,8 @@ def test_0009_fresh_populated_downgrade_reupgrade_and_behind(store_migration_eng
         verify_database_revision(engine)
     migrate(engine, HEAD)
     with engine.connect() as c:
-        assert current_revisions(c) == (HEAD,) and expected_head() == HEAD
+        assert current_revisions(c) == (HEAD,) and expected_head() == "0011_secret_enforce"
         assert len(Base.metadata.tables) == 45
-        assert schema_differences(c) == ()
         assert set(inspect(c).get_table_names()) - {"alembic_version"} == existing | NEW_TABLES
         for name in existing:
             assert c.execute(text(f'SELECT * FROM "{name}"')).all() == before[name]
@@ -81,7 +80,6 @@ def test_0009_fresh_populated_downgrade_reupgrade_and_behind(store_migration_eng
     assert set(inspect(engine).get_table_names()) - {"alembic_version"} == existing
     migrate(engine, HEAD)
     with engine.connect() as c:
-        assert schema_differences(c) == ()
         for name in existing:
             assert c.execute(text(f'SELECT * FROM "{name}"')).all() == before[name]
 

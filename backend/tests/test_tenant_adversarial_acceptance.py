@@ -309,7 +309,7 @@ def submission(number, *, failure=None):
 def test_both_real_machine_pipelines_collide_without_crossing_worlds(hostile, monkeypatch):
     h = hostile
     from app.models.webhooks import WebhookEndpointCreate
-    from app.repositories.webhook_repository import create_webhook_endpoint
+    from app.services.secret_consumers import create_webhook_endpoint_secure
     from app.services import webhook_delivery
     delivered = []
 
@@ -323,7 +323,14 @@ def test_both_real_machine_pipelines_collide_without_crossing_worlds(hostile, mo
     monkeypatch.setattr(webhook_delivery, "httpx", SimpleNamespace(Client=lambda **_: Transport()))
     with h.factory() as session:
         for tenant, actor in ((h.a, "A"), (h.b, "B")):
-            create_webhook_endpoint(session, WebhookEndpointCreate(name="checkout", url=f"https://{actor.lower()}.example.test/incidents", max_attempts=1), tenant_id=tenant)
+            create_webhook_endpoint_secure(
+                session,
+                request=WebhookEndpointCreate(
+                    name="checkout", url=f"https://{actor.lower()}.example.test/incidents", max_attempts=1
+                ),
+                tenant_id=tenant, actor="test:adversarial",
+                store=h.client.app.state.secret_store,
+            )
     facts = {}
     for tenant, actor, other in ((h.a, "A", h.b), (h.b, "B", h.a)):
         agent = machine(h, tenant, actor)
@@ -375,9 +382,8 @@ def test_provider_independent_secrets_delivery_collision_and_disabled_authority(
     sources = {}
     secrets = {"A": b"ph3g-fixture-A-not-a-credential", "B": b"ph3g-fixture-B-not-a-credential"}
     for actor, tenant in (("A", h.a), ("B", h.b)):
-        monkeypatch.setenv("PH3G_PROVIDER_" + actor, secrets[actor].decode())
         response = h.client.post("/api/v1/change-sources", headers=_bearer(h.tokens[actor], tenant), json={
-            "name": "shared-checkout", "source_type": "github", "secret_ref": "PH3G_PROVIDER_" + actor})
+            "name": "shared-checkout", "source_type": "github", "credential": secrets[actor].decode()})
         assert response.status_code == 201, response.text
         sources[actor] = response.json()["source_id"]
     body = json.dumps({"repository": {"id": 9001, "full_name": "acme/checkout"},

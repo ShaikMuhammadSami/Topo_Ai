@@ -80,6 +80,15 @@ export function WebhookIntegrationsView() {
   const [secret, setSecret] =
     useState("")
 
+  const [protectedHeaders, setProtectedHeaders] =
+    useState("")
+
+  const [replacementSecrets, setReplacementSecrets] =
+    useState<Record<string, string>>({})
+
+  const [replacementHeaders, setReplacementHeaders] =
+    useState<Record<string, string>>({})
+
   const [
     selectedEvents,
     setSelectedEvents,
@@ -161,6 +170,7 @@ export function WebhookIntegrationsView() {
     setError(null)
 
     try {
+      const headers = parseProtectedHeaders(protectedHeaders)
       await createWebhookEndpoint({
         name: name.trim(),
         url: url.trim(),
@@ -168,6 +178,7 @@ export function WebhookIntegrationsView() {
           selectedEvents,
         signing_secret:
           secret.trim() || null,
+        headers,
         active: true,
         timeout_seconds: 10,
         max_attempts: 3,
@@ -176,12 +187,44 @@ export function WebhookIntegrationsView() {
       setName("")
       setUrl("")
       setSecret("")
+      setProtectedHeaders("")
 
       await refresh()
     } catch (requestError) {
       setError(
         errorMessage(requestError),
       )
+    } finally {
+      setLoading(false)
+    }
+  }
+
+
+  async function replaceCredentials(
+    endpoint: WebhookEndpointView,
+    kind: "signing" | "headers",
+    clear = false,
+  ) {
+    setLoading(true)
+    setError(null)
+    try {
+      if (kind === "signing") {
+        const value = replacementSecrets[endpoint.webhook_id] ?? ""
+        if (!clear && !value) throw new Error("Enter a replacement signing secret.")
+        await updateWebhookEndpoint(endpoint.webhook_id, {
+          signing_secret: clear ? null : value,
+        })
+        setReplacementSecrets((current) => ({ ...current, [endpoint.webhook_id]: "" }))
+      } else {
+        const value = replacementHeaders[endpoint.webhook_id] ?? ""
+        await updateWebhookEndpoint(endpoint.webhook_id, {
+          headers: clear ? {} : parseProtectedHeaders(value),
+        })
+        setReplacementHeaders((current) => ({ ...current, [endpoint.webhook_id]: "" }))
+      }
+      await refresh()
+    } catch (requestError) {
+      setError(errorMessage(requestError))
     } finally {
       setLoading(false)
     }
@@ -322,6 +365,19 @@ export function WebhookIntegrationsView() {
               className="mt-2 h-10 w-full rounded-sm border border-input bg-background px-3 font-mono text-xs"
             />
           </label>
+
+          <label className="lg:col-span-2">
+            <FieldLabel>Protected headers (JSON object)</FieldLabel>
+            <textarea
+              value={protectedHeaders}
+              onChange={(event) => setProtectedHeaders(event.target.value)}
+              placeholder={'{"Authorization":"Bearer …","X-API-Key":"…"}'}
+              className="mt-2 min-h-24 w-full rounded-sm border border-input bg-background p-3 font-mono text-xs"
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Values are write-only and encrypted. Only header names are shown later.
+            </p>
+          </label>
         </div>
 
         <div className="mt-5">
@@ -448,6 +504,10 @@ export function WebhookIntegrationsView() {
                         }
                         s
                       </p>
+                      <p className="mt-2 font-mono text-[10px] text-muted-foreground">
+                        Signing: {endpoint.has_signing_secret ? "configured" : "not configured"}
+                        {" · "}Protected headers: {endpoint.protected_header_names.join(", ") || "none"}
+                      </p>
                     </div>
 
                     <div className="flex gap-2">
@@ -478,6 +538,41 @@ export function WebhookIntegrationsView() {
                           ? "Disable"
                           : "Enable"}
                       </Button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 border-t border-border pt-4 lg:grid-cols-2">
+                    <div className="space-y-2">
+                      <input
+                        type="password"
+                        value={replacementSecrets[endpoint.webhook_id] ?? ""}
+                        onChange={(event) => setReplacementSecrets((current) => ({
+                          ...current,
+                          [endpoint.webhook_id]: event.target.value,
+                        }))}
+                        placeholder="Replacement signing secret"
+                        className="h-9 w-full rounded-sm border border-input bg-background px-3 font-mono text-xs"
+                      />
+                      <div className="flex gap-2">
+                        <Button variant="outline" disabled={loading} onClick={() => void replaceCredentials(endpoint, "signing")}>Replace signing</Button>
+                        <Button variant="outline" disabled={loading || !endpoint.has_signing_secret} onClick={() => void replaceCredentials(endpoint, "signing", true)}>Clear signing</Button>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      <input
+                        type="password"
+                        value={replacementHeaders[endpoint.webhook_id] ?? ""}
+                        onChange={(event) => setReplacementHeaders((current) => ({
+                          ...current,
+                          [endpoint.webhook_id]: event.target.value,
+                        }))}
+                        placeholder='Replacement protected-header JSON'
+                        className="h-9 w-full rounded-sm border border-input bg-background px-3 font-mono text-xs"
+                      />
+                      <div className="flex gap-2">
+                        <Button variant="outline" disabled={loading} onClick={() => void replaceCredentials(endpoint, "headers")}>Replace headers</Button>
+                        <Button variant="outline" disabled={loading || !endpoint.has_protected_headers} onClick={() => void replaceCredentials(endpoint, "headers", true)}>Clear headers</Button>
+                      </div>
                     </div>
                   </div>
                 </article>
@@ -619,4 +714,22 @@ function errorMessage(
   return value instanceof Error
     ? value.message
     : "An unexpected request error occurred."
+}
+
+
+function parseProtectedHeaders(value: string): Record<string, string> {
+  if (!value.trim()) return {}
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(value)
+  } catch {
+    throw new Error("Protected headers must be a JSON object of string values.")
+  }
+  if (
+    typeof parsed !== "object" || parsed === null || Array.isArray(parsed) ||
+    Object.values(parsed).some((item) => typeof item !== "string")
+  ) {
+    throw new Error("Protected headers must be a JSON object of string values.")
+  }
+  return parsed as Record<string, string>
 }

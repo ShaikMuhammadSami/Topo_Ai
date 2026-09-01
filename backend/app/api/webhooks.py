@@ -1,5 +1,5 @@
 from app.security.tenant_context import TenantContext, require_tenant_context
-from fastapi import Depends
+from fastapi import Depends, Header, Request
 from fastapi import (
     APIRouter,
     HTTPException,
@@ -21,15 +21,18 @@ from app.models.webhooks import (
     WebhookTestRequest,
 )
 from app.repositories.webhook_repository import (
-    create_webhook_endpoint,
     list_webhook_deliveries,
     list_webhook_endpoints,
     load_webhook_endpoint_record,
-    update_webhook_endpoint,
 )
 from app.services.webhook_delivery import (
     create_test_event,
     deliver_event_to_endpoint,
+)
+from app.services.secret_consumers import (
+    SecretConsumerError,
+    create_webhook_endpoint_secure,
+    update_webhook_endpoint_secure,
 )
 
 router = APIRouter(
@@ -44,16 +47,22 @@ router = APIRouter(
     status_code=status.HTTP_201_CREATED,
 )
 def create_webhook(
-    request: WebhookEndpointCreate,
+    payload: WebhookEndpointCreate,
+    request: Request,
     session: Session = Depends(get_session),
     *,
     tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> WebhookEndpointView:
-    return create_webhook_endpoint(
-        session=session,
-        request=request,
-        tenant_id=tenant_context.tenant_id,
-    )
+    try:
+        store = getattr(request.app.state, "secret_store", None)
+        if store is None:
+            raise SecretConsumerError("Credential service is unavailable.", 503)
+        return create_webhook_endpoint_secure(
+            session=session, request=payload, tenant_id=tenant_context.tenant_id,
+            actor=tenant_context.authenticated_subject, store=store,
+        )
+    except SecretConsumerError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.get(
@@ -79,17 +88,25 @@ def get_webhooks(
 )
 def patch_webhook(
     webhook_id: str,
-    request: WebhookEndpointUpdate,
+    payload: WebhookEndpointUpdate,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     session: Session = Depends(get_session),
     *,
     tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> WebhookEndpointView:
-    result = update_webhook_endpoint(
-        session=session,
-        webhook_id=webhook_id,
-        request=request,
-        tenant_id=tenant_context.tenant_id,
-    )
+    try:
+        store = getattr(request.app.state, "secret_store", None)
+        if store is None:
+            raise SecretConsumerError("Credential service is unavailable.", 503)
+        result = update_webhook_endpoint_secure(
+            session=session, webhook_id=webhook_id, request=payload,
+            tenant_id=tenant_context.tenant_id,
+            actor=tenant_context.authenticated_subject, store=store,
+            idempotency_key=idempotency_key,
+        )
+    except SecretConsumerError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     if result is None:
         raise HTTPException(
@@ -109,7 +126,8 @@ def patch_webhook(
 )
 def test_webhook(
     webhook_id: str,
-    request: WebhookTestRequest,
+    payload: WebhookTestRequest,
+    request: Request,
     session: Session = Depends(get_session),
     *,
     tenant_context: TenantContext = Depends(require_tenant_context),
@@ -131,7 +149,7 @@ def test_webhook(
 
     event = create_test_event(
         webhook_id=webhook_id,
-        summary=request.summary,
+        summary=payload.summary,
     )
 
     return deliver_event_to_endpoint(
@@ -139,6 +157,7 @@ def test_webhook(
         endpoint=endpoint,
         event=event,
         tenant_id=tenant_context.tenant_id,
+        secret_store=getattr(request.app.state, "secret_store", None),
     )
 
 

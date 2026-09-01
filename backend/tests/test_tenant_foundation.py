@@ -19,6 +19,9 @@ from app.db.models import (
     TenantRecord,
 )
 from app.main import create_app
+from app import main as main_module
+from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
+from app.services.secret_store import EncryptedDatabaseSecretStore
 from app.repositories import tenant_repository
 from app.security.api_tokens import token_digest
 from app.security.auth_config import load_auth_configuration
@@ -64,6 +67,13 @@ def tenant_app(monkeypatch):
         json.dumps([ORIGIN]),
     )
     configuration = load_auth_configuration(database_url="sqlite://")
+    secret_store = EncryptedDatabaseSecretStore(SecretStoreConfiguration(
+        "encrypted_db", SecretKeyring({"test": secrets.token_bytes(32)}, "test")
+    ))
+    monkeypatch.setattr(
+        main_module, "load_secret_store_configuration",
+        lambda: secret_store.configuration,
+    )
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         connect_args={"check_same_thread": False},

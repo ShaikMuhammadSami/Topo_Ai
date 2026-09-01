@@ -7,7 +7,6 @@ from app.repositories.tenant_scope import (
 
 import hashlib
 import json
-import re
 from uuid import uuid4
 
 from sqlalchemy import select
@@ -28,12 +27,7 @@ from app.models.change_sources import (
     ChangeSourceView,
 )
 
-SECRET_REF_PATTERN = re.compile(
-    r"^[A-Z][A-Z0-9_]{2,254}$"
-)
-
-
-def _source_id(
+def new_change_source_id(
     source_type: str,
     name: str,
 ) -> str:
@@ -84,9 +78,9 @@ def change_source_view(
             )
         ),
         enabled=record.enabled,
-        secret_ref=(
-            record.secret_ref or ""
-        ),
+        credential_configured=bool(record.secret_ref),
+        credential_status="configured" if record.secret_ref else "unconfigured",
+        credential_updated_at=record.updated_at if record.secret_ref else None,
         status=record.status,
         config=_json_dict(
             record.config_json
@@ -187,53 +181,7 @@ def create_change_source(
     request: ChangeSourceCreate,
     tenant_id: DomainTenant,
 ) -> ChangeSourceView:
-    if not SECRET_REF_PATTERN.fullmatch(
-        request.secret_ref
-    ):
-        raise ValueError(
-            "secret_ref must be an "
-            "environment-variable name."
-        )
-
-    now = utc_now_iso()
-
-    record = ChangeSourceRecord(
-        tenant_id=tenant_value(tenant_id),
-        source_id=_source_id(
-            request.source_type.value,
-            request.name,
-        ),
-        name=request.name,
-        source_type=(
-            request.source_type.value
-        ),
-        enabled=request.enabled,
-        secret_ref=request.secret_ref,
-        config_json=json.dumps(
-            request.config,
-            default=str,
-        ),
-        filters_json=json.dumps(
-            request.filters,
-            default=str,
-        ),
-        status=(
-            "configured"
-            if request.enabled
-            else "disabled"
-        ),
-        delivery_count=0,
-        failure_count=0,
-        created_at=now,
-        updated_at=now,
-    )
-
-    session.add(record)
-    tenant_commit(session, tenant_id=tenant_id)
-
-    return change_source_view(
-        record
-    )
+    raise ValueError("SecretStore consumer service is required.")
 
 
 def load_change_source(
@@ -295,57 +243,7 @@ def update_change_source(
     request: ChangeSourceUpdate,
     tenant_id: DomainTenant,
 ) -> ChangeSourceView:
-    record = load_change_source(
-        session,
-        source_id=source_id,
-        tenant_id=tenant_id,
-    )
-
-    if record is None:
-        raise ValueError(
-            "Change source not found."
-        )
-
-    if request.secret_ref is not None:
-        if not SECRET_REF_PATTERN.fullmatch(
-            request.secret_ref
-        ):
-            raise ValueError(
-                "Invalid secret_ref."
-            )
-
-        record.secret_ref = (
-            request.secret_ref
-        )
-
-    if request.config is not None:
-        record.config_json = json.dumps(
-            request.config,
-            default=str,
-        )
-
-    if request.filters is not None:
-        record.filters_json = json.dumps(
-            request.filters,
-            default=str,
-        )
-
-    if request.enabled is not None:
-        record.enabled = (
-            request.enabled
-        )
-
-        record.status = (
-            "configured"
-            if request.enabled
-            else "disabled"
-        )
-
-    record.updated_at = utc_now_iso()
-
-    tenant_commit(session, tenant_id=tenant_id)
-
-    return change_source_view(record)
+    raise ValueError("SecretStore consumer service is required.")
 
 
 def list_deliveries(

@@ -129,7 +129,6 @@ from app.repositories.change_event_repository import (
     load_change_event,
 )
 from app.repositories.change_source_repository import (
-    create_change_source,
     load_change_source,
 )
 from app.repositories.cloud_repository import (
@@ -154,10 +153,10 @@ from app.repositories.runtime_observability_repository import (
 from app.repositories.signal_repository import load_signal, save_signals
 from app.repositories.snapshot_repository import load_snapshot, save_snapshot
 from app.repositories.webhook_repository import (
-    create_webhook_endpoint,
     load_webhook_endpoint,
     save_delivery_result,
 )
+from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
 from app.security.api_tokens import AuthPrincipal, token_digest
 from app.security.auth_config import (
     AuthConfigurationError,
@@ -172,6 +171,11 @@ from app.services.auth_api_credential_service import (
     revoke_auth_api_credential,
 )
 from app.services import change_source_ingest
+from app.services.secret_consumers import (
+    create_change_source_secure,
+    create_webhook_endpoint_secure,
+)
+from app.services.secret_store import EncryptedDatabaseSecretStore
 from app.services.confidence_semantics import ensure_analysis_confidence_semantics
 from app.services.incident_lifecycle import upsert_incident_from_orchestration
 from app.services.lifecycle_status import build_lifecycle_status
@@ -235,7 +239,12 @@ def _upgrade(
 
 def _truncate(engine: Engine) -> None:
     preparer = engine.dialect.identifier_preparer
-    names = ", ".join(preparer.quote(name) for name in DOMAIN_TABLE_NAMES)
+    # Include PH-4B custody tables as well as the historical 43 domain tables.
+    # Consumer integration tests now create real encrypted records, and those
+    # records must not leak into the next independently configured app test.
+    names = ", ".join(
+        preparer.quote(name) for name in sorted(Base.metadata.tables)
+    )
     with engine.begin() as connection:
         connection.exec_driver_sql(f"TRUNCATE TABLE {names}")
 
@@ -351,6 +360,20 @@ def _mapped_instance(table_name: str, row: int = 1, **overrides):
     }
     if table_name in PH3C_DOMAIN_TABLE_NAMES:
         values["tenant_id"] = TEST_TENANT
+    if table_name == "change_sources":
+        values.update(
+            source_type="github",
+            enabled=False,
+            secret_ref=None,
+            config_json="{}",
+            filters_json="{}",
+        )
+    elif table_name == "webhook_endpoints":
+        values.update(
+            signing_secret_ref=None,
+            protected_headers_secret_ref=None,
+            protected_header_names_json="[]",
+        )
     values.update(overrides)
     return _mapper_for(table_name).class_(**values)
 
@@ -471,7 +494,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
         assert len(_domain_table_names(connection)) == 43
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 803
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 804
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
         ) == 71
@@ -504,9 +527,25 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         )
         assert all(
             not inspector.get_foreign_keys(name)
-            and not inspector.get_check_constraints(name)
             for name in DOMAIN_TABLE_NAMES
         )
+        checks = {
+            name: {
+                item["name"] for item in inspector.get_check_constraints(name)
+            }
+            for name in DOMAIN_TABLE_NAMES
+            if inspector.get_check_constraints(name)
+        }
+        assert checks == {
+            "change_sources": {
+                "ck_change_sources_enabled_secret",
+                "ck_change_sources_secret_ref",
+            },
+            "webhook_endpoints": {
+                "ck_webhook_headers_secret_ref",
+                "ck_webhook_signing_secret_ref",
+            },
+        }
         assert all(
             column.get("default") is None
             for name in DOMAIN_TABLE_NAMES
@@ -606,7 +645,7 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0009_secret_store",)
+            assert current_revisions(connection) == ("0011_secret_enforce",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -723,6 +762,12 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
                         entity_id="entity:postgres-legacy",
                         snapshot_id="snapshot:postgres-legacy",
                     )
+                elif table_name == "webhook_endpoints":
+                    overrides.update(
+                        url="https://legacy.example.test/topo-events",
+                        headers_json="{}",
+                        signing_secret=None,
+                    )
                 elif table_name == "post_incident_reports":
                     overrides.update(
                         report_id="report:postgres-legacy",
@@ -741,7 +786,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0009_secret_store",)
+            assert current_revisions(connection) == ("0011_secret_enforce",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43
@@ -1375,6 +1420,10 @@ def _artifact() -> BuildArtifactEvidence:
 def test_representative_repositories_and_services_round_trip_on_postgresql(
     session_factory,
 ) -> None:
+    # SecretStore authorization requires the same durable active tenant that
+    # production consumer services require.  Earlier repository-only writes
+    # did not need this authority row.
+    seed_domain_tenant(session_factory.kw["bind"])
     snapshot = _snapshot()
     signal = _signal()
     with session_factory() as session:
@@ -1605,9 +1654,9 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
         assert dependencies[0].destination_port == 5432
         assert dependencies[0].metadata["nested"]["pid"] == 42
 
-        endpoint = create_webhook_endpoint(
+        endpoint = create_webhook_endpoint_secure(
             session,
-            WebhookEndpointCreate(
+            request=WebhookEndpointCreate(
                 name="Operations webhook",
                 url="https://hooks.example.com/topo",
                 event_types=[WebhookEventType.INCIDENT_CREATED],
@@ -1615,6 +1664,10 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
                 signing_secret="postgres-fixture-secret",
             ),
             tenant_id=TEST_TENANT,
+            actor="test:postgres-runtime",
+            store=EncryptedDatabaseSecretStore(SecretStoreConfiguration(
+                "encrypted_db", SecretKeyring({"test": os.urandom(32)}, "test")
+            )),
         )
         delivery = db_models.WebhookDeliveryRecord(
             delivery_id="webhook-delivery:postgres",
@@ -2049,20 +2102,24 @@ def test_authenticated_change_source_receipt_survives_downstream_failure(
     """The commit before normalization is an intentional durability boundary."""
     seed_domain_tenant(session_factory.kw["bind"])
     with session_factory() as session:
-        source_view = create_change_source(
+        source_view = create_change_source_secure(
             session,
             tenant_id=TEST_TENANT,
             request=ChangeSourceCreate(
                 name="PH-1C GitHub source",
                 source_type=ChangeSourceType.GITHUB,
-                secret_ref="PH1C_GITHUB_WEBHOOK_SECRET",
-                config={"repository": "acme/payment-api"},
+                credential="ph1c-github-webhook-secret",
+                config={},
             ),
+            actor="test:postgres-runtime",
+            store=EncryptedDatabaseSecretStore(SecretStoreConfiguration(
+                "encrypted_db", SecretKeyring({"test": os.urandom(32)}, "test")
+            )),
         )
         source = load_change_source(session, source_id=source_view.source_id, tenant_id=TEST_TENANT)
         assert source is not None
 
-        monkeypatch.setattr(change_source_ingest, "_verify", lambda **_: None)
+        monkeypatch.setattr(change_source_ingest, "_verify", lambda *_, **__: None)
 
         def fail_normalization(**_):
             raise RuntimeError("deterministic downstream fixture failure")

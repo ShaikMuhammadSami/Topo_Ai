@@ -22,15 +22,17 @@ from app.db.models import (
     ChangeSourceRecord,
 )
 from app.main import create_app
+from app import main as main_module
+from app.models.secret_store import SecretMaterial
+from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
+from app.services.secret_consumer_policy import source_binding
+from app.services.secret_store import EncryptedDatabaseSecretStore
 from app.security.api_tokens import token_digest
 from app.security.auth_config import AuthMode, load_auth_configuration
 from app.security.auth_routing import RouteAuthDomain, classify_route
 
 
 ORIGIN = "https://topo.test"
-PROVIDER_SECRET_ENV = "TOPO_PH2F_PROVIDER_SECRET"
-
-
 @pytest.fixture()
 def acceptance_app(monkeypatch):
     bootstrap = "ph2f-bootstrap-" + secrets.token_urlsafe(48)
@@ -53,8 +55,11 @@ def acceptance_app(monkeypatch):
         "TOPO_BROWSER_ALLOWED_ORIGINS_JSON",
         json.dumps([ORIGIN]),
     )
-    monkeypatch.setenv(PROVIDER_SECRET_ENV, provider_secret)
     configuration = load_auth_configuration(database_url="sqlite://")
+    store = EncryptedDatabaseSecretStore(SecretStoreConfiguration(
+        "encrypted_db", SecretKeyring({"test": secrets.token_bytes(32)}, "test")
+    ))
+    monkeypatch.setattr(main_module, "load_secret_store_configuration", lambda: store.configuration)
 
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
@@ -76,14 +81,13 @@ def acceptance_app(monkeypatch):
 
     application.dependency_overrides[get_session] = override_get_session
     with session_factory() as session:
-        session.add(
-            ChangeSourceRecord(
+        record = ChangeSourceRecord(
                 tenant_id=TEST_TENANT,
                 source_id="source:ph2f-github",
                 name="PH-2F GitHub source",
                 source_type="github",
                 enabled=True,
-                secret_ref=PROVIDER_SECRET_ENV,
+                secret_ref=None,
                 config_json="{}",
                 filters_json="{}",
                 status="configured",
@@ -92,7 +96,16 @@ def acceptance_app(monkeypatch):
                 created_at="2026-08-30T00:00:00+00:00",
                 updated_at="2026-08-30T00:00:00+00:00",
             )
-        )
+        record.secret_ref = store.put(
+            session,
+            source_binding(
+                tenant_id=TEST_TENANT, source_id=record.source_id,
+                source_type=record.source_type, config={},
+            ),
+            SecretMaterial(provider_secret.encode()),
+            operation_id="test:ph2f-provider", actor="test",
+        ).secret_ref
+        session.add(record)
         session.commit()
 
     try:

@@ -27,8 +27,8 @@ from app.db.schema_management import (
 from frozen_schema_fixtures import SECRET_STORE_TABLES, frozen_0008_metadata
 
 DOMAIN_TABLE_COUNT = 45
-DOMAIN_COLUMN_COUNT = 803
-EXPECTED_HEAD = "0009_secret_store"
+DOMAIN_COLUMN_COUNT = 804
+EXPECTED_HEAD = "0011_secret_enforce"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"

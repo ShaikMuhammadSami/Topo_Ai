@@ -136,6 +136,7 @@ class SecretStore(Protocol):
     def get_for_use(self, session: Session, binding: SecretBinding, secret_ref: str) -> tuple[SecretMaterial, ...]: ...
     def rotate(self, session: Session, binding: SecretBinding, secret_ref: str, material: SecretMaterial, *, operation_id: str, actor: str, expected_row_version: int, overlap_seconds: int = 0) -> SecretDescriptor: ...
     def revoke(self, session: Session, binding: SecretBinding, secret_ref: str, *, actor: str, expected_row_version: int) -> SecretDescriptor: ...
+    def reprovision(self, session: Session, binding: SecretBinding, secret_ref: str, material: SecretMaterial, *, operation_id: str, actor: str, expected_row_version: int) -> SecretDescriptor: ...
     def rewrap(self, session: Session, binding: SecretBinding, secret_ref: str, *, actor: str, expected_row_version: int) -> SecretDescriptor: ...
 
 
@@ -311,6 +312,68 @@ class EncryptedDatabaseSecretStore:
                 return self._descriptor(record)
             self._cas(session, binding, record, expected_row_version, actor, status="revoked",
                       revoked_at=utc_now().isoformat(), previous_version=None, previous_accept_until=None)
+            return self._descriptor(self._record(session, binding, secret_ref))
+
+    @_safe_database_errors
+    def reprovision(self, session, binding, secret_ref, material, *, operation_id,
+                    actor, expected_row_version):
+        """Explicitly replace a revoked binding with fresh active material.
+
+        The stable logical reference is retained. No revoked material becomes
+        usable again and no previous-version overlap is created.
+        """
+        _metadata(operation_id, 128)
+        _metadata(actor, 500)
+        with _atomic(session):
+            record = self._record(session, binding, secret_ref)
+            retry = self._version(session, binding, record, operation_id=operation_id)
+            if retry is not None:
+                return self._retry(record, retry, material, "reprovision", 0)
+            if record.status != "revoked":
+                raise SecretStoreError("SECRET_OPERATION_CONFLICT")
+            if (
+                type(expected_row_version) is not int
+                or expected_row_version < 1
+                or record.row_version != expected_row_version
+            ):
+                raise SecretStoreError("SECRET_CONCURRENT_MODIFICATION")
+            now = utc_now().isoformat()
+            version = V(
+                secret_ref=record.secret_ref,
+                version=record.active_version + 1,
+                operation_id=operation_id,
+                operation_kind="reprovision",
+                overlap_seconds=0,
+                envelope_revision=1,
+                created_at=now,
+                created_by_subject=actor,
+            )
+            self._encrypt(record, version, material)
+            result = session.execute(
+                update(R)
+                .where(
+                    *_scope_predicate(binding),
+                    R.secret_ref == record.secret_ref,
+                    R.row_version == expected_row_version,
+                    R.active_version == record.active_version,
+                    R.status == "revoked",
+                )
+                .values(
+                    status="active",
+                    active_version=version.version,
+                    previous_version=None,
+                    previous_accept_until=None,
+                    row_version=expected_row_version + 1,
+                    updated_at=now,
+                    updated_by_subject=actor,
+                    revoked_at=None,
+                )
+                .execution_options(synchronize_session=False)
+            )
+            if result.rowcount != 1:
+                raise SecretStoreError("SECRET_CONCURRENT_MODIFICATION")
+            session.add(version)
+            session.flush()
             return self._descriptor(self._record(session, binding, secret_ref))
 
     @_safe_database_errors

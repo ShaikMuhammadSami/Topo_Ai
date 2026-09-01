@@ -1,8 +1,6 @@
 from __future__ import annotations
 from app.security.tenant_context import TenantContext, require_tenant_context
-from fastapi import Depends
-
-import os
+from fastapi import Depends, Header, Request
 
 from fastapi import (
     APIRouter,
@@ -25,17 +23,22 @@ from app.models.change_sources import (
     ChangeSourceView,
 )
 from app.repositories.change_source_repository import (
-    create_change_source,
     get_change_source,
     list_change_sources,
     list_dead_letters,
     list_deliveries,
     load_change_source,
-    update_change_source,
 )
 from app.services.change_source_ingest import (
     replay_dead_letter,
 )
+from app.services.secret_consumer_policy import source_binding
+from app.services.secret_consumers import (
+    SecretConsumerError,
+    create_change_source_secure,
+    update_change_source_secure,
+)
+from app.models.secret_store import SecretStoreError
 
 router = APIRouter(
     prefix="/api/v1/change-sources",
@@ -51,23 +54,29 @@ router = APIRouter(
     ),
 )
 def create(
-    request: ChangeSourceCreate,
+    payload: ChangeSourceCreate,
+    request: Request,
     session: Session = Depends(
         get_session
     ),
     tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeSourceView:
     try:
-        return create_change_source(
+        store = getattr(request.app.state, "secret_store", None)
+        if store is None:
+            raise SecretConsumerError("Credential service is unavailable.", 503)
+        return create_change_source_secure(
             session,
             tenant_id=tenant_context.tenant_id,
-            request=request,
+            request=payload,
+            actor=tenant_context.authenticated_subject,
+            store=store,
         )
 
-    except ValueError as exc:
+    except SecretConsumerError as exc:
         raise HTTPException(
-            status_code=400,
-            detail=str(exc),
+            status_code=exc.status_code,
+            detail=exc.detail,
         ) from exc
 
 
@@ -202,24 +211,32 @@ def get_one(
 )
 def patch(
     source_id: str,
-    request: ChangeSourceUpdate,
+    payload: ChangeSourceUpdate,
+    request: Request,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     session: Session = Depends(
         get_session
     ),
     tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> ChangeSourceView:
     try:
-        return update_change_source(
+        store = getattr(request.app.state, "secret_store", None)
+        if store is None:
+            raise SecretConsumerError("Credential service is unavailable.", 503)
+        return update_change_source_secure(
             session,
             tenant_id=tenant_context.tenant_id,
             source_id=source_id,
-            request=request,
+            request=payload,
+            actor=tenant_context.authenticated_subject,
+            store=store,
+            idempotency_key=idempotency_key,
         )
 
-    except ValueError as exc:
+    except SecretConsumerError as exc:
         raise HTTPException(
-            status_code=404,
-            detail=str(exc),
+            status_code=exc.status_code,
+            detail=exc.detail,
         ) from exc
 
 
@@ -231,6 +248,7 @@ def patch(
 )
 def doctor(
     source_id: str,
+    request: Request,
     session: Session = Depends(
         get_session
     ),
@@ -250,12 +268,25 @@ def doctor(
             ),
         )
 
-    secret_available = bool(
-        record.secret_ref
-        and os.getenv(
-            record.secret_ref
-        )
-    )
+    secret_available = False
+    if record.secret_ref:
+        try:
+            config = __import__("json").loads(record.config_json or "{}")
+            store = getattr(request.app.state, "secret_store", None)
+            if store is not None:
+                descriptor = store.describe(
+                    session,
+                    source_binding(
+                        tenant_id=tenant_context.tenant_id,
+                        source_id=record.source_id,
+                        source_type=record.source_type,
+                        config=config,
+                    ),
+                    record.secret_ref,
+                )
+                secret_available = descriptor.status == "active"
+        except (ValueError, TypeError, SecretStoreError):
+            secret_available = False
 
     return (
         ChangeSourceDoctorResponse(
@@ -269,8 +300,8 @@ def doctor(
                     record.enabled,
                 "source_type":
                     record.source_type,
-                "secret_ref":
-                    record.secret_ref,
+                "credential_configured":
+                    bool(record.secret_ref),
                 "secret_available":
                     secret_available,
                 "receiver_path":

@@ -36,7 +36,7 @@ def enroll(client, issued, *, header_tenant=None):
 
 def source(client, token, tenant):
     response = client.post("/api/v1/change-sources", headers=_bearer(token, tenant), json={
-        "name": "Same source", "source_type": "github", "secret_ref": "PH3E_TEST_PROVIDER_SECRET",
+        "name": "Same source", "source_type": "github", "credential": "ph3e-test-only",
     })
     assert response.status_code == 201, response.text
     return response.json()["source_id"]
@@ -87,7 +87,6 @@ def test_disabled_tenant_blocks_enrollment_without_consumption_and_existing_agen
 
 def test_source_management_provider_binding_idempotency_and_disabled_tenant(two_tenants, monkeypatch):
     client, factory, tokens, a, b = two_tenants
-    monkeypatch.setenv("PH3E_TEST_PROVIDER_SECRET", "ph3e-test-only")
     sa, sb = source(client, tokens["bootstrap"], a), source(client, tokens["other_admin"], b)
     headers = _bearer(tokens["bootstrap"], a)
     assert [x["source_id"] for x in client.get("/api/v1/change-sources", headers=headers).json()] == [sa]
@@ -115,7 +114,7 @@ def test_source_management_provider_binding_idempotency_and_disabled_tenant(two_
 
 @pytest.mark.parametrize("path,payload", [
     ("/api/v1/agents/enrollment-tokens", {"max_uses": 1}),
-    ("/api/v1/change-sources", {"name": "Spoof", "source_type": "github", "secret_ref": "PH3E_TEST_PROVIDER_SECRET"}),
+    ("/api/v1/change-sources", {"name": "Spoof", "source_type": "github", "credential": "ph3e-test-only"}),
 ])
 def test_human_machine_creation_rejects_payload_tenant(two_tenants, path, payload):
     client, _, tokens, a, b = two_tenants
@@ -136,7 +135,7 @@ def test_service_fixed_binding_applies_to_machine_admin(two_tenants):
 def test_real_agent_snapshot_failure_rca_briefing_carries_tenant(two_tenants, monkeypatch):
     client, factory, tokens, a, b = two_tenants
     from app.models.webhooks import WebhookEndpointCreate
-    from app.repositories.webhook_repository import create_webhook_endpoint
+    from app.services.secret_consumers import create_webhook_endpoint_secure
     from app.services import webhook_delivery
 
     delivered_urls = []
@@ -157,8 +156,15 @@ def test_real_agent_snapshot_failure_rca_briefing_carries_tenant(two_tenants, mo
     monkeypatch.setattr(webhook_delivery, "httpx", SimpleNamespace(Client=lambda **_: LocalTransport()))
     with factory() as s:
         for tenant, name in ((a, "a"), (b, "b")):
-            create_webhook_endpoint(s, WebhookEndpointCreate(
-                name=name, url=f"https://{name}.example.test/incidents", max_attempts=1), tenant_id=tenant)
+            create_webhook_endpoint_secure(
+                s,
+                request=WebhookEndpointCreate(
+                    name=name, url=f"https://{name}.example.test/incidents", max_attempts=1
+                ),
+                tenant_id=tenant,
+                actor="test:machine-tenant",
+                store=client.app.state.secret_store,
+            )
     agent = enroll(client, issue(client, tokens["bootstrap"], a))
     headers = _bearer(agent["agent_token"], b)  # deliberately misleading
     heartbeat = {"sensor_id": "sensor:ph3e", "node_name": "worker", "cluster_name": "production", "version": "1.0"}

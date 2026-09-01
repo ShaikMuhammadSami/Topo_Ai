@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
+    SecretStr,
 )
 
 
@@ -30,7 +31,7 @@ class ChangeSourceCreate(BaseModel):
 
     source_type: ChangeSourceType
 
-    secret_ref: str
+    credential: SecretStr | None = None
 
     enabled: bool = True
 
@@ -50,7 +51,7 @@ class ChangeSourceUpdate(BaseModel):
 
     enabled: bool | None = None
 
-    secret_ref: str | None = None
+    credential: "ChangeSourceCredentialMutation | None" = None
 
     config: (
         dict[str, Any] | None
@@ -73,7 +74,10 @@ class ChangeSourceView(BaseModel):
 
     enabled: bool
 
-    secret_ref: str
+    credential_configured: bool
+    credential_status: Literal["configured", "unconfigured"]
+    rotation_supported: bool = True
+    credential_updated_at: str | None = None
 
     status: str
 
@@ -107,6 +111,14 @@ class ChangeSourceDoctorResponse(
     ready: bool
 
     checks: dict[str, Any]
+
+
+class ChangeSourceCredentialMutation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["rotate", "replace", "revoke", "reprovision"]
+    credential: SecretStr | None = None
+    overlap_seconds: int = Field(default=0, ge=0, le=86400)
 
 
 class ChangeSourceDeliveryView(

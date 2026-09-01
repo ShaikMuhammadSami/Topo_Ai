@@ -100,6 +100,47 @@ def test_put_get_idempotency_and_caller_rollback(context):
         assert len(s.scalars(select(R)).all()) == 1
 
 
+def test_explicit_reprovision_keeps_ref_and_never_revives_old_material(context):
+    engine, store, binding, _ = context
+    descriptor, old_material = put(context)
+    with Session(engine) as session, session.begin():
+        revoked = store.revoke(
+            session, binding, descriptor.secret_ref, actor="test",
+            expected_row_version=descriptor.row_version,
+        )
+    replacement = SecretMaterial(os.urandom(48))
+    with Session(engine) as session, session.begin():
+        active = store.reprovision(
+            session, binding, descriptor.secret_ref, replacement,
+            operation_id="reprovision", actor="test",
+            expected_row_version=revoked.row_version,
+        )
+    assert active.secret_ref == descriptor.secret_ref
+    assert active.status == "active"
+    assert active.active_version == descriptor.active_version + 1
+    assert active.previous_version is None
+    with Session(engine) as session:
+        assert [value.reveal() for value in store.get_for_use(
+            session, binding, descriptor.secret_ref
+        )] == [replacement.reveal()]
+        assert old_material.reveal() not in [
+            value.reveal() for value in store.get_for_use(
+                session, binding, descriptor.secret_ref
+            )
+        ]
+        assert store.reprovision(
+            session, binding, descriptor.secret_ref, replacement,
+            operation_id="reprovision", actor="test",
+            expected_row_version=revoked.row_version,
+        ) == active
+        with pytest.raises(SecretStoreError, match="SECRET_OPERATION_CONFLICT"):
+            store.reprovision(
+                session, binding, descriptor.secret_ref, SecretMaterial(os.urandom(48)),
+                operation_id="reprovision", actor="test",
+                expected_row_version=revoked.row_version,
+            )
+
+
 @pytest.mark.parametrize("attack", ["tenant", "owner", "purpose", "installation", "disabled_tenant"])
 def test_authorization_precedes_ciphertext_access(context, monkeypatch, attack):
     engine, store, binding, _ = context

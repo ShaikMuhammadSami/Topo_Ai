@@ -1005,6 +1005,7 @@ export function updateWebhookEndpoint(
       headers: {
         "Content-Type":
           "application/json",
+        "Idempotency-Key": crypto.randomUUID(),
       },
       body: JSON.stringify(request),
     },

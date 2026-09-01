@@ -48,7 +48,6 @@ from app.services.github_source_file_enrichment import (
 from app.services.webhook_security import (
     WebhookAuthenticationError,
     WebhookAuthenticationUnavailableError,
-    resolve_secret,
     verify_basic_auth,
     verify_github,
     verify_gitlab_secret_token,
@@ -56,10 +55,17 @@ from app.services.webhook_security import (
     verify_terraform_cloud,
     verify_topo_hmac,
 )
+from app.models.secret_store import SecretStoreError
+from app.services.secret_consumer_policy import (
+    ProviderPolicyError,
+    source_binding,
+    validate_provider_configuration,
+)
+from app.services.secret_runtime import runtime_secret_store
+from app.services.secret_store import SecretStore
 
 SAFE_HEADERS = {
     "content-type",
-    "user-agent",
     "x-github-event",
     "x-github-delivery",
     "x-gitlab-event",
@@ -67,7 +73,6 @@ SAFE_HEADERS = {
     "webhook-id",
     "webhook-timestamp",
     "idempotency-key",
-    "x-tfe-notification-signature",
 }
 
 
@@ -286,34 +291,17 @@ def _source_delivery_id(
     return payload_hash
 
 
-def _verify(
+def _verify_with_secret(
     *,
     source: ChangeSourceRecord,
+    secret: str,
+    config: dict[str, Any],
     body: bytes,
     headers: dict[str, str],
 ) -> None:
-    secret = resolve_secret(
-        source.secret_ref
-    )
-
     lower = _header_map(
         headers
     )
-
-    try:
-        config = json.loads(
-            source.config_json
-            or "{}"
-        )
-    except (TypeError, json.JSONDecodeError) as exc:
-        raise WebhookAuthenticationUnavailableError(
-            "Provider authentication is unavailable."
-        ) from exc
-
-    if not isinstance(config, dict):
-        raise WebhookAuthenticationUnavailableError(
-            "Provider authentication is unavailable."
-        )
 
     if source.source_type == "github":
         verify_github(
@@ -409,6 +397,70 @@ def _verify(
     )
 
 
+def _verify(
+    session: Session,
+    *,
+    source: ChangeSourceRecord,
+    body: bytes,
+    headers: dict[str, str],
+    secret_store: SecretStore | None = None,
+) -> None:
+    try:
+        raw_config = json.loads(source.config_json or "{}")
+        raw_filters = json.loads(source.filters_json or "{}")
+        config, _ = validate_provider_configuration(
+            source.source_type, raw_config, raw_filters
+        )
+        if not source.secret_ref:
+            raise SecretStoreError("SECRET_NOT_FOUND")
+        store = secret_store or runtime_secret_store()
+        materials = store.get_for_use(
+            session,
+            source_binding(
+                tenant_id=source.tenant_id,
+                source_id=source.source_id,
+                source_type=source.source_type,
+                config=config,
+            ),
+            source.secret_ref,
+        )
+        secrets = tuple(material.reveal().decode("utf-8") for material in materials)
+    except SecretStoreError as exc:
+        if str(exc) in {
+            "SECRET_STORE_UNAVAILABLE",
+            "SECRET_STORE_DISABLED",
+            "SECRET_DECRYPT_FAILED",
+            "SECRET_REQUIRED_KEY_MISSING",
+        }:
+            raise WebhookAuthenticationUnavailableError(
+                "Provider authentication is unavailable."
+            ) from None
+        # Missing, revoked, foreign-binding, and disabled-tenant material are
+        # all ordinary authentication failures at this public boundary.  Do
+        # not disclose which credential-state check failed.
+        raise WebhookAuthenticationError(
+            "Provider authentication failed."
+        ) from None
+    except (
+        json.JSONDecodeError,
+        UnicodeDecodeError,
+        ProviderPolicyError,
+    ):
+        raise WebhookAuthenticationUnavailableError(
+            "Provider authentication is unavailable."
+        ) from None
+
+    for secret in secrets:
+        try:
+            _verify_with_secret(
+                source=source, secret=secret, config=config, body=body, headers=headers
+            )
+            return
+        except WebhookAuthenticationError:
+            continue
+    raise WebhookAuthenticationError("Provider authentication failed.")
+
+
 def _signature_maximum_age(config: dict[str, Any]) -> int:
     try:
         maximum_age = int(config.get("signature_max_age", 300))
@@ -416,7 +468,7 @@ def _signature_maximum_age(config: dict[str, Any]) -> int:
         raise WebhookAuthenticationUnavailableError(
             "Provider authentication is unavailable."
         ) from exc
-    if maximum_age < 1:
+    if maximum_age < 1 or maximum_age > 3600:
         raise WebhookAuthenticationUnavailableError(
             "Provider authentication is unavailable."
         )
@@ -612,6 +664,7 @@ def ingest_change_source_webhook(
     source: ChangeSourceRecord,
     body: bytes,
     headers: dict[str, str],
+    secret_store: SecretStore | None = None,
     github_provider_factory: GitHubSourceEvidenceProviderFactory = (
         github_source_evidence_provider
     ),
@@ -623,9 +676,11 @@ def ingest_change_source_webhook(
 
     # Verify BEFORE parsing or storing.
     _verify(
+        session,
         source=source,
         body=body,
         headers=headers,
+        secret_store=secret_store,
     )
 
     tenant_id = source.tenant_id

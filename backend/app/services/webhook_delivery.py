@@ -34,6 +34,10 @@ from app.repositories.webhook_repository import (
     list_webhook_endpoint_records,
     save_delivery_result,
 )
+from app.services.secret_consumers import SecretConsumerError, load_webhook_secrets
+from app.services.secret_runtime import runtime_secret_store
+from app.models.secret_store import SecretStoreError
+from app.services.secret_store import SecretStore
 
 
 def build_webhook_event(
@@ -120,6 +124,7 @@ def deliver_event_to_endpoint(
     event: WebhookEvent,
     *,
     tenant_id: DomainTenant,
+    secret_store: SecretStore | None = None,
 ) -> WebhookDeliveryView:
     require_record_owner(endpoint, tenant_id=tenant_id)
     body = _event_body(event)
@@ -139,19 +144,27 @@ def deliver_event_to_endpoint(
             event.occurred_at.isoformat(),
     }
 
-    headers.update(
-        json.loads(
-            endpoint.headers_json
+    try:
+        store = secret_store or runtime_secret_store()
+        signing_secret, protected_headers, sensitive_values = load_webhook_secrets(
+            session, endpoint=endpoint, tenant_id=tenant_id, store=store
         )
-    )
+    except (SecretConsumerError, SecretStoreError):
+        signing_secret, protected_headers, sensitive_values = None, {}, ()
+        credential_error = "Webhook credential service is unavailable."
+    else:
+        credential_error = None
 
-    if endpoint.signing_secret:
+    headers.update(protected_headers)
+
+    if signing_secret:
         headers[
             "X-Topo-Signature"
         ] = _signature(
-            endpoint.signing_secret,
+            signing_secret,
             body,
         )
+        sensitive_values = (*sensitive_values, headers["X-Topo-Signature"])
 
     response_status = None
     response_body = None
@@ -163,10 +176,13 @@ def deliver_event_to_endpoint(
 
     attempt_count = 0
 
-    for attempt in range(
+    if credential_error is not None:
+        attempt_count = 0
+
+    for attempt in ([] if credential_error is not None else range(
         1,
         endpoint.max_attempts + 1,
-    ):
+    )):
         attempt_count = attempt
 
         try:
@@ -187,9 +203,10 @@ def deliver_event_to_endpoint(
                 response.status_code
             )
 
-            response_body = (
-                response.text[:4000]
-            )
+            response_body = response.text[:4000]
+            for sensitive in sensitive_values:
+                if sensitive:
+                    response_body = response_body.replace(sensitive, "[REDACTED]")
 
             if (
                 200
@@ -210,10 +227,7 @@ def deliver_event_to_endpoint(
             )
 
         except Exception as exc:
-            error_message = (
-                f"{type(exc).__name__}: "
-                f"{exc}"
-            )
+            error_message = f"Webhook transport failed ({type(exc).__name__})."
 
         if attempt < endpoint.max_attempts:
             time.sleep(
@@ -224,6 +238,8 @@ def deliver_event_to_endpoint(
                 )
             )
 
+    if credential_error is not None:
+        error_message = credential_error
     completed_at = utc_now_iso()
 
     delivery_id_value = "|".join(
@@ -271,6 +287,7 @@ def publish_event(
     event: WebhookEvent,
     *,
     tenant_id: DomainTenant,
+    secret_store: SecretStore | None = None,
 ) -> list[WebhookDeliveryView]:
     deliveries: list[
         WebhookDeliveryView
@@ -309,6 +326,7 @@ def publish_event(
             endpoint=endpoint,
             event=event,
             tenant_id=tenant_id,
+            secret_store=secret_store,
         )
 
         deliveries.append(delivery)
@@ -321,12 +339,14 @@ def publish_event_safely(
     event: WebhookEvent,
     *,
     tenant_id: DomainTenant,
+    secret_store: SecretStore | None = None,
 ) -> list[str]:
     try:
         deliveries = publish_event(
             session=session,
             event=event,
             tenant_id=tenant_id,
+            secret_store=secret_store,
         )
 
         return [
@@ -342,7 +362,7 @@ def publish_event_safely(
     except Exception as exc:
         session.rollback()
 
-        return ["Webhook publication failed: " f"{type(exc).__name__}: {exc}"]
+        return [f"Webhook publication failed ({type(exc).__name__})."]
 
 
 def create_test_event(

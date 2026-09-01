@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import os
+import sys
+from uuid import uuid4
+
 import typer
 
 from topo_cli.output import (
@@ -29,7 +33,7 @@ def _create(
     *,
     name: str,
     source_type: str,
-    secret_ref: str,
+    credential: str,
     config: dict,
     filters: dict | None = None,
 ) -> None:
@@ -43,8 +47,8 @@ def _create(
                     "name": name,
                     "source_type":
                         source_type,
-                    "secret_ref":
-                        secret_ref,
+                    "credential":
+                        credential,
                     "enabled": True,
                     "config": config,
                     "filters":
@@ -336,10 +340,12 @@ def create_github(
         "--name",
     ),
 
-    secret_ref: str = typer.Option(
-        ...,
-        "--secret-ref",
+    secret_env: str | None = typer.Option(
+        None,
+        "--secret-env",
     ),
+
+    secret_stdin: bool = typer.Option(False, "--secret-stdin"),
 
     repository: str | None = typer.Option(
         None,
@@ -372,7 +378,7 @@ def create_github(
         context,
         name=name,
         source_type="github",
-        secret_ref=secret_ref,
+        credential=_credential(secret_env, secret_stdin),
         config={
             "environment":
                 environment,
@@ -394,10 +400,12 @@ def create_gitlab(
         "--name",
     ),
 
-    secret_ref: str = typer.Option(
-        ...,
-        "--secret-ref",
+    secret_env: str | None = typer.Option(
+        None,
+        "--secret-env",
     ),
+
+    secret_stdin: bool = typer.Option(False, "--secret-stdin"),
 
     auth_mode: str = typer.Option(
         "signing",
@@ -425,7 +433,7 @@ def create_gitlab(
         context,
         name=name,
         source_type="gitlab",
-        secret_ref=secret_ref,
+        credential=_credential(secret_env, secret_stdin),
         config={
             "auth_mode":
                 auth_mode,
@@ -446,10 +454,12 @@ def create_jenkins(
         "--name",
     ),
 
-    secret_ref: str = typer.Option(
-        ...,
-        "--secret-ref",
+    secret_env: str | None = typer.Option(
+        None,
+        "--secret-env",
     ),
+
+    secret_stdin: bool = typer.Option(False, "--secret-stdin"),
 
     environment: str | None = typer.Option(
         None,
@@ -460,7 +470,7 @@ def create_jenkins(
         context,
         name=name,
         source_type="jenkins",
-        secret_ref=secret_ref,
+        credential=_credential(secret_env, secret_stdin),
         config={
             "environment":
                 environment,
@@ -477,10 +487,12 @@ def create_azure_devops(
         "--name",
     ),
 
-    secret_ref: str = typer.Option(
-        ...,
-        "--secret-ref",
+    secret_env: str | None = typer.Option(
+        None,
+        "--secret-env",
     ),
+
+    secret_stdin: bool = typer.Option(False, "--secret-stdin"),
 
     username: str = typer.Option(
         "topo-webhook",
@@ -496,7 +508,7 @@ def create_azure_devops(
         context,
         name=name,
         source_type="azure_devops",
-        secret_ref=secret_ref,
+        credential=_credential(secret_env, secret_stdin),
         config={
             "username":
                 username,
@@ -515,10 +527,12 @@ def create_terraform_cloud(
         "--name",
     ),
 
-    secret_ref: str = typer.Option(
-        ...,
-        "--secret-ref",
+    secret_env: str | None = typer.Option(
+        None,
+        "--secret-env",
     ),
+
+    secret_stdin: bool = typer.Option(False, "--secret-stdin"),
 
     environment: str | None = typer.Option(
         None,
@@ -534,7 +548,7 @@ def create_terraform_cloud(
         context,
         name=name,
         source_type="terraform_cloud",
-        secret_ref=secret_ref,
+        credential=_credential(secret_env, secret_stdin),
         config={
             "environment":
                 environment,
@@ -542,3 +556,51 @@ def create_terraform_cloud(
                 provider,
         },
     )
+
+
+def _credential(secret_env: str | None, secret_stdin: bool) -> str:
+    if secret_env and secret_stdin:
+        raise typer.BadParameter("Use only one of --secret-env or --secret-stdin.")
+    if secret_env:
+        value = os.environ.get(secret_env)
+        if not value:
+            raise typer.BadParameter("The selected credential environment variable is empty.")
+        return value
+    if secret_stdin:
+        value = sys.stdin.readline().rstrip("\r\n")
+        if not value:
+            raise typer.BadParameter("Credential input is empty.")
+        return value
+    return typer.prompt("Provider credential", hide_input=True, confirmation_prompt=False)
+
+
+@app.command("rotate")
+def rotate(
+    context: typer.Context,
+    source_id: str,
+    secret_env: str | None = typer.Option(None, "--secret-env"),
+    secret_stdin: bool = typer.Option(False, "--secret-stdin"),
+    overlap_seconds: int = typer.Option(0, "--overlap-seconds", min=0, max=86400),
+) -> None:
+    runtime = get_runtime(context)
+    result = api_call(lambda: runtime.client.update_change_source(
+        source_id,
+        {"credential": {
+            "action": "rotate",
+            "credential": _credential(secret_env, secret_stdin),
+            "overlap_seconds": overlap_seconds,
+        }},
+        idempotency_key=str(uuid4()),
+    ))
+    render_data(result, output_format=runtime.output_format, title="Change Source")
+
+
+@app.command("revoke")
+def revoke(context: typer.Context, source_id: str) -> None:
+    runtime = get_runtime(context)
+    result = api_call(lambda: runtime.client.update_change_source(
+        source_id,
+        {"credential": {"action": "revoke"}},
+        idempotency_key=str(uuid4()),
+    ))
+    render_data(result, output_format=runtime.output_format, title="Change Source")
