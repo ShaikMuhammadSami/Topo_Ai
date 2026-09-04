@@ -42,6 +42,7 @@ from app.services.llm_client import (
     generate_openai_structured,
     resolve_configured_provider,
 )
+from app.services.installation_secrets import installation_secret_text
 
 COPILOT_PROMPT_VERSION = (
     "incident-copilot-groq-0.1.0"
@@ -745,13 +746,11 @@ def _groq_answer(
     evidence: list[GroundingEvidence],
     model_name: str,
 ) -> CopilotGeneratedAnswer:
-    api_key = os.getenv(
-        "GROQ_API_KEY"
-    )
+    api_key = installation_secret_text("groq")
 
     if not api_key:
         raise CopilotGenerationError(
-            "GROQ_API_KEY is not configured."
+            "Groq installation credential is not configured."
         )
 
     client = Groq(
@@ -823,9 +822,8 @@ def _groq_answer(
 
     except Exception as exc:
         raise CopilotGenerationError(
-            "Groq copilot request failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
+            f"Groq copilot request failed ({type(exc).__name__})."
+        ) from None
 
     content = (
         response
@@ -846,12 +844,10 @@ def _groq_answer(
             .model_validate_json(content)
         )
 
-    except Exception as exc:
+    except Exception:
         raise CopilotGenerationError(
-            "Groq returned an invalid "
-            "structured copilot response: "
-            f"{exc}"
-        ) from exc
+            "Groq returned an invalid structured copilot response."
+        ) from None
 
     _validate_answer(
         answer=result,
@@ -902,10 +898,10 @@ def _openai_answer(
             model_name=model_name,
         )
 
-    except Exception as exc:
+    except Exception:
         raise CopilotGenerationError(
-            str(exc)
-        ) from exc
+            "OpenAI copilot generation failed."
+        ) from None
 
     _validate_answer(
         answer=result,
@@ -1111,8 +1107,7 @@ def answer_copilot_question(
             warning_parts.append(
                 "OpenAI generation failed; "
                 "deterministic fallback was "
-                "used: "
-                f"{type(exc).__name__}: {exc}"
+                f"used ({type(exc).__name__})."
             )
             generated = (
                 _deterministic_answer(
@@ -1150,8 +1145,7 @@ def answer_copilot_question(
             warning_parts.append(
                 "Groq generation failed; "
                 "deterministic fallback was "
-                "used: "
-                f"{type(exc).__name__}: {exc}"
+                f"used ({type(exc).__name__})."
             )
 
             generated = (

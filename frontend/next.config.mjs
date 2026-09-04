@@ -11,6 +11,11 @@ const nextConfig = {
     if (!["http:", "https:"].includes(parsed.protocol)) {
       throw new Error("TOPO_BACKEND_URL must use http or https")
     }
+    if (parsed.username || parsed.password || parsed.search || parsed.hash) {
+      throw new Error(
+        "TOPO_BACKEND_URL must not contain userinfo, query, or fragment",
+      )
+    }
     return [
       {
         source: "/api/:path*",

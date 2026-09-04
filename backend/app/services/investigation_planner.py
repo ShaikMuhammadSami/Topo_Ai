@@ -38,6 +38,7 @@ from app.services.llm_client import (
     generate_openai_structured,
     resolve_configured_provider,
 )
+from app.services.installation_secrets import installation_secret_text
 
 INVESTIGATION_PROMPT_VERSION = (
     "investigation-planner-groq-0.1.0"
@@ -1061,13 +1062,11 @@ def _groq_plan(
     evidence: list[GroundingEvidence],
     model_name: str,
 ) -> GeneratedInvestigationPlan:
-    api_key = os.getenv(
-        "GROQ_API_KEY"
-    )
+    api_key = installation_secret_text("groq")
 
     if not api_key:
         raise InvestigationPlanGenerationError(
-            "GROQ_API_KEY is not configured."
+            "Groq installation credential is not configured."
         )
 
     client = Groq(
@@ -1129,9 +1128,8 @@ def _groq_plan(
     except Exception as exc:
         raise InvestigationPlanGenerationError(
             "Groq investigation planner "
-            "request failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
+            f"request failed ({type(exc).__name__})."
+        ) from None
 
     content = (
         response
@@ -1152,12 +1150,10 @@ def _groq_plan(
             .model_validate_json(content)
         )
 
-    except Exception as exc:
+    except Exception:
         raise InvestigationPlanGenerationError(
-            "Groq returned an invalid "
-            "structured investigation plan: "
-            f"{exc}"
-        ) from exc
+            "Groq returned an invalid structured investigation plan."
+        ) from None
 
     return _validate_plan(
         generated=generated,
@@ -1196,10 +1192,10 @@ def _openai_plan(
             model_name=model_name,
         )
 
-    except Exception as exc:
+    except Exception:
         raise InvestigationPlanGenerationError(
-            str(exc)
-        ) from exc
+            "OpenAI investigation planning failed."
+        ) from None
 
     return _validate_plan(
         generated=generated,
@@ -1346,15 +1342,14 @@ def generate_investigation_plan(
             ):
                 raise (
                     InvestigationPlanGenerationError(
-                        str(exc)
+                        "OpenAI investigation planning failed."
                     )
-                ) from exc
+                ) from None
 
             warnings.append(
                 "OpenAI investigation planning "
                 "failed; deterministic fallback "
-                "was used: "
-                f"{type(exc).__name__}: {exc}"
+                f"was used ({type(exc).__name__})."
             )
             provider = (
                 ExplanationProvider
@@ -1398,15 +1393,14 @@ def generate_investigation_plan(
             ):
                 raise (
                     InvestigationPlanGenerationError(
-                        str(exc)
+                        "Groq investigation planning failed."
                     )
-                ) from exc
+                ) from None
 
             warnings.append(
                 "Groq investigation planning "
                 "failed; deterministic fallback "
-                "was used: "
-                f"{type(exc).__name__}: {exc}"
+                f"was used ({type(exc).__name__})."
             )
 
             provider = (

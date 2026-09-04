@@ -871,7 +871,11 @@ def test_openai_failure_keeps_structured_result(
         HistoricalAiStatus.FAILED
     )
     assert any(
-        "provider down" in warning
+        "RuntimeError" in warning
+        for warning in result.warnings
+    )
+    assert all(
+        "provider down" not in warning
         for warning in result.warnings
     )
 

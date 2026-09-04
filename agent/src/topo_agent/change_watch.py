@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from topo_agent.security import safe_exception_message
 import time
 from typing import Any
 
@@ -152,7 +153,7 @@ class ChangeWatchRunner:
 
                 result[name] = {
                     "status": "failed",
-                    "error": str(exc),
+                    "error": safe_exception_message(exc, "Change observation failed"),
                 }
 
         return result

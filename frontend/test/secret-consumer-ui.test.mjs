@@ -57,6 +57,8 @@ test("webhook UI keeps raw values in password inputs and never browser storage",
   assert.match(ui, /type="password"/)
   assert.match(ui, /Values are write-only and encrypted/)
   assert.match(ui, /protected_header_names/)
+  assert.match(ui, /setSecret\(""\)/)
+  assert.match(ui, /\[endpoint\.webhook_id\]: ""/)
   assert.doesNotMatch(ui, /localStorage|sessionStorage|indexedDB/)
 })
 

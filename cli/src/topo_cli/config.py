@@ -18,6 +18,7 @@ from topo_cli.errors import (
 from keyring.errors import (
     KeyringError,
 )
+from topo_cli.security import validate_api_url
 
 KEYRING_SERVICE = "topo-ai-cli"
 DEFAULT_PROFILE_NAME = "local"
@@ -48,6 +49,12 @@ class Profile:
     snapshot_capture_path: str = (
         DEFAULT_CAPTURE_PATH
     )
+
+    def __post_init__(self) -> None:
+        try:
+            self.api_url = validate_api_url(self.api_url)
+        except ValueError as exc:
+            raise ConfigurationError(str(exc)) from None
 
     @classmethod
     def from_dict(
@@ -218,12 +225,10 @@ def load_config() -> TopoConfig:
     except (
         OSError,
         json.JSONDecodeError,
-    ) as exc:
+    ):
         raise ConfigurationError(
-            "Unable to load Topo CLI "
-            f"configuration from {path}: "
-            f"{exc}"
-        ) from exc
+            "Unable to load the Topo CLI configuration."
+        ) from None
 
     if not isinstance(value, dict):
         raise ConfigurationError(
@@ -268,12 +273,10 @@ def save_config(
 
         temporary.replace(path)
 
-    except OSError as exc:
+    except OSError:
         raise FileOperationFailure(
-            "Unable to save Topo CLI "
-            f"configuration to {path}: "
-            f"{exc}"
-        ) from exc
+            "Unable to save the Topo CLI configuration."
+        ) from None
 
     return path
 
@@ -324,36 +327,49 @@ def profile_token(
      if environment_value:
         return environment_value
      try:
+        _require_usable_keyring()
         return keyring.get_password(
             KEYRING_SERVICE,
             profile_name,
         )
-     except KeyringError : 
-        return None
+     except KeyringError:
+        raise FileOperationFailure(
+            "The operating-system credential store is unavailable."
+        ) from None
+
+
+def _require_usable_keyring() -> None:
+    backend = keyring.get_keyring()
+    identity = f"{type(backend).__module__}.{type(backend).__name__}".lower()
+    if any(marker in identity for marker in ("backends.fail", "backends.null", "plaintext")):
+        raise FileOperationFailure(
+            "The configured keyring backend is not suitable for credential storage."
+        )
 
 def store_profile_token(
     profile_name: str,
     token: str,
 ) -> None:
     try:
+        _require_usable_keyring()
         keyring.set_password(
             KEYRING_SERVICE,
             profile_name,
             token,
         )
 
-    except KeyringError as exc:
+    except KeyringError:
         raise FileOperationFailure(
             "Unable to store the API token "
-            "in the operating system "
-            f"credential store: {exc}"
-        ) from exc
+            "in the operating system credential store."
+        ) from None
 
 
 def delete_profile_token(
     profile_name: str,
 ) -> bool:
     try:
+        _require_usable_keyring()
         existing = keyring.get_password(
             KEYRING_SERVICE,
             profile_name,
@@ -369,12 +385,11 @@ def delete_profile_token(
 
         return True
 
-    except KeyringError as exc:
+    except KeyringError:
         raise FileOperationFailure(
             "Unable to remove the API token "
-            "from the operating system "
-            f"credential store: {exc}"
-        ) from exc
+            "from the operating system credential store."
+        ) from None
 
 
 def token_source(
@@ -388,12 +403,13 @@ def token_source(
         )
 
     try:
+        _require_usable_keyring()
         stored = keyring.get_password(
             KEYRING_SERVICE,
             profile_name,
         )
 
-    except KeyringError:
+    except (KeyringError, FileOperationFailure):
         return "unavailable"
 
     if stored:

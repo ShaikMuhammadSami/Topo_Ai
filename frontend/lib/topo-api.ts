@@ -124,6 +124,18 @@ export class TopoApiError extends Error {
   }
 }
 
+function safePublicErrorDetail(value: unknown): string | null {
+  if (typeof value !== "string" || value.length > 1000) return null
+  if (
+    /\b(?:Bearer|Basic)\s+\S+/i.test(value) ||
+    /(?:password|passwd|api[_-]?key|access[_-]?token|refresh[_-]?token|client[_-]?secret)\s*[:=]/i.test(value) ||
+    /\b(?:sk-|gsk_|ghp_|github_pat_|topo_(?:api|agent|enroll)_)[A-Za-z0-9._~-]{8,}/i.test(value)
+  ) {
+    return "Request failed."
+  }
+  return value
+}
+
 export function subscribeAuthTransport(
   listener: AuthTransportListener,
 ): () => void {
@@ -234,14 +246,7 @@ async function apiResponse(
           }
         ).detail
 
-        message =
-          typeof detail === "string"
-            ? detail
-            : JSON.stringify(
-                detail,
-                null,
-                2,
-              )
+        message = safePublicErrorDetail(detail) ?? message
       }
     } catch {
       // Keep the default HTTP message.

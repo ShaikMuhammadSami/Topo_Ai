@@ -16,6 +16,7 @@ from topo_cli.errors import (
 from topo_cli.retry import (
     execute_request,
 )
+from topo_cli.security import safe_error_text, validate_api_url
 
 JsonValue = (
     dict[str, Any]
@@ -41,7 +42,7 @@ class TopoClient:
         max_retries: int = 3,
         retry_backoff: float = 0.75,
     ) -> None:
-        self.api_url = api_url.rstrip("/")
+        self.api_url = validate_api_url(api_url)
         self.snapshot_capture_path = snapshot_capture_path
         self.max_retries = max(max_retries,0,)
         self.retry_backoff = max(retry_backoff,0.0,)
@@ -62,7 +63,7 @@ class TopoClient:
             headers=headers,
             timeout=httpx.Timeout(timeout),
             verify=verify_tls,
-            follow_redirects=True,
+            follow_redirects=False,
         )
 
     def close(self) -> None:
@@ -95,26 +96,27 @@ class TopoClient:
                     or value.get("error")
                 )
 
-                if detail:
+                if isinstance(detail, str) and re.fullmatch(r"[A-Z][A-Z0-9_. -]{0,200}", detail):
                     return (
                         f"API returned {response.status_code}: "
-                        f"{detail}"
+                        f"{safe_error_text(detail)}"
                     )
 
         except ValueError:
             pass
 
-        content = response.text.strip()
-
-        return (
-            f"API returned {response.status_code}"
-            + (f": {content[:1000]}" if content else "")
-        )
+        return f"API returned {response.status_code}"
 
     def _raise_for_status(
         self,
         response: httpx.Response,
     ) -> None:
+        if 300 <= response.status_code < 400:
+            raise ApiFailure(
+                "API redirect was not accepted.",
+                status_code=response.status_code,
+            )
+
         if response.status_code == 401:
             raise AuthenticationFailure(
                 self._error_message(response)
@@ -175,23 +177,20 @@ class TopoClient:
                 ),
             )
 
-        except httpx.TimeoutException as exc:
+        except httpx.TimeoutException:
             raise ConnectionFailure(
-                "The Topo AI API request timed out: "
-                f"{exc}"
-            ) from exc
+                "The Topo AI API request timed out."
+            ) from None
 
-        except httpx.ConnectError as exc:
+        except httpx.ConnectError:
             raise ConnectionFailure(
-                "Unable to connect to Topo AI "
-                f"at {self.api_url}: {exc}"
-            ) from exc
+                "Unable to connect to the configured Topo AI API."
+            ) from None
 
-        except httpx.HTTPError as exc:
+        except httpx.HTTPError:
             raise ConnectionFailure(
-                "Topo AI API request failed: "
-                f"{exc}"
-            ) from exc
+                "Topo AI API request failed."
+            ) from None
 
         self._raise_for_status(response)
 
@@ -203,6 +202,9 @@ class TopoClient:
 
         except ValueError:
             return response.text
+
+    def __repr__(self) -> str:
+        return f"TopoClient(api_url={self.api_url!r}, token=<redacted>)"
 
     @staticmethod
     def _collection(
@@ -1481,23 +1483,20 @@ class TopoClient:
                 ),   
             )
 
-        except httpx.TimeoutException as exc:
+        except httpx.TimeoutException:
             raise ConnectionFailure(
-                "The report export request "
-                f"timed out: {exc}"
-            ) from exc
+                "The report export request timed out."
+            ) from None
 
-        except httpx.ConnectError as exc:
+        except httpx.ConnectError:
             raise ConnectionFailure(
-                "Unable to connect to Topo AI "
-                f"at {self.api_url}: {exc}"
-            ) from exc
+                "Unable to connect to the configured Topo AI API."
+            ) from None
 
-        except httpx.HTTPError as exc:
+        except httpx.HTTPError:
             raise ConnectionFailure(
-                "Report export request failed: "
-                f"{exc}"
-            ) from exc
+                "Report export request failed."
+            ) from None
 
         self._raise_for_status(response)
 

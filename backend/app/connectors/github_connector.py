@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import os
 import base64
 import json
-from dataclasses import dataclass
-from typing import Any
-from urllib.parse import quote
+import os
+from dataclasses import dataclass, field
+from typing import Any, Callable
+from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
+
+from app.security.secret_redaction import validate_service_base_url
+from app.services.installation_secrets import installation_secret_text
 
 
 MAX_GITHUB_ARTIFACT_BYTES = 32 * 1024 * 1024
@@ -42,13 +45,18 @@ class GitHubSettings:
     owner: str
     repository: str
 
-    token: str | None
+    token: str | None = field(repr=False)
 
     api_url: str
     api_version: str
 
     timeout_seconds: float
     commit_limit: int
+    credential_loader: Callable[[], str | None] | None = field(
+        default=None,
+        repr=False,
+        compare=False,
+    )
 
     @property
     def full_name(self) -> str:
@@ -87,16 +95,11 @@ class GitHubSettings:
         return cls(
             owner=owner,
             repository=repository,
-            token=(
-                os.getenv(
-                    "TOPO_GITHUB_TOKEN"
-                )
-                or None
+            token=None,
+            api_url=validate_service_base_url(
+                os.getenv("TOPO_GITHUB_API_URL", "https://api.github.com"),
+                label="GitHub API URL",
             ),
-            api_url=os.getenv(
-                "TOPO_GITHUB_API_URL",
-                "https://api.github.com",
-            ).rstrip("/"),
             api_version=os.getenv(
                 "TOPO_GITHUB_API_VERSION",
                 "2026-03-10",
@@ -111,6 +114,7 @@ class GitHubSettings:
                 1,
                 min(commit_limit, 100),
             ),
+            credential_loader=lambda: installation_secret_text("github"),
         )
 
     @classmethod
@@ -130,11 +134,11 @@ class GitHubSettings:
         return cls(
             owner=owner,
             repository=repository,
-            token=os.getenv("TOPO_GITHUB_TOKEN") or None,
-            api_url=os.getenv(
-                "TOPO_GITHUB_API_URL",
-                "https://api.github.com",
-            ).rstrip("/"),
+            token=None,
+            api_url=validate_service_base_url(
+                os.getenv("TOPO_GITHUB_API_URL", "https://api.github.com"),
+                label="GitHub API URL",
+            ),
             api_version=os.getenv(
                 "TOPO_GITHUB_API_VERSION",
                 "2026-03-10",
@@ -146,6 +150,7 @@ class GitHubSettings:
                 )
             ),
             commit_limit=max(1, min(commit_limit, 100)),
+            credential_loader=lambda: installation_secret_text("github"),
         )
 
 
@@ -170,10 +175,13 @@ class GitHubConnector:
             ),
         }
 
-        if self.settings.token:
+        token = self.settings.token
+        if token is None and self.settings.credential_loader is not None:
+            token = self.settings.credential_loader()
+        if token:
             headers["Authorization"] = (
                 f"Bearer "
-                f"{self.settings.token}"
+                f"{token}"
             )
 
         return headers
@@ -197,8 +205,13 @@ class GitHubConnector:
                     self.settings
                     .timeout_seconds
                 ),
-                follow_redirects=True,
+                follow_redirects=False,
             )
+
+            if _is_redirect_status(response.status_code):
+                raise GitHubConnectorError(
+                    "GitHub API redirect was not accepted."
+                )
 
             response.raise_for_status()
 
@@ -207,27 +220,16 @@ class GitHubConnector:
                 exc.response.status_code
             )
 
-            try:
-                body = exc.response.json()
-                detail = body.get(
-                    "message",
-                    exc.response.text,
-                )
-
-            except ValueError:
-                detail = exc.response.text
-
             raise GitHubConnectorError(
                 "GitHub API returned "
-                f"{status_code}: {detail}",
+                f"HTTP {status_code}.",
                 status_code=status_code,
-            ) from exc
+            ) from None
 
-        except httpx.RequestError as exc:
+        except httpx.RequestError:
             raise GitHubConnectorError(
-                "Could not reach the GitHub API: "
-                f"{exc}"
-            ) from exc
+                "Could not reach the GitHub API."
+            ) from None
 
         try:
             return response.json()
@@ -257,8 +259,12 @@ class GitHubConnector:
                 params=params,
                 headers=self._headers(),
                 timeout=self.settings.timeout_seconds,
-                follow_redirects=True,
+                follow_redirects=False,
             ) as response:
+                if _is_redirect_status(response.status_code):
+                    raise GitHubConnectorError(
+                        "GitHub content API redirect was not accepted."
+                    )
                 response.raise_for_status()
                 declared = response.headers.get("content-length")
                 if (
@@ -286,10 +292,10 @@ class GitHubConnector:
                 f"{exc.response.status_code}.",
                 status_code=exc.response.status_code,
             ) from exc
-        except httpx.RequestError as exc:
+        except httpx.RequestError:
             raise GitHubConnectorError(
                 "Could not reach the GitHub content API."
-            ) from exc
+            ) from None
 
         try:
             return json.loads(b"".join(chunks))
@@ -479,9 +485,7 @@ class GitHubConnector:
             "api_url": (
                 self.settings.api_url
             ),
-            "authenticated": bool(
-                self.settings.token
-            ),
+            "authenticated": "Authorization" in self._headers(),
         }
     def list_workflow_runs(
         self,
@@ -574,23 +578,59 @@ class GitHubConnector:
             f"{self.settings.api_url}/repos/{self.settings.owner}/"
             f"{self.settings.repository}/actions/artifacts/{artifact_id}/zip"
         )
+        headers = self._headers()
         try:
-            response = httpx.get(
-                url,
-                headers=self._headers(),
-                timeout=self.settings.timeout_seconds,
-                follow_redirects=True,
-            )
+            response = None
+            current_url = url
+            for _ in range(4):
+                response = httpx.get(
+                    current_url,
+                    headers=headers,
+                    timeout=self.settings.timeout_seconds,
+                    follow_redirects=False,
+                )
+                if not _is_redirect_status(response.status_code):
+                    break
+                location = response.headers.get("location")
+                if not location:
+                    raise GitHubConnectorError(
+                        "GitHub artifact redirect was invalid."
+                    )
+                target = urljoin(current_url, location)
+                parsed = urlsplit(target)
+                if (
+                    parsed.scheme not in {"http", "https"}
+                    or not parsed.hostname
+                    or parsed.username is not None
+                    or parsed.password is not None
+                ):
+                    raise GitHubConnectorError(
+                        "GitHub artifact redirect was unsafe."
+                    )
+                if _origin(target) != _origin(current_url):
+                    headers = {
+                        "Accept": "application/octet-stream",
+                        "User-Agent": "topo-ai-infrastructure-intelligence",
+                    }
+                current_url = target
+            else:
+                raise GitHubConnectorError(
+                    "GitHub artifact redirect limit was exceeded."
+                )
+            if response is None or _is_redirect_status(response.status_code):
+                raise GitHubConnectorError(
+                    "GitHub artifact redirect limit was exceeded."
+                )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
             raise GitHubConnectorError(
                 "GitHub artifact download returned "
                 f"{exc.response.status_code}."
             ) from exc
-        except httpx.RequestError as exc:
+        except httpx.RequestError:
             raise GitHubConnectorError(
-                f"Could not download the GitHub artifact: {exc}"
-            ) from exc
+                "Could not download the GitHub artifact."
+            ) from None
         declared = response.headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > MAX_GITHUB_ARTIFACT_BYTES:
             raise GitHubConnectorError(
@@ -602,3 +642,12 @@ class GitHubConnector:
                 "GitHub build artifact exceeds the safe size limit."
             )
         return payload
+
+
+def _origin(value: str) -> tuple[str, str, int | None]:
+    parsed = urlsplit(value)
+    return parsed.scheme.lower(), (parsed.hostname or "").lower(), parsed.port
+
+
+def _is_redirect_status(status_code: int) -> bool:
+    return 300 <= status_code < 400

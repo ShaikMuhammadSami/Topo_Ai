@@ -6,8 +6,11 @@ from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.orm import Session
 
 from app.api.action_approvals import router as action_approvals_router
@@ -67,6 +70,13 @@ from app.services.auth_api_credential_service import (
 )
 from app.repositories.tenant_scope import TenantResourceNotFound
 from app.security.secret_keyring import load_secret_store_configuration
+from app.security.secret_redaction import (
+    install_logging_redaction,
+    safe_response_headers,
+    safe_text,
+    safe_validation_errors,
+    sanitize_structured,
+)
 from app.services.secret_store import EncryptedDatabaseSecretStore
 from app.services.secret_runtime import configure_runtime_secret_store
 
@@ -74,6 +84,7 @@ LOGGER = logging.getLogger(__name__)
 
 
 load_dotenv()
+install_logging_redaction()
 
 
 @asynccontextmanager
@@ -84,7 +95,7 @@ async def lifespan(application: FastAPI):
     with application.state.session_factory() as session:
         store.validate_readiness(session)
     application.state.secret_store = store
-    configure_runtime_secret_store(store)
+    configure_runtime_secret_store(store, application.state.session_factory)
     configuration = application.state.auth_configuration
     if (
         configuration.mode is AuthMode.REQUIRED
@@ -137,6 +148,29 @@ def create_app(
     @application.exception_handler(TenantResourceNotFound)
     async def tenant_resource_not_found(request: Request, exc: TenantResourceNotFound):
         return JSONResponse(status_code=404, content={"detail": "Resource not found."})
+
+    @application.exception_handler(RequestValidationError)
+    async def safe_request_validation_error(
+        request: Request, exc: RequestValidationError
+    ):
+        del request
+        return JSONResponse(
+            status_code=422,
+            content={"detail": safe_validation_errors(exc.errors())},
+        )
+
+    @application.exception_handler(StarletteHTTPException)
+    async def safe_http_error(request: Request, exc: StarletteHTTPException):
+        if isinstance(exc.detail, str):
+            detail = safe_text(exc.detail)
+        else:
+            detail = sanitize_structured(exc.detail)
+        sanitized = StarletteHTTPException(
+            status_code=exc.status_code,
+            detail=detail,
+            headers=safe_response_headers(exc.headers),
+        )
+        return await http_exception_handler(request, sanitized)
 
     application.add_middleware(
         ApiTokenAuthMiddleware,

@@ -15,6 +15,7 @@ from topo_agent.plugin import (
     PluginCollectionResult,
     PluginDiagnostic,
 )
+from topo_agent.security import safe_exception_message
 
 
 def _string_map(
@@ -68,7 +69,7 @@ class DockerPlugin:
             return PluginDiagnostic(
                 name=self.name,
                 status="failed",
-                message=str(exc),
+                message=safe_exception_message(exc, "Docker discovery failed"),
                 capabilities=list(
                     self.capabilities
                 ),

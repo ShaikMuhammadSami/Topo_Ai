@@ -2,6 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import stat
+import subprocess
+import ctypes
+from ctypes import POINTER, byref, c_void_p, wintypes
 from dataclasses import (
     asdict,
     dataclass,
@@ -9,6 +14,7 @@ from dataclasses import (
 )
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 def _boolean(
@@ -1064,32 +1070,211 @@ def store_agent_token(
     token: str,
 ) -> Path:
     path = credentials_path()
-
-    path.parent.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    temporary = path.with_suffix(
-        ".tmp"
-    )
-
-    temporary.write_text(
-        json.dumps(
-            {
-                "agent_token": token,
-            },
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    temporary.replace(path)
-
-    if os.name != "nt":
-        path.chmod(0o600)
-
+    payload = json.dumps({"agent_token": token}, indent=2).encode("utf-8")
+    _secure_atomic_write(path, payload)
     return path
+
+
+def _reject_unsafe_path(path: Path) -> None:
+    candidate = path.absolute()
+    existing = candidate if candidate.exists() else candidate.parent
+    while True:
+        try:
+            info = existing.lstat()
+        except FileNotFoundError:
+            pass
+        else:
+            if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+                raise OSError("Credential path contains a link or reparse point.")
+        if existing.parent == existing:
+            break
+        existing = existing.parent
+    if path.exists():
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode):
+            raise OSError("Credential destination is not a regular file.")
+
+
+def _windows_current_sid() -> str:
+    result = subprocess.run(
+        ["whoami", "/user", "/fo", "csv", "/nh"],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    match = re.search(r"S-1(?:-\d+)+", result.stdout)
+    if result.returncode != 0 or match is None:
+        raise OSError("Unable to resolve the Windows agent identity.")
+    return match.group(0)
+
+
+def _windows_security_descriptor(path: Path) -> str:
+    advapi32 = ctypes.windll.advapi32
+    kernel32 = ctypes.windll.kernel32
+    descriptor = c_void_p()
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD,
+        POINTER(c_void_p), POINTER(c_void_p), POINTER(c_void_p), POINTER(c_void_p),
+        POINTER(c_void_p),
+    ]
+    result = advapi32.GetNamedSecurityInfoW(
+        str(path), 1, 0x00000004, None, None, None, None, byref(descriptor)
+    )
+    if result != 0 or not descriptor.value:
+        raise OSError("Unable to read the Windows credential ACL.")
+    output = wintypes.LPWSTR()
+    length = wintypes.ULONG()
+    try:
+        advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW.argtypes = [
+            c_void_p, wintypes.DWORD, wintypes.DWORD,
+            POINTER(wintypes.LPWSTR), POINTER(wintypes.ULONG),
+        ]
+        if not advapi32.ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            descriptor, 1, 0x00000004, byref(output), byref(length)
+        ):
+            raise OSError("Unable to inspect the Windows credential ACL.")
+        return output.value or ""
+    finally:
+        if output:
+            kernel32.LocalFree(output)
+        kernel32.LocalFree(descriptor)
+
+
+def _validate_windows_acl(path: Path, current_sid: str) -> None:
+    descriptor = _windows_security_descriptor(path)
+    dacl = descriptor[descriptor.find("D:"):] if "D:" in descriptor else descriptor
+    if not dacl.startswith("D:P"):
+        raise OSError("Windows credential ACL inheritance is not protected.")
+    allowed = {current_sid, "SY", "BA", "S-1-5-18", "S-1-5-32-544"}
+    trustees = re.findall(r"\([^)]*;;;([^)]+)\)", dacl)
+    if current_sid not in trustees or not trustees or any(item not in allowed for item in trustees):
+        raise OSError("Windows credential ACL grants an unauthorized principal.")
+
+
+_WINDOWS_SDDL_TRUSTEE_SIDS = {
+    "WD": "S-1-1-0",       # Everyone
+    "CO": "S-1-3-0",       # Creator Owner
+    "OW": "S-1-3-4",       # Owner Rights
+    "AN": "S-1-5-7",       # Anonymous
+    "AU": "S-1-5-11",      # Authenticated Users
+    "IU": "S-1-5-4",       # Interactive Users
+    "SU": "S-1-5-6",       # Service
+    "LS": "S-1-5-19",      # Local Service
+    "NS": "S-1-5-20",      # Network Service
+    "BU": "S-1-5-32-545",  # Builtin Users
+    "BG": "S-1-5-32-546",  # Builtin Guests
+    "PU": "S-1-5-32-547",  # Power Users
+}
+
+
+def _remove_unapproved_windows_aces(path: Path, current_sid: str) -> None:
+    descriptor = _windows_security_descriptor(path)
+    dacl = descriptor[descriptor.find("D:"):] if "D:" in descriptor else descriptor
+    allowed = {current_sid, "SY", "BA", "S-1-5-18", "S-1-5-32-544"}
+    trustees = set(re.findall(r"\([^)]*;;;([^)]+)\)", dacl))
+    for trustee in sorted(trustees - allowed):
+        sid = _WINDOWS_SDDL_TRUSTEE_SIDS.get(trustee, trustee)
+        if not sid.startswith("S-1-"):
+            continue
+        principal = f"*{sid}"
+        for removal in ("/remove:g", "/remove:d"):
+            subprocess.run(
+                ["icacls", str(path), removal, principal],
+                check=False,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=15,
+            )
+
+
+def _secure_windows_file(path: Path) -> None:
+    sid = _windows_current_sid()
+    result = subprocess.run(
+        [
+            "icacls", str(path), "/inheritance:r", "/grant:r",
+            f"*{sid}:(F)", "*S-1-5-18:(F)", "*S-1-5-32-544:(F)",
+        ],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=15,
+    )
+    if result.returncode != 0:
+        raise OSError("Unable to apply the Windows credential ACL.")
+    # /grant:r replaces grants for the named principals but Windows can retain
+    # unrelated explicit ACEs from a pre-created file. Remove those identities
+    # before proving the final exact protected DACL.
+    _remove_unapproved_windows_aces(path, sid)
+    _validate_windows_acl(path, sid)
+
+
+def _secure_atomic_write(path: Path, payload: bytes) -> None:
+    _reject_unsafe_path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _reject_unsafe_path(path)
+    if os.name == "posix":
+        path.parent.chmod(path.parent.stat().st_mode & ~0o077)
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(temporary, flags, 0o600)
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode):
+            raise OSError("Credential temporary file is not regular.")
+        if os.name == "posix" and before.st_mode & 0o077:
+            raise OSError("Credential temporary file mode is not restrictive.")
+        if os.name == "nt":
+            os.close(descriptor)
+            descriptor = None
+            _secure_windows_file(temporary)
+            descriptor = os.open(temporary, os.O_WRONLY | getattr(os, "O_BINARY", 0))
+        view = memoryview(payload)
+        while view:
+            written = os.write(descriptor, view)
+            view = view[written:]
+        os.fsync(descriptor)
+        os.close(descriptor)
+        descriptor = None
+        if os.name == "nt":
+            _validate_windows_acl(temporary, _windows_current_sid())
+        os.replace(temporary, path)
+        if os.name == "posix":
+            directory = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
+        _validate_agent_credential_file(path)
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def _validate_agent_credential_file(path: Path) -> None:
+    _reject_unsafe_path(path)
+    info = path.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        raise OSError("Credential file is not regular.")
+    if os.name == "posix" and info.st_mode & 0o077:
+        raise OSError("Credential file mode is not restrictive.")
+    if os.name == "nt":
+        _validate_windows_acl(path, _windows_current_sid())
+
+
+def preflight_agent_token_storage() -> None:
+    """Prove secure persistence capability without handling a real token."""
+    path = credentials_path()
+    probe = path.with_name(f".{path.name}.{uuid4().hex}.preflight")
+    try:
+        _secure_atomic_write(probe, b"{}")
+    finally:
+        probe.unlink(missing_ok=True)
 
 
 def load_agent_token() -> str | None:
@@ -1104,6 +1289,8 @@ def load_agent_token() -> str | None:
 
     if not path.exists():
         return None
+
+    _validate_agent_credential_file(path)
 
     value = json.loads(
         path.read_text(

@@ -36,6 +36,22 @@ PRIVATE_KEY_BLOCK = re.compile(
 BEARER_CREDENTIAL = re.compile(
     r"(?i)\bBearer\s+(?P<token>[A-Za-z0-9._~+/=-]{20,})"
 )
+BASIC_CREDENTIAL = re.compile(
+    r"(?i)\bBasic\s+(?P<token>[A-Za-z0-9+/=]{20,})"
+)
+OPENAI_CREDENTIAL = re.compile(
+    r"(?<![A-Za-z0-9_])sk-[A-Za-z0-9_-]{20,255}(?![A-Za-z0-9_])"
+)
+GROQ_CREDENTIAL = re.compile(
+    r"(?<![A-Za-z0-9_])gsk_[A-Za-z0-9_-]{20,255}(?![A-Za-z0-9_])"
+)
+TOPO_CREDENTIAL = re.compile(
+    r"(?<![A-Za-z0-9_])topo_(?:api|agent|enroll)_[A-Za-z0-9._~-]{20,255}"
+)
+DATABASE_URL_CREDENTIAL = re.compile(
+    r"(?i)\b(?:postgres(?:ql)?|mysql(?:\+[a-z0-9]+)?)://[^\s/:]+:"
+    r"(?P<password>[^\s/@]+)@"
+)
 
 SENSITIVE_ASSIGNMENT_NAMES = frozenset(
     {
@@ -48,6 +64,7 @@ SENSITIVE_ASSIGNMENT_NAMES = frozenset(
         "DATADOG_APP_KEY",
         "GCP_SERVICE_ACCOUNT_KEY",
         "GITHUB_TOKEN",
+        "GROQ_API_KEY",
         "GITLAB_TOKEN",
         "GOOGLE_API_KEY",
         "JENKINS_TOKEN",
@@ -76,7 +93,7 @@ PLACEHOLDER = re.compile(
     r"dummy(?:[-_ ].*)?|"
     r"test[-_ ]?only(?:[-_ ].*)?|"
     r"your(?:[-_ ].*)?|"
-    r"not[-_ ]set|"
+    r"not[-_ ]set|password|"
     r"none|"
     r"null"
     r")$"
@@ -131,10 +148,23 @@ def scan_text(path: str, text: str) -> list[Finding]:
         ("GitHub credential candidate", GITHUB_CREDENTIAL),
         ("AWS access-key ID candidate", AWS_ACCESS_KEY_ID),
         ("Private-key block", PRIVATE_KEY_BLOCK),
+        ("OpenAI credential candidate", OPENAI_CREDENTIAL),
+        ("Groq credential candidate", GROQ_CREDENTIAL),
+        ("Topo credential candidate", TOPO_CREDENTIAL),
     )
     for category, pattern in fixed_patterns:
         for match in pattern.finditer(text):
             findings.add(Finding(path, _line_number(text, match.start()), category))
+
+    for match in DATABASE_URL_CREDENTIAL.finditer(text):
+        if not is_placeholder_or_reference(match.group("password")):
+            findings.add(
+                Finding(
+                    path,
+                    _line_number(text, match.start()),
+                    "Credential-bearing database URL",
+                )
+            )
 
     for match in BEARER_CREDENTIAL.finditer(text):
         if not is_placeholder_or_reference(match.group("token")):
@@ -144,6 +174,12 @@ def scan_text(path: str, text: str) -> list[Finding]:
                     _line_number(text, match.start()),
                     "Literal bearer credential",
                 )
+            )
+
+    for match in BASIC_CREDENTIAL.finditer(text):
+        if not is_placeholder_or_reference(match.group("token")):
+            findings.add(
+                Finding(path, _line_number(text, match.start()), "Literal basic credential")
             )
 
     for match in ASSIGNMENT.finditer(text):

@@ -1577,8 +1577,7 @@ def build_incident_briefing(
     except Exception as exc:
         warnings.append(
             "Operational context is unavailable; "
-            "the core causal briefing was preserved: "
-            f"{type(exc).__name__}: {exc}"
+            f"the core causal briefing was preserved ({type(exc).__name__})."
         )
 
     plan = None
@@ -1597,8 +1596,7 @@ def build_incident_briefing(
         except Exception as exc:
             warnings.append(
                 "Response guidance is unavailable; "
-                "the remaining briefing was preserved: "
-                f"{type(exc).__name__}: {exc}"
+                f"the remaining briefing was preserved ({type(exc).__name__})."
             )
     else:
         warnings.append(
@@ -1630,8 +1628,7 @@ def build_incident_briefing(
     except Exception as exc:
         warning = (
             "Historical intelligence is unavailable; "
-            "current incident evidence was preserved: "
-            f"{type(exc).__name__}: {exc}"
+            f"current incident evidence was preserved ({type(exc).__name__})."
         )
         warnings.append(warning)
         history = _empty_history(
@@ -1661,8 +1658,7 @@ def build_incident_briefing(
             warnings.append(
                 "Historical response intelligence is "
                 "unavailable; the baseline response plan "
-                "was preserved: "
-                f"{type(exc).__name__}: {exc}"
+                f"was preserved ({type(exc).__name__})."
             )
 
     outcome = load_incident_outcome(
@@ -1685,8 +1681,7 @@ def build_incident_briefing(
         except Exception as exc:
             warnings.append(
                 "The resolved incident outcome could not "
-                "be derived; the briefing remains useful: "
-                f"{type(exc).__name__}: {exc}"
+                f"be derived; the briefing remains useful ({type(exc).__name__})."
             )
 
     if context is not None:
@@ -1925,7 +1920,7 @@ def build_incident_briefing(
     if not openai_is_configured():
         warning = (
             "AI briefing summary is unavailable "
-            "because OPENAI_API_KEY is not configured."
+            "because the OpenAI installation credential is not configured."
         )
         return briefing.model_copy(
             update={
@@ -1958,8 +1953,7 @@ def build_incident_briefing(
     except Exception as exc:
         warning = (
             "OpenAI briefing summary failed; the "
-            "deterministic briefing was returned: "
-            f"{type(exc).__name__}: {exc}"
+            f"deterministic briefing was returned ({type(exc).__name__})."
         )
         return briefing.model_copy(
             update={

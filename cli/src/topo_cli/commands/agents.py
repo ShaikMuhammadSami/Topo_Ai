@@ -43,6 +43,11 @@ def create_token(
         min=1,
         max=100,
     ),
+    output_token_stdout: bool = typer.Option(
+        False,
+        "--output-token-stdout",
+        help="Print the one-time enrollment token to stdout.",
+    ),
 ) -> None:
     runtime = get_runtime(context)
 
@@ -57,6 +62,24 @@ def create_token(
                 max_uses=max_uses,
             )
     )
+
+    if output_token_stdout:
+        raw_token = result.get("enrollment_token")
+        if not isinstance(raw_token, str) or not raw_token:
+            raise RuntimeError("API did not return a one-time enrollment token.")
+        typer.echo(raw_token)
+        typer.echo(
+            "The one-time enrollment token was written to stdout and was not "
+            "stored by the CLI.",
+            err=True,
+        )
+        return
+
+    result = {
+        key: value
+        for key, value in result.items()
+        if key != "enrollment_token"
+    }
 
     render_data(
         result,

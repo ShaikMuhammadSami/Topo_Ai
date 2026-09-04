@@ -944,9 +944,8 @@ def build_historical_incident_intelligence(
                         [
                             *response.warnings,
                             "AI historical summary is "
-                            "unavailable because "
-                            "OPENAI_API_KEY is not "
-                            "configured.",
+                            "unavailable because the OpenAI "
+                            "installation credential is not configured.",
                         ]
                     )
                 ),
@@ -980,9 +979,7 @@ def build_historical_incident_intelligence(
                             "OpenAI historical summary "
                             "failed; deterministic "
                             "historical intelligence "
-                            "was returned: "
-                            f"{type(exc).__name__}: "
-                            f"{exc}",
+                            f"was returned ({type(exc).__name__}).",
                         ]
                     )
                 ),

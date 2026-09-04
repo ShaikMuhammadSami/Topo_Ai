@@ -1212,9 +1212,8 @@ def build_incident_response_intelligence(
                     [
                         *response.warnings,
                         "AI response-intelligence "
-                        "summary is unavailable "
-                        "because OPENAI_API_KEY is "
-                        "not configured.",
+                        "summary is unavailable because the OpenAI "
+                        "installation credential is not configured.",
                     ]
                 ),
             }
@@ -1246,8 +1245,7 @@ def build_incident_response_intelligence(
                         "OpenAI response-intelligence "
                         "summary failed; deterministic "
                         "response intelligence was "
-                        "returned: "
-                        f"{type(exc).__name__}: {exc}",
+                        f"returned ({type(exc).__name__}).",
                     ]
                 ),
             }

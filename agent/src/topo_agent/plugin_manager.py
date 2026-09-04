@@ -15,6 +15,7 @@ from topo_agent.plugin import (
     PluginCollectionResult,
     PluginDiagnostic,
 )
+from topo_agent.security import safe_exception_message
 
 
 LOGGER = logging.getLogger(
@@ -90,10 +91,7 @@ class PluginManager:
                 result = PluginDiagnostic(
                     name=plugin.name,
                     status="failed",
-                    message=(
-                        f"{type(exc).__name__}: "
-                        f"{exc}"
-                    ),
+                    message=safe_exception_message(exc, "Plugin diagnostics failed"),
                     capabilities=list(
                         plugin.capabilities
                     ),
@@ -167,12 +165,7 @@ class PluginManager:
                             plugin
                             .capabilities
                         ),
-                        errors=[
-                            (
-                                f"{type(exc).__name__}: "
-                                f"{exc}"
-                            )
-                        ],
+                        errors=[safe_exception_message(exc, "Plugin collection failed")],
                         duration_ms=round(
                             (
                                 time

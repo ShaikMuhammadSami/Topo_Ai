@@ -101,7 +101,7 @@ class ApiCredentialView(BaseModel):
 
 
 class ApiCredentialCreated(ApiCredentialView):
-    api_credential: str
+    api_credential: str = Field(repr=False)
 
 
 class BrowserSessionView(BaseModel):

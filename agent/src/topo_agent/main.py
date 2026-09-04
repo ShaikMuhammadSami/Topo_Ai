@@ -22,6 +22,7 @@ from topo_agent.config import (
     config_path,
     credentials_path,
     load_agent_token,
+    preflight_agent_token_storage,
     load_config,
     save_config,
     store_agent_token,
@@ -33,6 +34,7 @@ from topo_agent.plugin_registry import (
 from topo_agent.runner import (
     AgentRunner,
 )
+from topo_agent.security import install_logging_redaction, safe_exception_message
 from topo_agent.change_watch import (
     ChangeWatchRunner,
 )
@@ -78,6 +80,7 @@ console = Console()
 def _configure_logging(
     verbose: bool,
 ) -> None:
+    install_logging_redaction()
     logging.basicConfig(
         level=(
             logging.DEBUG
@@ -325,10 +328,6 @@ def enroll(
         None,
         "--kube-context",
     ),
-    enrollment_token: str | None = typer.Option(
-        None,
-        "--token",
-    ),
     token_stdin: bool = typer.Option(
         False,
         "--token-stdin",
@@ -348,7 +347,16 @@ def enroll(
         "--insecure",
     ),
 ) -> None:
-    token_value = enrollment_token
+    try:
+        preflight_agent_token_storage()
+    except OSError:
+        console.print(
+            "[red]Enrollment cannot continue because secure local credential "
+            "storage is unavailable.[/red]"
+        )
+        raise typer.Exit(1)
+
+    token_value: str | None = None
 
     if token_stdin:
         token_value = (
@@ -460,13 +468,14 @@ def enroll(
 
     save_config(config)
 
-    store_agent_token(
-        str(
-            response[
-                "agent_token"
-            ]
+    try:
+        store_agent_token(str(response["agent_token"]))
+    except OSError:
+        console.print(
+            "[red]Enrollment succeeded, but secure credential persistence failed. "
+            "Revoke this agent from an authenticated workstation and enroll again.[/red]"
         )
-    )
+        raise typer.Exit(1)
 
     console.print(
         "[green]Agent enrolled.[/green]"
@@ -546,7 +555,7 @@ def plugin_doctor(
 
     except ValueError as exc:
         console.print(
-            f"[red]{exc}[/red]"
+            f"[red]{safe_exception_message(exc, 'Plugin configuration failed')}[/red]"
         )
 
         raise typer.Exit(1)
@@ -634,7 +643,7 @@ def doctor() -> None:
         )
 
         result["backend_error"] = (
-            str(exc)
+            safe_exception_message(exc, "Backend health check failed")
         )
 
     finally:
@@ -659,7 +668,7 @@ def doctor() -> None:
 
     except Exception as exc:
         result["plugin_error"] = (
-            str(exc)
+            safe_exception_message(exc, "Plugin diagnostics failed")
         )
 
     table = Table(

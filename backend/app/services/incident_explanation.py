@@ -53,6 +53,7 @@ from app.services.llm_client import (
     generate_openai_structured,
     resolve_configured_provider,
 )
+from app.services.installation_secrets import installation_secret_text
 
 PROMPT_VERSION = (
     "incident-explanation-groq-0.1.0"
@@ -1287,13 +1288,11 @@ def _groq_explanation(
     evidence: list[GroundingEvidence],
     model_name: str,
 ) -> GeneratedIncidentExplanation:
-    api_key = os.getenv(
-        "GROQ_API_KEY"
-    )
+    api_key = installation_secret_text("groq")
 
     if not api_key:
         raise ExplanationGenerationError(
-            "GROQ_API_KEY is not configured."
+            "Groq installation credential is not configured."
         )
 
     client = Groq(
@@ -1364,9 +1363,8 @@ def _groq_explanation(
 
     except Exception as exc:
         raise ExplanationGenerationError(
-            "Groq request failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
+            f"Groq request failed ({type(exc).__name__})."
+        ) from None
 
     content = (
         response
@@ -1386,12 +1384,10 @@ def _groq_explanation(
             .model_validate_json(content)
         )
 
-    except Exception as exc:
+    except Exception:
         raise ExplanationGenerationError(
-            "Groq returned an invalid "
-            "structured explanation: "
-            f"{exc}"
-        ) from exc
+            "Groq returned an invalid structured explanation."
+        ) from None
 
     _validate_explanation(
         explanation=explanation,
@@ -1439,10 +1435,10 @@ def _openai_explanation(
             )
         )
 
-    except Exception as exc:
+    except Exception:
         raise ExplanationGenerationError(
-            str(exc)
-        ) from exc
+            "OpenAI explanation generation failed."
+        ) from None
 
     _validate_explanation(
         explanation=explanation,
@@ -1537,15 +1533,14 @@ def generate_incident_explanation(
             ):
                 raise (
                     ExplanationGenerationError(
-                        str(exc)
+                        "OpenAI explanation generation failed."
                     )
-                ) from exc
+                ) from None
 
             warnings.append(
                 "OpenAI generation failed; "
                 "deterministic fallback was "
-                "used: "
-                f"{type(exc).__name__}: {exc}"
+                f"used ({type(exc).__name__})."
             )
             provider = (
                 ExplanationProvider
@@ -1585,15 +1580,14 @@ def generate_incident_explanation(
             ):
                 raise (
                     ExplanationGenerationError(
-                        str(exc)
+                        "Groq explanation generation failed."
                     )
-                ) from exc
+                ) from None
 
             warnings.append(
                 "Groq generation failed; "
                 "deterministic fallback was "
-                "used: "
-                f"{type(exc).__name__}: {exc}"
+                f"used ({type(exc).__name__})."
             )
 
             provider = (
