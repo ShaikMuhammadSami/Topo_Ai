@@ -137,6 +137,38 @@ class TrackedSecretScannerTests(unittest.TestCase):
 
         self.assertNotIn("backend/.env", tracked)
 
+    def test_ph4e_hostile_positive_and_negative_corpus_never_prints_values(self) -> None:
+        import secrets
+
+        positive = {
+            "OpenAI credential candidate": "s" + "k-" + secrets.token_hex(20),
+            "Groq credential candidate": "g" + "sk_" + secrets.token_hex(20),
+            "GitHub credential candidate": "gh" + "p_" + secrets.token_hex(20),
+            "Topo credential candidate": "topo_" + "api_" + secrets.token_hex(20),
+            "Literal basic credential": "Basic " + secrets.token_hex(20),
+            "Credential-bearing database URL": (
+                "postgresql://operator:" + secrets.token_hex(20) + "@db.example/topo"
+            ),
+        }
+        for category, value in positive.items():
+            with self.subTest(category=category):
+                findings = SCANNER.scan_text("ph4e-hostile.txt", value)
+                rendered = SCANNER.render_findings(findings)
+                self.assertTrue(any(item.category == category for item in findings))
+                self.assertNotIn(value, rendered)
+
+        negative = "\n".join(
+            (
+                "OPENAI_API_KEY=${OPENAI_API_KEY}",
+                "GROQ_API_KEY=<groq-api-key>",
+                "TOPO_GITHUB_TOKEN=replace-me",
+                "postgresql://topo:<password>@127.0.0.1:5432/topo",
+                "token_count=42",
+                "secret_ref=secret:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            )
+        )
+        self.assertEqual(SCANNER.scan_text("ph4e-placeholders.txt", negative), [])
+
 
 if __name__ == "__main__":
     unittest.main()
