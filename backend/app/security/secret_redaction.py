@@ -53,6 +53,9 @@ _TOKEN_PREFIX = re.compile(
     r"topo_(?:api|agent|enroll)_[A-Za-z0-9._~-]{8,})\b"
 )
 _URL_TEXT = re.compile(r"https?://[^\s<>\"']+")
+_DATABASE_URL_TEXT = re.compile(
+    r"(?i)\bpostgres(?:ql)?(?:\+[a-z0-9_.-]+)?://[^\s<>\"']+"
+)
 _ASSIGNMENT = re.compile(
     r"(?i)\b(api[_-]?key|client[_-]?secret|access[_-]?token|refresh[_-]?token|"
     r"password|passwd|authorization|cookie|signing[_-]?secret)\s*[:=]\s*"
@@ -115,6 +118,7 @@ def safe_text(value: str, *, maximum: int = MAX_TEXT) -> str:
     text = _AUTH_TEXT.sub(lambda match: f"{match.group(1)} {REDACTED}", text)
     text = _TOKEN_PREFIX.sub(REDACTED, text)
     text = _ASSIGNMENT.sub(lambda match: f"{match.group(1)}={REDACTED}", text)
+    text = _DATABASE_URL_TEXT.sub(UNAVAILABLE, text)
     text = _URL_TEXT.sub(lambda match: safe_url(match.group(0)), text)
     return text[: max(maximum, 0)]
 
