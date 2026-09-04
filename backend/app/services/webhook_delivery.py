@@ -203,10 +203,9 @@ def deliver_event_to_endpoint(
                 response.status_code
             )
 
-            response_body = response.text[:4000]
-            for sensitive in sensitive_values:
-                if sensitive:
-                    response_body = response_body.replace(sensitive, "[REDACTED]")
+            # Remote bodies are untrusted and may echo request credentials.
+            # Status is retained; arbitrary remote text is never persisted.
+            response_body = None
 
             if (
                 200

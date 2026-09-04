@@ -38,6 +38,33 @@ class TrackedSecretScannerTests(unittest.TestCase):
             any(finding.category == "AWS access-key ID candidate" for finding in findings)
         )
 
+    def test_rejects_current_outbound_and_client_credential_shapes_safely(self) -> None:
+        candidates = {
+            "OpenAI credential candidate": "s" + "k-" + ("A" * 28),
+            "Groq credential candidate": "g" + "sk_" + ("B" * 28),
+            "Topo credential candidate": "topo_" + "agent_" + ("C" * 28),
+            "Literal basic credential": "Basic " + ("D" * 28),
+            "Credential-bearing database URL": "postgresql://operator:" + ("E" * 28) + "@db.example/topo",
+        }
+        for category, candidate in candidates.items():
+            with self.subTest(category=category):
+                findings = SCANNER.scan_text("synthetic.txt", candidate)
+                rendered = SCANNER.render_findings(findings)
+                self.assertTrue(any(item.category == category for item in findings))
+                self.assertNotIn(candidate, rendered)
+
+    def test_detects_groq_assignment_but_accepts_placeholder(self) -> None:
+        name = "GROQ_" + "API_KEY"
+        findings = SCANNER.scan_text("synthetic.env", f"{name}={'x' * 32}\n")
+        self.assertTrue(findings)
+        self.assertEqual(SCANNER.scan_text("placeholder.env", f"{name}=replace-me\n"), [])
+
+    def test_accepts_explicit_database_url_password_placeholders(self) -> None:
+        for value in ("password", "<password>", "replace-me"):
+            with self.subTest(value=value):
+                candidate = "postgresql://" + f"topo:{value}@127.0.0.1:5432/topo"
+                self.assertEqual(SCANNER.scan_text("example.md", candidate), [])
+
     def test_rejects_literal_provider_credential_assignment(self) -> None:
         name = "AZURE_CLIENT_" + "SECRET"
         candidate = "s" * 32

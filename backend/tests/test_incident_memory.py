@@ -1025,9 +1025,10 @@ def test_central_client_uses_responses_api(
 def test_openai_is_default_but_can_be_disabled(
     monkeypatch,
 ) -> None:
-    monkeypatch.setenv(
-        "OPENAI_API_KEY",
-        "test-key",
+    monkeypatch.setattr(
+        llm_client,
+        "installation_secret_is_configured",
+        lambda integration: integration == "openai",
     )
     monkeypatch.delenv(
         "TOPO_AI_LLM_PROVIDER",

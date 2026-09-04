@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from topo_agent.security import safe_exception_message
 import time
 from typing import Any
 
@@ -103,7 +104,7 @@ class AgentRunner:
                 )
 
             except AgentClientError as exc:
-                self.last_error = str(exc)
+                self.last_error = safe_exception_message(exc, "Agent heartbeat failed")
 
                 LOGGER.warning(
                     "Unable to replay "
@@ -180,10 +181,7 @@ class AgentRunner:
                 "collection_failed"
             )
 
-            self.last_error = (
-                f"{type(exc).__name__}: "
-                f"{exc}"
-            )
+            self.last_error = safe_exception_message(exc, "Topology collection failed")
 
             LOGGER.exception(
                 "Topology collection failed."
@@ -220,7 +218,7 @@ class AgentRunner:
                 "buffered"
             )
 
-            self.last_error = str(exc)
+            self.last_error = safe_exception_message(exc, "Agent collection failed")
 
             LOGGER.warning(
                 "Snapshot submission failed. "

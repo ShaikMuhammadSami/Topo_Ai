@@ -61,6 +61,7 @@ def run_migrations_online() -> None:
         section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        hide_parameters=True,
     )
     with connectable.connect() as connection:
         _run_with_connection(connection)

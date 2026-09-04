@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from topo_agent.security import safe_exception_message
 import os
 import time
 from dataclasses import dataclass
@@ -416,7 +417,7 @@ class TopoRuntimeSensor:
                 )
 
             except AgentClientError as exc:
-                self.last_error = str(exc)
+                self.last_error = safe_exception_message(exc, "Sensor heartbeat failed")
                 break
 
             self.buffer.remove(path)
@@ -490,7 +491,7 @@ class TopoRuntimeSensor:
                 batch
             )
 
-            self.last_error = str(exc)
+            self.last_error = safe_exception_message(exc, "Sensor event processing failed")
 
             LOGGER.warning(
                 "Runtime batch buffered: %s",
@@ -618,7 +619,7 @@ class TopoRuntimeSensor:
 
                 except AgentClientError as exc:
                     self.last_error = (
-                        str(exc)
+                        safe_exception_message(exc, "Sensor delivery failed")
                     )
 
                     LOGGER.warning(

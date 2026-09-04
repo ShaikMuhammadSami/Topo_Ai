@@ -978,7 +978,7 @@ def build_incident_execution_readiness(
                     [
                         *response.warnings,
                         "AI execution-readiness summary is unavailable "
-                        "because OPENAI_API_KEY is not configured; the "
+                        "because the OpenAI installation credential is not configured; the "
                         "deterministic readiness result is unchanged.",
                     ]
                 ),
@@ -1009,8 +1009,7 @@ def build_incident_execution_readiness(
                         *response.warnings,
                         "OpenAI execution-readiness summary failed; "
                         "the deterministic readiness result is "
-                        "unchanged: "
-                        f"{type(exc).__name__}: {exc}",
+                        f"unchanged ({type(exc).__name__}).",
                     ]
                 ),
             }

@@ -5,6 +5,8 @@ from dataclasses import dataclass
 import typer
 from rich.console import Console
 
+from topo_cli.security import safe_error_text
+
 
 console = Console(stderr=True)
 
@@ -25,6 +27,9 @@ class ExitCode:
 class TopoCliError(Exception):
     message: str
     exit_code: int
+
+    def __post_init__(self) -> None:
+        self.message = safe_error_text(self.message)
 
     def __str__(self) -> str:
         return self.message
@@ -104,7 +109,7 @@ class FileOperationFailure(TopoCliError):
 def abort(error: TopoCliError) -> None:
     console.print(
         f"[bold red]Error:[/bold red] "
-        f"{error.message}"
+        f"{safe_error_text(error.message)}"
     )
 
     raise typer.Exit(

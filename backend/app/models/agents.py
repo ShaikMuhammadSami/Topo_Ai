@@ -46,7 +46,7 @@ class AgentEnrollmentTokenResponse(BaseModel):
     )
 
     enrollment_token_id: str
-    enrollment_token: str
+    enrollment_token: str = Field(repr=False)
     token_hint: str
     label: str | None
     max_uses: int
@@ -72,6 +72,7 @@ class AgentEnrollRequest(BaseModel):
     enrollment_token: str = Field(
         min_length=16,
         max_length=1000,
+        repr=False,
     )
 
     name: str = Field(
@@ -137,7 +138,7 @@ class AgentEnrollResponse(BaseModel):
     )
 
     agent_id: str
-    agent_token: str
+    agent_token: str = Field(repr=False)
     enrolled_at: str
     config: AgentConfigView
 

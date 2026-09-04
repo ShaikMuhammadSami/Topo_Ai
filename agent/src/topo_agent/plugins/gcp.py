@@ -42,6 +42,7 @@ from topo_agent.plugin import (
     PluginCollectionResult,
     PluginDiagnostic,
 )
+from topo_agent.security import safe_exception_message
 
 
 LOGGER = logging.getLogger(
@@ -1920,7 +1921,10 @@ class GcpPlugin:
                 RetryError,
             ) as exc:
                 errors.append(
-                    f"{group_name}: {exc}"
+                    safe_exception_message(
+                        exc,
+                        f"GCP Cloud Asset query failed for {group_name}",
+                    )
                 )
 
                 LOGGER.warning(
@@ -1928,7 +1932,7 @@ class GcpPlugin:
                     "failed for %s/%s: %s",
                     project_id,
                     group_name,
-                    exc,
+                    type(exc).__name__,
                 )
 
         return result, errors
@@ -1987,8 +1991,10 @@ class GcpPlugin:
             RetryError,
         ) as exc:
             errors.append(
-                f"{project_id}/hierarchy: "
-                f"{exc}"
+                safe_exception_message(
+                    exc,
+                    f"GCP hierarchy collection failed for {project_id}",
+                )
             )
 
         collectors = (
@@ -2020,8 +2026,10 @@ class GcpPlugin:
                 RetryError,
             ) as exc:
                 errors.append(
-                    f"{project_id}/{name}: "
-                    f"{exc}"
+                    safe_exception_message(
+                        exc,
+                        f"GCP collection failed for {project_id}/{name}",
+                    )
                 )
 
                 LOGGER.warning(
@@ -2029,7 +2037,7 @@ class GcpPlugin:
                     "for %s/%s: %s",
                     project_id,
                     name,
-                    exc,
+                    type(exc).__name__,
                 )
 
         assets, asset_errors = (
@@ -2102,7 +2110,7 @@ class GcpPlugin:
             return PluginDiagnostic(
                 name=self.name,
                 status="failed",
-                message=str(exc),
+                message=safe_exception_message(exc, "GCP discovery failed"),
                 capabilities=list(
                     self.capabilities
                 ),
@@ -2155,7 +2163,7 @@ class GcpPlugin:
                 capabilities=list(
                     self.capabilities
                 ),
-                errors=[str(exc)],
+                errors=[safe_exception_message(exc, "GCP diagnostics failed")],
             )
 
         if not project_ids:

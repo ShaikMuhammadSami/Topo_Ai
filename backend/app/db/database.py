@@ -43,6 +43,7 @@ if make_url(DATABASE_URL).get_backend_name() == "sqlite":
 engine = create_engine(
     DATABASE_URL,
     connect_args=connect_args,
+    hide_parameters=True,
 )
 
 

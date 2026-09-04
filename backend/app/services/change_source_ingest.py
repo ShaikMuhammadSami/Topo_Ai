@@ -901,7 +901,7 @@ def ingest_change_source_webhook(
         if delivery is None or source is None:
             raise
 
-        error = f"{type(exc).__name__}: " f"{exc}"
+        error = f"Change source processing failed ({type(exc).__name__})."
 
         delivery.status = "dead_letter"
 
@@ -934,7 +934,7 @@ def ingest_change_source_webhook(
 
         tenant_commit(session, tenant_id=tenant_id)
 
-        raise
+        raise RuntimeError(error) from None
 
 
 def replay_dead_letter(
@@ -1087,7 +1087,7 @@ def replay_dead_letter(
         if dead_letter is not None:
             dead_letter.status = "pending"
 
-            dead_letter.reason = f"{type(exc).__name__}: " f"{exc}"
+            dead_letter.reason = f"Change source replay failed ({type(exc).__name__})."
 
             dead_letter.last_attempt_at = utc_now_iso()
 
@@ -1097,5 +1097,5 @@ def replay_dead_letter(
             dead_letter_id=(dead_letter_id),
             succeeded=False,
             event_ids=[],
-            error=str(exc),
+            error=f"Change source replay failed ({type(exc).__name__}).",
         )

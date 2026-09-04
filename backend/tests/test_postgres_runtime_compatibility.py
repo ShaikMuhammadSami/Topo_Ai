@@ -2134,7 +2134,7 @@ def test_authenticated_change_source_receipt_survives_downstream_failure(
             sort_keys=True,
         ).encode()
         with pytest.raises(
-            RuntimeError, match="deterministic downstream fixture failure"
+            RuntimeError, match=r"Change source processing failed \(RuntimeError\)\."
         ):
             change_source_ingest.ingest_change_source_webhook(
                 session,

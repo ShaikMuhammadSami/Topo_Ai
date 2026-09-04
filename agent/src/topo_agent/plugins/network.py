@@ -13,6 +13,7 @@ from topo_agent.plugin import (
     PluginCollectionResult,
     PluginDiagnostic,
 )
+from topo_agent.security import safe_exception_message
 
 
 def _address(
@@ -90,10 +91,8 @@ class NetworkPlugin:
             return PluginDiagnostic(
                 name=self.name,
                 status="failed",
-                message=(
-                    "Access to network "
-                    f"connections was denied: "
-                    f"{exc}"
+                message=safe_exception_message(
+                    exc, "Access to network connections was denied"
                 ),
                 capabilities=list(
                     self.capabilities
@@ -141,13 +140,9 @@ class NetworkPlugin:
                 capabilities=list(
                     self.capabilities
                 ),
-                errors=[
-                    (
-                        "Access to network "
-                        "connections was denied: "
-                        f"{exc}"
-                    )
-                ],
+                errors=[safe_exception_message(
+                    exc, "Access to network connections was denied"
+                )],
             )
 
         for connection in values:

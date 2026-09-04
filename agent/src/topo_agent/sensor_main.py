@@ -4,6 +4,7 @@ import json
 import logging
 
 import typer
+from topo_agent.security import install_logging_redaction, safe_exception_message
 from rich.console import Console
 from rich.table import Table
 
@@ -40,7 +41,7 @@ def _sensor(
 
     except ValueError as exc:
         raise typer.BadParameter(
-            str(exc)
+            safe_exception_message(exc, "Sensor startup failed")
         ) from exc
 
 
@@ -108,6 +109,7 @@ def run(
         "-v",
     ),
 ) -> None:
+    install_logging_redaction()
     logging.basicConfig(
         level=(
             logging.DEBUG

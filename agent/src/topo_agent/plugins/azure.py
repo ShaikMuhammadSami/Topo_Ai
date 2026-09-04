@@ -43,6 +43,7 @@ from topo_agent.plugin import (
     PluginCollectionResult,
     PluginDiagnostic,
 )
+from topo_agent.security import safe_exception_message
 
 
 LOGGER = logging.getLogger(
@@ -1338,7 +1339,7 @@ class AzurePlugin:
             return PluginDiagnostic(
                 name=self.name,
                 status="failed",
-                message=str(exc),
+                message=safe_exception_message(exc, "Azure discovery failed"),
                 capabilities=list(
                     self.capabilities
                 ),
@@ -1565,14 +1566,17 @@ class AzurePlugin:
                 ServiceRequestError,
             ) as exc:
                 errors.append(
-                    f"{query_name}: {exc}"
+                    safe_exception_message(
+                        exc,
+                        f"Azure Resource Graph query failed for {query_name}",
+                    )
                 )
 
                 LOGGER.warning(
                     "Azure Resource Graph "
                     "query failed for %s: %s",
                     query_name,
-                    exc,
+                    type(exc).__name__,
                 )
 
                 continue

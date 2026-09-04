@@ -8,6 +8,7 @@ from topo_cli.config import (
     config_file_path,
     save_config,
 )
+from topo_cli.security import validate_api_url
 from topo_cli.errors import (
     ConfigurationError,
     InputValidationFailure,
@@ -235,16 +236,6 @@ def set_profile(
     ),
 ) -> None:
     runtime = get_runtime(context)
-    max_retries=(
-     max_retries
-     if max_retries is not None
-     else existing.max_retries
-    ),
-    retry_backoff=(
-     retry_backoff
-     if retry_backoff is not None
-     else existing.retry_backoff
-    ),
 
     if verify_tls and insecure:
         abort(
@@ -267,22 +258,12 @@ def set_profile(
     if insecure:
         tls_value = False
 
-    api_url = (
-        server
-        or existing.api_url
-        or DEFAULT_API_URL
-    ).rstrip("/")
-
-    if not api_url.startswith(
-        (
-            "http://",
-            "https://",
-        )
-    ):
+    try:
+        api_url = validate_api_url(server or existing.api_url or DEFAULT_API_URL)
+    except ValueError as exc:
         abort(
             InputValidationFailure(
-                "Server URL must start with "
-                "http:// or https://"
+                str(exc)
             )
         )
 
@@ -303,6 +284,12 @@ def set_profile(
                 capture_path
                 or existing
                 .snapshot_capture_path
+            ),
+            max_retries=(
+                max_retries if max_retries is not None else existing.max_retries
+            ),
+            retry_backoff=(
+                retry_backoff if retry_backoff is not None else existing.retry_backoff
             ),
         )
     )

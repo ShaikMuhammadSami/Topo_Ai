@@ -133,7 +133,9 @@ def _aad(record, version):
 class SecretStore(Protocol):
     def put(self, session: Session, binding: SecretBinding, material: SecretMaterial, *, operation_id: str, actor: str) -> SecretDescriptor: ...
     def describe(self, session: Session, binding: SecretBinding, secret_ref: str) -> SecretDescriptor: ...
+    def describe_for_binding(self, session: Session, binding: SecretBinding) -> SecretDescriptor: ...
     def get_for_use(self, session: Session, binding: SecretBinding, secret_ref: str) -> tuple[SecretMaterial, ...]: ...
+    def get_for_binding(self, session: Session, binding: SecretBinding) -> tuple[SecretMaterial, ...]: ...
     def rotate(self, session: Session, binding: SecretBinding, secret_ref: str, material: SecretMaterial, *, operation_id: str, actor: str, expected_row_version: int, overlap_seconds: int = 0) -> SecretDescriptor: ...
     def revoke(self, session: Session, binding: SecretBinding, secret_ref: str, *, actor: str, expected_row_version: int) -> SecretDescriptor: ...
     def reprovision(self, session: Session, binding: SecretBinding, secret_ref: str, material: SecretMaterial, *, operation_id: str, actor: str, expected_row_version: int) -> SecretDescriptor: ...
@@ -270,6 +272,11 @@ class EncryptedDatabaseSecretStore:
             return self._descriptor(self._record(session, binding, secret_ref))
 
     @_safe_database_errors
+    def describe_for_binding(self, session, binding):
+        with session.no_autoflush:
+            return self._descriptor(self._record(session, binding))
+
+    @_safe_database_errors
     def get_for_use(self, session, binding, secret_ref):
         with session.no_autoflush:
             record = self._record(session, binding, secret_ref)
@@ -277,6 +284,17 @@ class EncryptedDatabaseSecretStore:
                 raise SecretStoreError("SECRET_REVOKED")
             return tuple(self._decrypt(record, self._version(session, binding, record, version=v))
                          for v in _usable_versions(record, utc_now()))
+
+    @_safe_database_errors
+    def get_for_binding(self, session, binding):
+        with session.no_autoflush:
+            record = self._record(session, binding)
+            if record.status == "revoked":
+                raise SecretStoreError("SECRET_REVOKED")
+            return tuple(
+                self._decrypt(record, self._version(session, binding, record, version=v))
+                for v in _usable_versions(record, utc_now())
+            )
 
     @_safe_database_errors
     def rotate(self, session, binding, secret_ref, material, *, operation_id, actor,

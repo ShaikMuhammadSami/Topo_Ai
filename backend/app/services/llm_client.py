@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 from dataclasses import dataclass
 from enum import Enum
 from typing import (
@@ -13,27 +12,14 @@ from typing import (
 from openai import OpenAI
 from pydantic import BaseModel
 
+from app.security.secret_redaction import sanitize_structured
+from app.services.installation_secrets import (
+    installation_secret_is_configured,
+    installation_secret_text,
+)
+
 
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
-
-SENSITIVE_KEY_PARTS = {
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "api_key",
-    "apikey",
-    "authorization",
-    "credential",
-    "private_key",
-    "client_secret",
-    "cookie",
-}
-
-BEARER_PATTERN = re.compile(
-    r"(?i)\bBearer\s+"
-    r"[A-Za-z0-9._~+/=-]{12,}"
-)
 
 ModelT = TypeVar(
     "ModelT",
@@ -58,9 +44,7 @@ class OpenAITextResult:
 
 
 def openai_is_configured() -> bool:
-    return bool(
-        os.getenv("OPENAI_API_KEY", "").strip()
-    )
+    return installation_secret_is_configured("openai")
 
 
 def configured_openai_model() -> str:
@@ -90,7 +74,7 @@ def resolve_configured_provider(
 
     if (
         configured == "groq"
-        and os.getenv("GROQ_API_KEY", "").strip()
+        and installation_secret_is_configured("groq")
     ):
         return "groq"
 
@@ -100,87 +84,20 @@ def resolve_configured_provider(
     return "deterministic"
 
 
-def _is_sensitive_key(value: str) -> bool:
-    normalized = (
-        value.lower()
-        .replace("-", "_")
-        .replace(".", "_")
-    )
-
-    return any(
-        part in normalized
-        for part in SENSITIVE_KEY_PARTS
-    )
-
-
 def sanitize_untrusted_data(
     value: Any,
     *,
     depth: int = 0,
 ) -> Any:
-    if depth >= 6:
-        return str(value)[:500]
-
-    if isinstance(value, Enum):
-        return value.value
-
-    if isinstance(value, BaseModel):
-        return sanitize_untrusted_data(
-            value.model_dump(mode="json"),
-            depth=depth + 1,
-        )
-
-    if isinstance(value, dict):
-        result: dict[str, Any] = {}
-
-        for key, item in list(
-            value.items()
-        )[:100]:
-            key_value = str(key)
-
-            result[key_value] = (
-                "[REDACTED]"
-                if _is_sensitive_key(
-                    key_value
-                )
-                else sanitize_untrusted_data(
-                    item,
-                    depth=depth + 1,
-                )
-            )
-
-        return result
-
-    if isinstance(
-        value,
-        (list, tuple, set),
-    ):
-        return [
-            sanitize_untrusted_data(
-                item,
-                depth=depth + 1,
-            )
-            for item in list(value)[:100]
-        ]
-
-    if isinstance(value, str):
-        return BEARER_PATTERN.sub(
-            "Bearer [REDACTED]",
-            value,
-        )[:5000]
-
-    return value
+    return sanitize_structured(value, depth=depth)
 
 
 def _openai_client() -> OpenAI:
-    api_key = os.getenv(
-        "OPENAI_API_KEY",
-        "",
-    ).strip()
+    api_key = installation_secret_text("openai")
 
     if not api_key:
         raise OpenAIConfigurationError(
-            "OPENAI_API_KEY is not configured."
+            "OpenAI installation credential is not configured."
         )
 
     return OpenAI(
@@ -233,9 +150,8 @@ def generate_openai_text(
     except Exception as exc:
         raise OpenAIProviderError(
             "OpenAI Responses API request "
-            "failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
+            f"failed ({type(exc).__name__})."
+        ) from None
 
     text = str(
         getattr(response, "output_text", "")
@@ -298,9 +214,8 @@ def generate_openai_structured(
     except Exception as exc:
         raise OpenAIProviderError(
             "OpenAI Responses API request "
-            "failed: "
-            f"{type(exc).__name__}: {exc}"
-        ) from exc
+            f"failed ({type(exc).__name__})."
+        ) from None
 
     parsed = getattr(
         response,
@@ -321,8 +236,7 @@ def generate_openai_structured(
             parsed
         )
 
-    except Exception as exc:
+    except Exception:
         raise OpenAIProviderError(
-            "OpenAI returned invalid structured "
-            f"output: {exc}"
-        ) from exc
+            "OpenAI returned invalid structured output."
+        ) from None

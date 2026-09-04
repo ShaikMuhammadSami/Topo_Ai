@@ -78,12 +78,25 @@ def test_outbound_context_is_tenant_owned_before_sdk_call(hostile, monkeypatch, 
         captured.append(kwargs)
         raise RuntimeError("PH3G outbound transport deliberately unavailable")
 
-    monkeypatch.setenv("OPENAI_API_KEY", "ph3g-not-a-live-key")
-    monkeypatch.setenv("GROQ_API_KEY", "ph3g-not-a-live-key")
+    monkeypatch.setattr(
+        llm_client,
+        "installation_secret_is_configured",
+        lambda integration: integration == provider,
+    )
+    monkeypatch.setattr(
+        llm_client,
+        "installation_secret_text",
+        lambda integration: "ph3g-not-a-live-key" if integration == provider else None,
+    )
     monkeypatch.setenv("TOPO_AI_LLM_PROVIDER", provider)
     monkeypatch.setattr(llm_client, "OpenAI", lambda **_: SimpleNamespace(
         responses=SimpleNamespace(create=sdk_request, parse=sdk_request)))
     for module in (incident_explanation, incident_copilot, investigation_planner, post_incident_report):
+        monkeypatch.setattr(
+            module,
+            "installation_secret_text",
+            lambda integration: "ph3g-not-a-live-key" if integration == "groq" else None,
+        )
         monkeypatch.setattr(module, "Groq", lambda **_: SimpleNamespace(
             chat=SimpleNamespace(completions=SimpleNamespace(create=sdk_request))))
     with h.factory() as session:

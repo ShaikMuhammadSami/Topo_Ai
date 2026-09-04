@@ -31,6 +31,7 @@ from topo_agent.plugin import (
     PluginCollectionResult,
     PluginDiagnostic,
 )
+from topo_agent.security import safe_exception_message
 
 
 LOGGER = logging.getLogger(
@@ -445,7 +446,7 @@ class AwsPlugin:
             return PluginDiagnostic(
                 name=self.name,
                 status="failed",
-                message=str(exc),
+                message=safe_exception_message(exc, "AWS discovery failed"),
                 capabilities=list(
                     self.capabilities
                 ),
@@ -1854,8 +1855,10 @@ class AwsPlugin:
                 BotoCoreError,
             ) as exc:
                 errors.append(
-                    f"{region}/{service_name}: "
-                    f"{exc}"
+                    safe_exception_message(
+                        exc,
+                        f"AWS service collection failed for {region}/{service_name}",
+                    )
                 )
 
                 LOGGER.warning(
@@ -1863,7 +1866,7 @@ class AwsPlugin:
                     "failed for %s/%s: %s",
                     region,
                     service_name,
-                    exc,
+                    type(exc).__name__,
                 )
 
         if successful_collectors:

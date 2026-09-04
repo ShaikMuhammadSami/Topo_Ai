@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import time
+import re
 from typing import Any
 
 import httpx
+from urllib.parse import urlsplit
 
 
 class AgentClientError(Exception):
@@ -21,11 +23,7 @@ class AgentApiClient:
         max_retries: int,
         retry_backoff_seconds: float,
     ) -> None:
-        self.backend_url = (
-            backend_url.rstrip("/")
-        )
-
-        self.token = token
+        self.backend_url = _validate_backend_url(backend_url)
 
         headers = {
             "Accept": "application/json",
@@ -45,7 +43,7 @@ class AgentApiClient:
                 timeout_seconds
             ),
             verify=verify_tls,
-            follow_redirects=True,
+            follow_redirects=False,
         )
 
         self.max_retries = max(
@@ -119,6 +117,11 @@ class AgentApiClient:
                 )
                 continue
 
+            if 300 <= response.status_code < 400:
+                raise AgentClientError(
+                    "Backend redirect was not accepted."
+                )
+
             if response.status_code >= 400:
                 try:
                     value = response.json()
@@ -127,9 +130,13 @@ class AgentApiClient:
                     )
 
                 except ValueError:
-                    detail = (
-                        response.text
-                    )
+                    detail = None
+
+                if (
+                    not isinstance(detail, str)
+                    or re.fullmatch(r"[A-Z][A-Z0-9_. -]{0,200}", detail) is None
+                ):
+                    detail = "Request failed."
 
                 raise AgentClientError(
                     f"API returned "
@@ -158,9 +165,11 @@ class AgentApiClient:
             return value
 
         raise AgentClientError(
-            "Unable to reach the Topo "
-            f"backend: {last_error}"
+            "Unable to reach the Topo backend."
         )
+
+    def __repr__(self) -> str:
+        return f"AgentApiClient(backend_url={self.backend_url!r}, token=<redacted>)"
 
     def health(
         self,
@@ -269,3 +278,23 @@ class AgentApiClient:
                 "signals": signals,
             },
         )
+
+
+def _validate_backend_url(value: str) -> str:
+    try:
+        parsed = urlsplit(value)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError()
+        parsed.port
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Backend URL must be http(s) without userinfo, query, or fragment."
+        ) from None
+    return value.rstrip("/")

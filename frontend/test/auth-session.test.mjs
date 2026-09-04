@@ -251,6 +251,38 @@ test("browser login sends the transient credential only as Authorization", async
 })
 
 
+test("credential-shaped backend detail is not exposed by browser errors", async () => {
+  const originalFetch = globalThis.fetch
+  const marker = "topo_api_" + "SYNTHETIC_FRONTEND_ERROR_1234567890"
+  globalThis.fetch = async () => Response.json(
+    { detail: `Authorization: Bearer ${marker}` },
+    { status: 500 },
+  )
+  try {
+    await assert.rejects(
+      apiRequest("/api/v1/example"),
+      (error) => {
+        assert.equal(error instanceof TopoApiError, true)
+        assert.doesNotMatch(String(error), new RegExp(marker))
+        return true
+      },
+    )
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+
+test("browser credential state has no persistent storage or URL authority", () => {
+  for (const value of [boundarySource, apiSource]) {
+    assert.doesNotMatch(value, /localStorage|sessionStorage|indexedDB/)
+  }
+  assert.match(boundarySource, /setCredential\(""\)/)
+  assert.doesNotMatch(apiSource, /[?&](?:token|credential|api_key)=/i)
+  assert.match(configSource, /parsed\.username \|\| parsed\.password \|\| parsed\.search \|\| parsed\.hash/)
+})
+
+
 test("401, 403 and backend failures remain distinct transport states", async () => {
   const originalFetch = globalThis.fetch
   const events = []
