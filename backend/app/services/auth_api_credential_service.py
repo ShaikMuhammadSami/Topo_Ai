@@ -14,6 +14,7 @@ from app.db.models import (
     AuthApiCredentialRecord,
     ServiceApiTenantBindingRecord,
 )
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER, PrincipalType
 from app.models.auth import (
     ApiCredentialCallerType,
     ApiCredentialCreate,
@@ -27,7 +28,16 @@ from app.repositories.auth_api_credential_repository import (
     update_auth_api_credential_last_used,
 )
 from app.repositories import tenant_repository
+from app.repositories import principal_identity_repository
 from app.security.principals import AuthPrincipal
+from app.services.principal_identity import (
+    PrincipalIdentityError,
+    PrincipalNotProvisionedError,
+    PrincipalTypeMismatchError,
+    create_service_principal,
+    provision_external_human_principal,
+    require_active_principal,
+)
 
 
 API_CREDENTIAL_PREFIX = "topo_api_"
@@ -92,6 +102,7 @@ def _record_roles(record: AuthApiCredentialRecord) -> tuple[str, ...] | None:
 
 
 def _active_resolution(
+    session: Session,
     record: AuthApiCredentialRecord,
     *,
     now: datetime,
@@ -118,13 +129,42 @@ def _active_resolution(
         if caller_type is ApiCredentialCallerType.HUMAN_API
         else "service_api_token"
     )
+    expected_type = (
+        PrincipalType.HUMAN
+        if caller_type is ApiCredentialCallerType.HUMAN_API
+        else PrincipalType.SERVICE
+    )
+    try:
+        durable_principal = require_active_principal(
+            session,
+            principal_id=record.principal_id,
+            principal_type=expected_type,
+        )
+    except (
+        PrincipalNotProvisionedError,
+        PrincipalTypeMismatchError,
+    ):
+        return None
+    identities = (
+        principal_identity_repository.list_external_identities_for_principal(
+            session,
+            durable_principal.principal_id,
+        )
+        if expected_type is PrincipalType.HUMAN
+        else []
+    )
+    identity = identities[0] if identities else None
     return ResolvedApiCredential(
         record=record,
         principal=AuthPrincipal(
+            principal_id=durable_principal.principal_id,
+            principal_type=durable_principal.principal_type,
             subject=record.subject,
-            display_name=record.display_name,
+            display_name=durable_principal.display_name,
             roles=roles,
             authentication_type=authentication_type,
+            external_issuer=identity.issuer if identity is not None else None,
+            external_subject=identity.subject if identity is not None else None,
         ),
     )
 
@@ -134,6 +174,7 @@ def create_auth_api_credential(
     *,
     request: ApiCredentialCreate,
     created_by_subject: str,
+    created_by_principal_id: str | None = None,
     now: datetime | None = None,
 ) -> ApiCredentialCreated:
     if (
@@ -144,7 +185,93 @@ def create_auth_api_credential(
         raise ValueError("A stable creator subject is required.")
     created_at = _as_utc(now or _utc_now())
     expires_at = created_at + timedelta(days=request.expires_in_days)
-    display_name = request.display_name or request.subject
+    if created_by_principal_id is None:
+        creator = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=created_by_subject,
+            display_name=created_by_subject,
+            authentication_type="api_token",
+        )
+        created_by_principal_id = creator.principal_id
+    if created_by_principal_id is None:
+        raise AuthApiCredentialPersistenceError("Principal identity is unavailable.")
+    require_active_principal(
+        session,
+        principal_id=created_by_principal_id,
+        principal_type=PrincipalType.HUMAN,
+    )
+
+    if request.caller_type is ApiCredentialCallerType.HUMAN_API:
+        if request.principal_id is None:
+            if request.subject is None:
+                raise ValueError("Human credential identity is required.")
+            target = provision_external_human_principal(
+                session,
+                issuer=LEGACY_LOCAL_ISSUER,
+                subject=request.subject,
+                display_name=request.display_name or request.subject,
+                authentication_type="human_api_token",
+                roles=tuple(request.roles),
+                now=created_at,
+            )
+            target_principal_id = target.principal_id
+            subject_metadata = request.subject
+            display_name = target.display_name
+        else:
+            target_record = require_active_principal(
+                session,
+                principal_id=request.principal_id,
+                principal_type=PrincipalType.HUMAN,
+            )
+            identities = principal_identity_repository.list_external_identities_for_principal(
+                session,
+                target_record.principal_id,
+            )
+            if not identities:
+                raise PrincipalNotProvisionedError("PRINCIPAL_NOT_PROVISIONED")
+            if request.subject is not None:
+                matching = next(
+                    (
+                        identity
+                        for identity in identities
+                        if identity.issuer == LEGACY_LOCAL_ISSUER
+                        and identity.subject == request.subject
+                    ),
+                    None,
+                )
+                if matching is None:
+                    raise PrincipalNotProvisionedError("PRINCIPAL_NOT_PROVISIONED")
+                subject_metadata = matching.subject
+            else:
+                subject_metadata = identities[0].subject
+            target_principal_id = target_record.principal_id
+            display_name = target_record.display_name
+    else:
+        if request.principal_id is None:
+            target_record = create_service_principal(
+                session,
+                display_name=request.display_name or request.subject or request.name,
+                now=created_at,
+            )
+        else:
+            target_record = require_active_principal(
+                session,
+                principal_id=request.principal_id,
+                principal_type=PrincipalType.SERVICE,
+            )
+            target_record = (
+                principal_identity_repository.load_active_principal_for_update(
+                    session,
+                    target_record.principal_id,
+                )
+            )
+            if target_record is None:
+                raise PrincipalNotProvisionedError("PRINCIPAL_NOT_PROVISIONED")
+        target_principal_id = target_record.principal_id
+        display_name = target_record.display_name
+        subject_metadata = request.subject or target_record.display_name
+
     tenant_id = request.tenant_id
     if request.caller_type is ApiCredentialCallerType.SERVICE_API:
         if (
@@ -153,12 +280,20 @@ def create_auth_api_credential(
             or tenant_repository.load_active_tenant_membership(
                 session,
                 tenant_id=tenant_id,
-                subject=created_by_subject,
+                principal_id=created_by_principal_id,
             )
             is None
         ):
             raise ServiceTenantAccessError(
                 "Service credential tenant access is not permitted."
+            )
+        existing_tenant_ids = tenant_repository.service_principal_tenant_ids(
+            session,
+            target_principal_id,
+        )
+        if existing_tenant_ids and existing_tenant_ids != {tenant_id}:
+            raise ServiceTenantAccessError(
+                "Service principal tenant binding cannot be changed."
             )
 
     for attempt in range(MAX_GENERATION_ATTEMPTS):
@@ -169,7 +304,8 @@ def create_auth_api_credential(
             credential_hint=raw_secret[-8:],
             name=request.name,
             caller_type=request.caller_type.value,
-            subject=request.subject,
+            principal_id=target_principal_id,
+            subject=subject_metadata,
             display_name=display_name,
             roles_json=json.dumps(request.roles, separators=(",", ":")),
             created_at=created_at.isoformat(),
@@ -225,7 +361,7 @@ def resolve_auth_api_credential_by_digest(
     record = load_auth_api_credential_by_digest(session, digest)
     if record is None:
         return None
-    return _active_resolution(record, now=_as_utc(now or _utc_now()))
+    return _active_resolution(session, record, now=_as_utc(now or _utc_now()))
 
 
 def authenticate_auth_api_credential(
@@ -239,7 +375,7 @@ def authenticate_auth_api_credential(
     record = load_auth_api_credential_by_digest(session, digest)
     if record is None:
         return None
-    resolved = _active_resolution(record, now=reference_time)
+    resolved = _active_resolution(session, record, now=reference_time)
     if resolved is None:
         raise InactiveAuthApiCredentialError(
             "The named API credential is inactive."
@@ -311,6 +447,12 @@ def credential_view(
         credential_hint=record.credential_hint,
         name=record.name,
         caller_type=caller_type,
+        principal_id=record.principal_id,
+        principal_type=(
+            PrincipalType.HUMAN.value
+            if caller_type is ApiCredentialCallerType.HUMAN_API
+            else PrincipalType.SERVICE.value
+        ),
         subject=record.subject,
         display_name=record.display_name,
         roles=list(roles),
@@ -348,7 +490,7 @@ def has_active_human_admin_credential(
         reference_time=reference_time.isoformat(),
     )
     return any(
-        (resolved := _active_resolution(record, now=reference_time)) is not None
+        (resolved := _active_resolution(session, record, now=reference_time)) is not None
         and "admin" in resolved.principal.roles
         for record in records
     )

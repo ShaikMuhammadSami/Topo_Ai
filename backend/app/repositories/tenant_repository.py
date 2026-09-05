@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db.models import (
+    AuthApiCredentialRecord,
     ServiceApiTenantBindingRecord,
     TenantMembershipRecord,
     TenantRecord,
@@ -42,11 +43,11 @@ def load_tenant_membership(
     session: Session,
     *,
     tenant_id: str,
-    subject: str,
+    principal_id: str,
 ) -> TenantMembershipRecord | None:
     statement = select(TenantMembershipRecord).where(
         TenantMembershipRecord.tenant_id == tenant_id,
-        TenantMembershipRecord.subject == subject,
+        TenantMembershipRecord.principal_id == principal_id,
     )
     return session.scalars(statement).one_or_none()
 
@@ -55,11 +56,11 @@ def load_active_tenant_membership(
     session: Session,
     *,
     tenant_id: str,
-    subject: str,
+    principal_id: str,
 ) -> TenantMembershipRecord | None:
     statement = select(TenantMembershipRecord).where(
         TenantMembershipRecord.tenant_id == tenant_id,
-        TenantMembershipRecord.subject == subject,
+        TenantMembershipRecord.principal_id == principal_id,
         TenantMembershipRecord.status == "active",
     )
     return session.scalars(statement).one_or_none()
@@ -69,7 +70,7 @@ def load_active_human_tenant_context(
     session: Session,
     *,
     tenant_id: str,
-    subject: str,
+    principal_id: str,
 ) -> tuple[TenantRecord, TenantMembershipRecord] | None:
     statement = (
         select(TenantRecord, TenantMembershipRecord)
@@ -80,7 +81,7 @@ def load_active_human_tenant_context(
         .where(
             TenantRecord.tenant_id == tenant_id,
             TenantRecord.status == "active",
-            TenantMembershipRecord.subject == subject,
+            TenantMembershipRecord.principal_id == principal_id,
             TenantMembershipRecord.status == "active",
         )
     )
@@ -88,10 +89,10 @@ def load_active_human_tenant_context(
     return None if row is None else (row[0], row[1])
 
 
-def list_active_tenants_for_subject(
+def list_active_tenants_for_principal(
     session: Session,
     *,
-    subject: str,
+    principal_id: str,
 ) -> list[tuple[TenantRecord, TenantMembershipRecord]]:
     statement = (
         select(TenantRecord, TenantMembershipRecord)
@@ -100,7 +101,7 @@ def list_active_tenants_for_subject(
             TenantMembershipRecord.tenant_id == TenantRecord.tenant_id,
         )
         .where(
-            TenantMembershipRecord.subject == subject,
+            TenantMembershipRecord.principal_id == principal_id,
             TenantMembershipRecord.status == "active",
             TenantRecord.status == "active",
         )
@@ -169,3 +170,22 @@ def service_binding_tenant_ids(
         binding.credential_id: binding.tenant_id
         for binding in session.scalars(statement)
     }
+
+
+def service_principal_tenant_ids(
+    session: Session,
+    principal_id: str,
+) -> set[str]:
+    statement = (
+        select(ServiceApiTenantBindingRecord.tenant_id)
+        .join(
+            AuthApiCredentialRecord,
+            AuthApiCredentialRecord.credential_id
+            == ServiceApiTenantBindingRecord.credential_id,
+        )
+        .where(
+            AuthApiCredentialRecord.principal_id == principal_id,
+            AuthApiCredentialRecord.caller_type == "service_api",
+        )
+    )
+    return set(session.scalars(statement))

@@ -61,8 +61,17 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
         "auth_session_repository.add_auth_session", "auth_session_repository.load_auth_session",
         "auth_session_repository.load_auth_session_by_secret_digest",
         "tenant_repository.add_tenant", "tenant_repository.add_tenant_membership",
-        "tenant_repository.list_active_tenants_for_subject", "tenant_repository.add_service_api_tenant_binding",
+        "tenant_repository.list_active_tenants_for_principal", "tenant_repository.add_service_api_tenant_binding",
         "tenant_repository.load_service_api_tenant_binding", "tenant_repository.service_binding_tenant_ids",
+        "principal_identity_repository.add_principal",
+        "principal_identity_repository.add_external_identity",
+        "principal_identity_repository.load_principal",
+        "principal_identity_repository.load_active_principal",
+        "principal_identity_repository.load_active_principal_for_update",
+        "principal_identity_repository.load_external_identity",
+        "principal_identity_repository.load_active_external_identity",
+        "principal_identity_repository.list_external_identities_for_principal",
+        "tenant_repository.service_principal_tenant_ids",
     }
     raw, legacy_queries, llm = [], [], []
     for path in APP.rglob("*.py"):
@@ -79,7 +88,7 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
     assert [path for path, _ in raw] == ["db/schema_management.py"]
     assert [path for path, _ in legacy_queries] == ["repositories/topology_snapshot_repository.py"]
     assert len(llm) == 12  # eight central callers + four legacy Groq branches
-    assert len(models.Base.metadata.tables) == 45
+    assert len(models.Base.metadata.tables) == 47
     owned = [t for t in models.Base.metadata.tables.values() if "tenant_id" in t.c and t.name not in {
         "tenants", "tenant_memberships", "service_api_tenant_bindings", "secret_records"}]
     # PH-4B's explicit dual-scope store is not an ordinary PH-3 domain table.

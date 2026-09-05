@@ -3,7 +3,9 @@ from __future__ import annotations
 import hashlib
 import hmac
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Mapping
+from uuid import uuid4
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -21,6 +23,7 @@ from app.security.auth_config import (
 )
 from app.security.auth_routing import RouteAuthDomain, classify_route
 from app.security.principals import AuthPrincipal
+from app.models.principal_identity import DEVELOPMENT_ISSUER, LEGACY_LOCAL_ISSUER
 from app.security.session_auth import (
     CSRF_HEADER_NAME,
     SESSION_COOKIE_NAME,
@@ -39,10 +42,17 @@ from app.services.auth_api_credential_service import (
     InactiveAuthApiCredentialError,
     authenticate_auth_api_credential,
 )
+from app.services.principal_identity import (
+    PrincipalIdentityError,
+    PrincipalNotProvisionedError,
+    auth_principal_for_external_identity,
+    provision_external_human_principal,
+)
 
 
 AUTH_ENABLED_ENV = "TOPO_AUTH_ENABLED"
 TOKEN_REGISTRY_ENV = "TOPO_API_TOKEN_HASHES_JSON"
+DEVELOPMENT_PRINCIPAL_ID = f"principal:{uuid4()}"
 
 
 def authentication_enabled() -> bool:
@@ -57,7 +67,9 @@ def token_digest(token: str) -> str:
 def resolve_principal(
     token: str,
     *,
+    session: Session,
     registry: Mapping[str, TokenIdentity] | None = None,
+    allow_provision: bool = False,
 ) -> AuthPrincipal | None:
     candidate_hash = token_digest(token)
     configured_registry = registry if registry is not None else load_token_registry()
@@ -71,17 +83,47 @@ def resolve_principal(
     if matched_identity is None:
         return None
 
-    return AuthPrincipal(
-        subject=matched_identity.subject,
-        display_name=matched_identity.display_name,
-        roles=matched_identity.roles,
-        authentication_type="api_token",
-    )
+    try:
+        principal = auth_principal_for_external_identity(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=matched_identity.subject,
+            authentication_type="api_token",
+            roles=matched_identity.roles,
+        )
+        return replace(principal, display_name=matched_identity.display_name)
+    except PrincipalNotProvisionedError:
+        if not allow_provision:
+            raise
+        return provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=matched_identity.subject,
+            display_name=matched_identity.display_name,
+            authentication_type="api_token",
+            roles=matched_identity.roles,
+        )
 
 
-def development_principal() -> AuthPrincipal:
+def development_principal(session: Session | None = None) -> AuthPrincipal:
+    if session is not None:
+        try:
+            return provision_external_human_principal(
+                session,
+                issuer=DEVELOPMENT_ISSUER,
+                subject="local-development",
+                display_name="Local Development User",
+                roles=("admin", "operator"),
+                authentication_type="development",
+            )
+        except (SQLAlchemyError, PrincipalIdentityError):
+            session.rollback()
     return AuthPrincipal(
+        principal_id=DEVELOPMENT_PRINCIPAL_ID,
+        principal_type="human",
         subject="local-development",
+        external_issuer=DEVELOPMENT_ISSUER,
+        external_subject="local-development",
         display_name="Local Development User",
         roles=("admin", "operator"),
         authentication_type="development",
@@ -156,7 +198,8 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
             return _unauthorized("Authentication is required.")
 
         if self.configuration.mode is AuthMode.DEVELOPMENT_DISABLED:
-            request.state.principal = development_principal()
+            with self.session_factory() as database_session:
+                request.state.principal = development_principal(database_session)
             return await call_next(request)
 
         authorization = request.headers.get("Authorization")
@@ -167,30 +210,35 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
 
             raw_token = token.strip()
             named = None
-            if raw_token.startswith(API_CREDENTIAL_PREFIX):
-                try:
-                    with self.session_factory() as database_session:
+            try:
+                with self.session_factory() as database_session:
+                    if raw_token.startswith(API_CREDENTIAL_PREFIX):
                         named = authenticate_auth_api_credential(
                             database_session,
                             raw_secret=raw_token,
                         )
-                except InactiveAuthApiCredentialError:
-                    return _unauthorized("The supplied API token is invalid.")
-                except (SQLAlchemyError, AuthApiCredentialPersistenceError):
-                    return _authentication_unavailable()
-                principal = named.principal if named is not None else None
-            else:
-                principal = None
-
-            if principal is None:
-                principal = resolve_principal(
-                    raw_token,
-                    registry=self.configuration.token_registry,
-                )
-                if principal is None:
-                    return _unauthorized("The supplied API token is invalid.")
-                request.state.direct_static_bearer = True
-            elif named is not None:
+                        principal = named.principal if named is not None else None
+                    else:
+                        principal = None
+                    if principal is None:
+                        principal = resolve_principal(
+                            raw_token,
+                            session=database_session,
+                            registry=self.configuration.token_registry,
+                            allow_provision=True,
+                        )
+                        if principal is None:
+                            return _unauthorized("The supplied API token is invalid.")
+                        request.state.direct_static_bearer = True
+            except (InactiveAuthApiCredentialError, PrincipalNotProvisionedError):
+                return _unauthorized("The supplied API token is invalid.")
+            except (
+                SQLAlchemyError,
+                AuthApiCredentialPersistenceError,
+                PrincipalIdentityError,
+            ):
+                return _authentication_unavailable()
+            if named is not None:
                 request.state.auth_api_credential_id = (
                     named.record.credential_id
                 )

@@ -17,9 +17,16 @@ from app.repositories.auth_session_repository import (
     load_auth_session_by_secret_digest,
 )
 from app.security.auth_config import AuthConfiguration
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER, PrincipalType
+from app.repositories import principal_identity_repository
 from app.security.principals import AuthPrincipal
 from app.services.auth_api_credential_service import (
     resolve_auth_api_credential_by_digest,
+)
+from app.services.principal_identity import (
+    PrincipalIdentityError,
+    auth_principal_for_external_identity,
+    require_active_principal,
 )
 
 
@@ -86,6 +93,11 @@ def create_auth_session(
     source_credential_digest: str,
     now: datetime | None = None,
 ) -> IssuedAuthSession:
+    if (
+        source_principal.principal_id is None
+        or source_principal.principal_type != PrincipalType.HUMAN.value
+    ):
+        raise ValueError("A durable human principal is required.")
     if source_principal.authentication_type not in {
         "api_token",
         "human_api_token",
@@ -95,8 +107,14 @@ def create_auth_session(
         source_identity = configuration.token_registry.get(source_credential_digest)
         source_is_valid = source_identity is not None and (
             source_identity.subject == source_principal.subject
-            and source_identity.display_name == source_principal.display_name
+            and source_principal.external_issuer == LEGACY_LOCAL_ISSUER
+            and source_principal.external_subject == source_identity.subject
             and source_identity.roles == source_principal.roles
+        )
+        session_display_name = (
+            source_identity.display_name
+            if source_identity is not None
+            else source_principal.display_name
         )
     else:
         source_named = resolve_auth_api_credential_by_digest(
@@ -106,10 +124,10 @@ def create_auth_session(
         )
         source_is_valid = source_named is not None and (
             source_named.principal.authentication_type == "human_api_token"
-            and source_named.principal.subject == source_principal.subject
-            and source_named.principal.display_name == source_principal.display_name
+            and source_named.principal.principal_id == source_principal.principal_id
             and source_named.principal.roles == source_principal.roles
         )
+        session_display_name = source_principal.display_name
     if not source_is_valid:
         raise ValueError("The source authentication authority is unavailable.")
 
@@ -128,8 +146,9 @@ def create_auth_session(
         session_id=f"auth-session:{uuid4()}",
         session_secret_digest=secret_digest(raw_session_secret),
         csrf_digest=secret_digest(raw_csrf_secret),
+        principal_id=source_principal.principal_id,
         subject=source_principal.subject,
-        display_name=source_principal.display_name,
+        display_name=session_display_name,
         roles_json=json.dumps(list(source_principal.roles), separators=(",", ":")),
         source_authentication_type=source_principal.authentication_type,
         source_credential_digest=source_credential_digest,
@@ -185,15 +204,37 @@ def resolve_auth_session(
         "human_api_token",
     }:
         return None
+    try:
+        durable_principal = require_active_principal(
+            session,
+            principal_id=record.principal_id,
+            principal_type=PrincipalType.HUMAN,
+        )
+    except PrincipalIdentityError:
+        return None
     if record.source_authentication_type == "api_token":
         source_identity = configuration.token_registry.get(
             record.source_credential_digest
         )
-        source_is_valid = source_identity is not None and (
-            source_identity.subject == record.subject
-            and source_identity.display_name == record.display_name
-            and source_identity.roles == roles
-        )
+        if source_identity is None:
+            source_is_valid = False
+        else:
+            try:
+                source_principal = auth_principal_for_external_identity(
+                    session,
+                    issuer=LEGACY_LOCAL_ISSUER,
+                    subject=source_identity.subject,
+                    authentication_type="api_token",
+                    roles=source_identity.roles,
+                )
+            except PrincipalIdentityError:
+                source_is_valid = False
+            else:
+                source_is_valid = (
+                    source_principal.principal_id == record.principal_id
+                    and source_identity.subject == record.subject
+                    and source_identity.roles == roles
+                )
     else:
         source_named = resolve_auth_api_credential_by_digest(
             session,
@@ -202,20 +243,28 @@ def resolve_auth_session(
         )
         source_is_valid = source_named is not None and (
             source_named.principal.authentication_type == "human_api_token"
-            and source_named.principal.subject == record.subject
-            and source_named.principal.display_name == record.display_name
+            and source_named.principal.principal_id == record.principal_id
             and source_named.principal.roles == roles
         )
     if not source_is_valid:
         return None
 
+    identities = principal_identity_repository.list_external_identities_for_principal(
+        session,
+        durable_principal.principal_id,
+    )
+    identity = identities[0] if identities else None
     return ResolvedAuthSession(
         record=record,
         principal=AuthPrincipal(
+            principal_id=durable_principal.principal_id,
+            principal_type=durable_principal.principal_type,
             subject=record.subject,
             display_name=record.display_name,
             roles=roles,
             authentication_type="session",
+            external_issuer=identity.issuer if identity is not None else None,
+            external_subject=identity.subject if identity is not None else None,
         ),
     )
 

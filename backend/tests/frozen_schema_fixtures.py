@@ -5,8 +5,8 @@ stop at 0007 or earlier must compare against the historical key shape, not HEAD.
 """
 
 from sqlalchemy import (
-    CheckConstraint, Column, Index, MetaData, PrimaryKeyConstraint, String,
-    Text, UniqueConstraint,
+    CheckConstraint, Column, ForeignKeyConstraint, Index, MetaData,
+    PrimaryKeyConstraint, String, Text, UniqueConstraint,
 )
 
 from app.db.database import Base
@@ -14,14 +14,54 @@ from app.db.schema_management import script_directory
 
 
 SECRET_STORE_TABLES = {"secret_records", "secret_versions"}
+PRINCIPAL_TABLES = {"auth_principals", "external_identities"}
 
 
 def frozen_0008_metadata():
     """PH-3's exact 43-table contract, before the additive secret store."""
     metadata = MetaData()
     for table in Base.metadata.tables.values():
-        if table.name not in SECRET_STORE_TABLES:
+        if table.name not in SECRET_STORE_TABLES | PRINCIPAL_TABLES:
             copied = table.to_metadata(metadata)
+            if copied.name in {
+                "auth_sessions",
+                "auth_api_credentials",
+                "tenant_memberships",
+            }:
+                for index in list(copied.indexes):
+                    if "principal_id" in {column.name for column in index.columns}:
+                        copied.indexes.remove(index)
+                for constraint in list(copied.constraints):
+                    if isinstance(constraint, ForeignKeyConstraint) and {
+                        element.parent.name for element in constraint.elements
+                    } == {"principal_id"}:
+                        copied.constraints.remove(constraint)
+                    if (
+                        copied.name == "tenant_memberships"
+                        and isinstance(constraint, UniqueConstraint)
+                        and constraint.name == "uq_tenant_memberships_tenant_principal"
+                    ):
+                        copied.constraints.remove(constraint)
+                for foreign_key in list(copied.c.principal_id.foreign_keys):
+                    copied.c.principal_id.foreign_keys.remove(foreign_key)
+                    copied.foreign_keys.remove(foreign_key)
+                copied._columns.remove(copied.c.principal_id)
+            if copied.name == "tenant_memberships":
+                copied.append_column(Column("subject", String(500), nullable=False))
+                copied.append_constraint(
+                    UniqueConstraint(
+                        "tenant_id",
+                        "subject",
+                        name="uq_tenant_memberships_tenant_subject",
+                    )
+                )
+                Index("ix_tenant_memberships_subject", copied.c.subject)
+                Index(
+                    "ix_tenant_memberships_active_resolution",
+                    copied.c.tenant_id,
+                    copied.c.subject,
+                    copied.c.status,
+                )
             if copied.name == "change_sources":
                 copied.c.secret_ref.type = String(255)
                 for constraint in list(copied.constraints):

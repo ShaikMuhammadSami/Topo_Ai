@@ -494,11 +494,11 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
         assert len(_domain_table_names(connection)) == 43
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 804
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 819
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
-        ) == 71
-        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 344
+        ) == 73
+        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 348
         assert sum(
             1
             for table in Base.metadata.tables.values()
@@ -510,7 +510,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for table in Base.metadata.tables.values()
             for constraint in table.constraints
             if constraint.__class__.__name__ == "UniqueConstraint"
-        ) == 16
+        ) == 17
 
         database_indexes = [
             item
@@ -518,17 +518,23 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             for item in inspector.get_indexes(table_name)
             if not item.get("duplicates_constraint")
         ]
-        assert len(database_indexes) == 344
+        assert len(database_indexes) == 346
         assert sum(bool(item["unique"]) for item in database_indexes) == 9
-        assert sum(not item["unique"] for item in database_indexes) == 335
+        assert sum(not item["unique"] for item in database_indexes) == 337
         assert all(
             inspector.get_pk_constraint(name).get("constrained_columns")
             for name in DOMAIN_TABLE_NAMES
         )
-        assert all(
-            not inspector.get_foreign_keys(name)
+        domain_foreign_keys = {
+            name: inspector.get_foreign_keys(name)
             for name in DOMAIN_TABLE_NAMES
-        )
+            if inspector.get_foreign_keys(name)
+        }
+        assert set(domain_foreign_keys) == {
+            "auth_api_credentials",
+            "auth_sessions",
+            "tenant_memberships",
+        }
         checks = {
             name: {
                 item["name"] for item in inspector.get_check_constraints(name)
@@ -645,7 +651,7 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0011_secret_enforce",)
+            assert current_revisions(connection) == ("0013_principal_enforce",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -786,7 +792,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0011_secret_enforce",)
+            assert current_revisions(connection) == ("0013_principal_enforce",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43
@@ -1246,7 +1252,31 @@ def test_every_mapped_table_supports_orm_write_read_and_false_booleans(
 ) -> None:
     assert len(DOMAIN_TABLE_NAMES) == 43
     with session_factory() as session:
-        records = [_mapped_instance(table_name) for table_name in DOMAIN_TABLE_NAMES]
+        principal_id = "principal:00000000-0000-4000-8000-000000000001"
+        principal = _mapped_instance(
+            "auth_principals",
+            principal_id=principal_id,
+            principal_type="human",
+            status="active",
+        )
+        session.add(principal)
+        session.flush()
+        records = [
+            _mapped_instance(
+                table_name,
+                **(
+                    {"principal_id": principal_id}
+                    if table_name
+                    in {
+                        "auth_api_credentials",
+                        "auth_sessions",
+                        "tenant_memberships",
+                    }
+                    else {}
+                ),
+            )
+            for table_name in DOMAIN_TABLE_NAMES
+        ]
         session.add_all(records)
         session.commit()
         for record in records:

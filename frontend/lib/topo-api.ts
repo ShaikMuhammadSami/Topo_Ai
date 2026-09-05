@@ -58,6 +58,8 @@ import type {
 
 
 export type BrowserSession = {
+  principal_id: string
+  principal_type: "human"
   subject: string
   display_name: string
   roles: string[]

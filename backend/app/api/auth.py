@@ -41,6 +41,7 @@ from app.services.auth_api_credential_service import (
     credential_view,
     revoke_auth_api_credential,
 )
+from app.services.principal_identity import PrincipalIdentityError
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
@@ -85,6 +86,8 @@ def _session_view(request: Request) -> BrowserSessionView:
     principal = authenticated_principal(request)
     if principal.authentication_type == "development":
         return BrowserSessionView(
+            principal_id=principal.principal_id or "",
+            principal_type=principal.principal_type or "human",
             subject=principal.subject,
             display_name=principal.display_name,
             roles=list(principal.roles),
@@ -97,6 +100,8 @@ def _session_view(request: Request) -> BrowserSessionView:
             detail="A browser session is required.",
         )
     return BrowserSessionView(
+        principal_id=principal.principal_id or "",
+        principal_type=principal.principal_type or "human",
         subject=principal.subject,
         display_name=principal.display_name,
         roles=list(principal.roles),
@@ -169,6 +174,8 @@ def create_browser_session(
         absolute_ttl_minutes=configuration.session_absolute_ttl_minutes,
     )
     return BrowserSessionView(
+        principal_id=issued.record.principal_id,
+        principal_type="human",
         subject=issued.record.subject,
         display_name=issued.record.display_name,
         roles=list(principal.roles),
@@ -239,6 +246,7 @@ def create_api_credential(
             session,
             request=value,
             created_by_subject=principal.subject,
+            created_by_principal_id=principal.principal_id,
         )
     except AuthApiCredentialPersistenceError as exc:
         raise HTTPException(
@@ -249,6 +257,11 @@ def create_api_credential(
         raise HTTPException(
             status_code=403,
             detail="TENANT_ACCESS_DENIED",
+        ) from exc
+    except PrincipalIdentityError as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Principal identity is unavailable.",
         ) from exc
     except SQLAlchemyError as exc:
         session.rollback()
