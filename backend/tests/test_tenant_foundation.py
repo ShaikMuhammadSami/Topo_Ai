@@ -154,6 +154,10 @@ def test_tenant_context_does_not_modify_auth_principal_contract() -> None:
         "display_name",
         "roles",
         "authentication_type",
+        "principal_id",
+        "principal_type",
+        "external_issuer",
+        "external_subject",
     )
 
 

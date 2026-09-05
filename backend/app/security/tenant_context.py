@@ -49,12 +49,14 @@ class TenantContext:
     authentication_type: str
     actor_kind: TenantActorKind
     selection_source: TenantSelectionSource
+    principal_id: str | None = None
     membership_id: str | None = None
     credential_id: str | None = None
 
     def view(self) -> TenantContextView:
         return TenantContextView(
             tenant_id=self.tenant_id,
+            principal_id=self.principal_id or "",
             authenticated_subject=self.authenticated_subject,
             authentication_type=self.authentication_type,
             actor_kind=self.actor_kind.value,
@@ -103,6 +105,8 @@ def resolve_tenant_context(
     selected_tenant_id: str | None,
     credential_id: str | None,
 ) -> TenantContext:
+    if principal.principal_id is None or principal.principal_type is None:
+        raise _denied()
     if principal.authentication_type == "service_api_token":
         if not credential_id:
             raise _denied()
@@ -118,6 +122,7 @@ def resolve_tenant_context(
             raise _denied()
         return TenantContext(
             tenant_id=binding.tenant_id,
+            principal_id=principal.principal_id,
             authenticated_subject=principal.subject,
             authentication_type=principal.authentication_type,
             actor_kind=TenantActorKind.SERVICE,
@@ -132,13 +137,14 @@ def resolve_tenant_context(
     resolved = load_active_human_tenant_context(
         session,
         tenant_id=selected_tenant_id,
-        subject=principal.subject,
+        principal_id=principal.principal_id,
     )
     if resolved is None:
         raise _denied()
     _, membership = resolved
     return TenantContext(
         tenant_id=selected_tenant_id,
+        principal_id=principal.principal_id,
         authenticated_subject=principal.subject,
         authentication_type=principal.authentication_type,
         actor_kind=TenantActorKind.HUMAN,

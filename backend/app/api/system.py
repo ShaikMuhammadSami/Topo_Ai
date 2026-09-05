@@ -38,6 +38,8 @@ def whoami(
         )
 
     return {
+        "principal_id": principal.principal_id,
+        "principal_type": principal.principal_type,
         "subject":
             principal.subject,
         "display_name":

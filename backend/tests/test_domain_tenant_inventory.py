@@ -12,6 +12,7 @@ GLOBAL_REPOSITORIES = {
     "auth_api_credential_repository",
     "tenant_repository",
     "tenant_scope",
+    "principal_identity_repository",
 }
 MACHINE_FUNCTIONS = {
     "agent_repository.enroll_agent",

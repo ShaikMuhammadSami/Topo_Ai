@@ -7,6 +7,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.models import TenantMembershipRecord, TenantRecord
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER, PrincipalType
 from app.models.tenant import (
     TenantMembershipStatus,
     TenantMembershipView,
@@ -14,6 +15,11 @@ from app.models.tenant import (
     TenantView,
 )
 from app.repositories import tenant_repository
+from app.repositories import principal_identity_repository
+from app.services.principal_identity import (
+    provision_external_human_principal,
+    require_active_principal,
+)
 
 
 MAX_ID_GENERATION_ATTEMPTS = 3
@@ -61,11 +67,30 @@ def tenant_view(
     )
 
 
-def membership_view(record: TenantMembershipRecord) -> TenantMembershipView:
+def membership_view(
+    session: Session,
+    record: TenantMembershipRecord,
+) -> TenantMembershipView:
+    principal = principal_identity_repository.load_principal(
+        session,
+        record.principal_id,
+    )
+    if principal is None or principal.principal_type != PrincipalType.HUMAN.value:
+        raise TenantPersistenceError("Tenant membership identity is invalid.")
+    identities = principal_identity_repository.list_external_identities_for_principal(
+        session,
+        record.principal_id,
+    )
+    identity = identities[0] if identities else None
     return TenantMembershipView(
         membership_id=record.membership_id,
         tenant_id=record.tenant_id,
-        subject=record.subject,
+        principal_id=record.principal_id,
+        principal_type=principal.principal_type,
+        display_name=principal.display_name,
+        external_issuer=identity.issuer if identity is not None else None,
+        external_subject=identity.subject if identity is not None else None,
+        subject=identity.subject if identity is not None else None,
         status=TenantMembershipStatus(record.status),
         created_at=record.created_at,
         updated_at=record.updated_at,
@@ -78,9 +103,26 @@ def create_tenant_with_creator_membership(
     *,
     display_name: str,
     creator_subject: str,
+    creator_principal_id: str | None = None,
     now: datetime | None = None,
 ) -> TenantView:
     creator = _stable_subject(creator_subject)
+    if creator_principal_id is None:
+        creator_identity = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=creator,
+            display_name=creator,
+            authentication_type="api_token",
+        )
+        creator_principal_id = creator_identity.principal_id
+    if creator_principal_id is None:
+        raise TenantPersistenceError("Principal identity is unavailable.")
+    require_active_principal(
+        session,
+        principal_id=creator_principal_id,
+        principal_type=PrincipalType.HUMAN,
+    )
     created_at = _utc_now_iso(now)
 
     for attempt in range(MAX_ID_GENERATION_ATTEMPTS):
@@ -95,7 +137,7 @@ def create_tenant_with_creator_membership(
         membership = TenantMembershipRecord(
             membership_id=f"tenant-membership:{uuid4()}",
             tenant_id=tenant.tenant_id,
-            subject=creator,
+            principal_id=creator_principal_id,
             status=TenantMembershipStatus.ACTIVE.value,
             created_at=created_at,
             updated_at=created_at,
@@ -125,13 +167,49 @@ def add_or_reactivate_tenant_membership(
     session: Session,
     *,
     tenant_id: str,
-    subject: str,
+    subject: str | None,
+    principal_id: str | None = None,
     created_by_subject: str,
+    created_by_principal_id: str | None = None,
     now: datetime | None = None,
 ) -> TenantMembershipView:
-    target_subject = _stable_subject(subject)
     creator = _stable_subject(created_by_subject)
     timestamp = _utc_now_iso(now)
+
+    if created_by_principal_id is not None:
+        require_active_principal(
+            session,
+            principal_id=created_by_principal_id,
+            principal_type=PrincipalType.HUMAN,
+        )
+    if principal_id is None:
+        if subject is None:
+            raise ValueError("principal_id or explicit legacy subject is required")
+        target_subject = _stable_subject(subject)
+        identity = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=target_subject,
+            display_name=target_subject,
+            authentication_type="api_token",
+        )
+        principal_id = identity.principal_id
+    elif subject is not None:
+        target_subject = _stable_subject(subject)
+        identity = principal_identity_repository.load_external_identity(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=target_subject,
+        )
+        if identity is None or identity.principal_id != principal_id:
+            raise ValueError("Explicit subject does not identify principal_id")
+    if principal_id is None:
+        raise TenantPersistenceError("Principal identity is unavailable.")
+    require_active_principal(
+        session,
+        principal_id=principal_id,
+        principal_type=PrincipalType.HUMAN,
+    )
 
     if tenant_repository.load_active_tenant(session, tenant_id) is None:
         raise ActiveTenantRequiredError("The tenant is not active.")
@@ -139,7 +217,7 @@ def add_or_reactivate_tenant_membership(
     existing = tenant_repository.load_tenant_membership(
         session,
         tenant_id=tenant_id,
-        subject=target_subject,
+        principal_id=principal_id,
     )
     if existing is not None:
         if existing.status == TenantMembershipStatus.DISABLED.value:
@@ -152,12 +230,12 @@ def add_or_reactivate_tenant_membership(
                 raise TenantPersistenceError(
                     "Tenant membership persistence failed."
                 ) from exc
-        return membership_view(existing)
+        return membership_view(session, existing)
 
     record = TenantMembershipRecord(
         membership_id=f"tenant-membership:{uuid4()}",
         tenant_id=tenant_id,
-        subject=target_subject,
+        principal_id=principal_id,
         status=TenantMembershipStatus.ACTIVE.value,
         created_at=timestamp,
         updated_at=timestamp,
@@ -166,19 +244,19 @@ def add_or_reactivate_tenant_membership(
     try:
         tenant_repository.add_tenant_membership(session, record)
         session.commit()
-        return membership_view(record)
+        return membership_view(session, record)
     except IntegrityError as exc:
         session.rollback()
         concurrent = tenant_repository.load_tenant_membership(
             session,
             tenant_id=tenant_id,
-            subject=target_subject,
+            principal_id=principal_id,
         )
         if (
             concurrent is not None
             and concurrent.status == TenantMembershipStatus.ACTIVE.value
         ):
-            return membership_view(concurrent)
+            return membership_view(session, concurrent)
         raise TenantPersistenceError(
             "Tenant membership persistence failed."
         ) from exc
@@ -204,12 +282,12 @@ def disable_tenant_membership(
     if record is None:
         raise TenantMembershipNotFoundError("Tenant membership not found.")
     if record.status == TenantMembershipStatus.DISABLED.value:
-        return membership_view(record)
+        return membership_view(session, record)
     record.status = TenantMembershipStatus.DISABLED.value
     record.updated_at = _utc_now_iso(now)
     try:
         session.commit()
-        return membership_view(record)
+        return membership_view(session, record)
     except SQLAlchemyError as exc:
         session.rollback()
         raise TenantPersistenceError(

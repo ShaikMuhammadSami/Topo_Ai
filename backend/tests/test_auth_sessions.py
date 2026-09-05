@@ -34,6 +34,8 @@ from app.services.auth_session_service import (
     revoke_auth_session,
     touch_auth_session,
 )
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER
+from app.services.principal_identity import provision_external_human_principal
 from app.services.webhook_security import WebhookAuthenticationError
 
 
@@ -113,6 +115,8 @@ def test_valid_human_bearer_creates_digest_only_secure_session(session_app) -> N
 
     assert response.status_code == 201
     assert response.json() == {
+        "principal_id": response.json()["principal_id"],
+        "principal_type": "human",
         "subject": "test:browser-operator",
         "display_name": "Browser Operator",
         "roles": ["admin", "operator"],
@@ -324,6 +328,15 @@ def test_expired_revoked_unknown_and_source_invalid_sessions_fail_closed(
     source_digest = next(iter(configuration.token_registry))
 
     with factory() as session:
+        principal = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=principal.subject,
+            display_name=principal.display_name,
+            authentication_type="api_token",
+            roles=principal.roles,
+            now=now,
+        )
         issued = create_auth_session(
             session,
             configuration=configuration,
@@ -392,6 +405,15 @@ def test_successful_session_touch_renews_idle_expiry_but_not_absolute_expiry(
     )
 
     with factory() as session:
+        principal = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject=principal.subject,
+            display_name=principal.display_name,
+            authentication_type="api_token",
+            roles=principal.roles,
+            now=issued_at,
+        )
         issued = create_auth_session(
             session,
             configuration=configuration,

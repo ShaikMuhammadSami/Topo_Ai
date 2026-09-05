@@ -1,5 +1,10 @@
 import json
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+
+from app.db.database import Base
+
 from app.security.api_tokens import (
     resolve_principal,
     token_digest,
@@ -28,9 +33,14 @@ def test_resolves_valid_token(
         json.dumps(registry),
     )
 
-    principal = resolve_principal(
-        token
-    )
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        principal = resolve_principal(
+            token,
+            session=session,
+            allow_provision=True,
+        )
 
     assert principal is not None
 
@@ -42,6 +52,8 @@ def test_resolves_valid_token(
     assert principal.roles == (
         "operator",
     )
+    assert principal.principal_id is not None
+    assert principal.principal_type == "human"
 
 
 def test_rejects_invalid_token(
@@ -63,9 +75,13 @@ def test_rejects_invalid_token(
         json.dumps(registry),
     )
 
-    assert (
-        resolve_principal(
-            "invalid-token"
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
+        assert (
+            resolve_principal(
+                "invalid-token",
+                session=session,
+            )
+            is None
         )
-        is None
-    )

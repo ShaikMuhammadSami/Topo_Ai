@@ -204,6 +204,10 @@ def _record(table_name: str, row: int, **overrides):
 
 def _seed_representative_history(engine: Engine) -> dict[str, str]:
     identifiers = {
+        "principal_id": "principal:00000000-0000-4000-8000-000000000051",
+        "external_identity_id": "identity:00000000-0000-4000-8000-000000000051",
+        "tenant_id": "tenant:00000000-0000-4000-8000-000000000051",
+        "membership_id": "tenant-membership:ph5a-preserved",
         "snapshot_id": "snapshot:ph1d-preserved",
         "signal_id": "signal:ph1d-preserved",
         "incident_id": "incident:ph1d-preserved",
@@ -226,6 +230,47 @@ def _seed_representative_history(engine: Engine) -> dict[str, str]:
         separators=(",", ":"),
     )
     with Session(engine) as session:
+        session.add(
+            db_models.AuthPrincipalRecord(
+                principal_id=identifiers["principal_id"],
+                principal_type="human",
+                display_name="PH-5A preserved human",
+                status="active",
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        session.flush()
+        session.add_all(
+            [
+                db_models.ExternalIdentityRecord(
+                    external_identity_id=identifiers["external_identity_id"],
+                    principal_id=identifiers["principal_id"],
+                    issuer="urn:test:ph5a:backup",
+                    subject="opaque-backup-subject",
+                    status="active",
+                    created_at=NOW,
+                    updated_at=NOW,
+                ),
+                db_models.TenantRecord(
+                    tenant_id=identifiers["tenant_id"],
+                    display_name="PH-5A backup tenant",
+                    status="active",
+                    created_at=NOW,
+                    updated_at=NOW,
+                    created_by_subject="opaque-backup-subject",
+                ),
+                db_models.TenantMembershipRecord(
+                    membership_id=identifiers["membership_id"],
+                    tenant_id=identifiers["tenant_id"],
+                    principal_id=identifiers["principal_id"],
+                    status="active",
+                    created_at=NOW,
+                    updated_at=NOW,
+                    created_by_subject="opaque-backup-subject",
+                ),
+            ]
+        )
         session.add_all(
             [
                 _record(
@@ -596,6 +641,26 @@ def test_backup_restore_preserves_representative_history() -> None:
                     assert restored_row(
                         db_models.OwnershipMappingRecord, 6, expected["ownership_id"]
                     ) is not None
+                    principal = session.get(
+                        db_models.AuthPrincipalRecord,
+                        expected["principal_id"],
+                    )
+                    external_identity = session.get(
+                        db_models.ExternalIdentityRecord,
+                        expected["external_identity_id"],
+                    )
+                    membership = session.get(
+                        db_models.TenantMembershipRecord,
+                        expected["membership_id"],
+                    )
+                    assert principal is not None
+                    assert external_identity is not None
+                    assert membership is not None
+                    assert external_identity.principal_id == principal.principal_id
+                    assert external_identity.issuer == "urn:test:ph5a:backup"
+                    assert external_identity.subject == "opaque-backup-subject"
+                    assert membership.tenant_id == expected["tenant_id"]
+                    assert membership.principal_id == principal.principal_id
             finally:
                 restored.dispose()
         finally:

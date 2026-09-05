@@ -20,6 +20,7 @@ TEST_TENANT = "tenant:dddddddd-dddd-4ddd-8ddd-dddddddddddd"
 TEST_HEADERS = {"X-Topo-Tenant-ID": TEST_TENANT}
 TEST_CONTEXT = TenantContext(
     tenant_id=TEST_TENANT,
+    principal_id="principal:dddddddd-dddd-4ddd-8ddd-dddddddddddd",
     authenticated_subject="local-development",
     authentication_type="development",
     actor_kind=TenantActorKind.HUMAN,
@@ -28,7 +29,23 @@ TEST_CONTEXT = TenantContext(
 
 
 def seed_domain_tenant(engine, *, subject="local-development"):
+    from app.models.principal_identity import DEVELOPMENT_ISSUER, LEGACY_LOCAL_ISSUER
+    from app.services.principal_identity import provision_external_human_principal
+
     with Session(engine) as session:
+        principal = provision_external_human_principal(
+            session,
+            issuer=(
+                DEVELOPMENT_ISSUER
+                if subject == "local-development"
+                else LEGACY_LOCAL_ISSUER
+            ),
+            subject=subject,
+            display_name=subject,
+            authentication_type=(
+                "development" if subject == "local-development" else "api_token"
+            ),
+        )
         if session.get(TenantRecord, TEST_TENANT) is None:
             session.add(
                 TenantRecord(
@@ -45,7 +62,7 @@ def seed_domain_tenant(engine, *, subject="local-development"):
             session.scalar(
                 select(TenantMembershipRecord).where(
                     TenantMembershipRecord.tenant_id == TEST_TENANT,
-                    TenantMembershipRecord.subject == subject,
+                    TenantMembershipRecord.principal_id == principal.principal_id,
                 )
             )
             is None
@@ -54,7 +71,7 @@ def seed_domain_tenant(engine, *, subject="local-development"):
                 TenantMembershipRecord(
                     membership_id="membership:domain-regression:" + subject,
                     tenant_id=TEST_TENANT,
-                    subject=subject,
+                    principal_id=principal.principal_id,
                     status="active",
                     created_by_subject=subject,
                     created_at="2026-08-30T00:00:00+00:00",

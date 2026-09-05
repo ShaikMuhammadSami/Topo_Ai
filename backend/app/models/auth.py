@@ -11,6 +11,7 @@ from pydantic import (
 )
 
 from app.models.tenant import is_valid_tenant_id
+from app.models.principal_identity import is_valid_principal_id
 
 
 class ApiCredentialCallerType(StrEnum):
@@ -23,7 +24,8 @@ class ApiCredentialCreate(BaseModel):
 
     name: str = Field(min_length=1, max_length=255)
     caller_type: ApiCredentialCallerType
-    subject: str = Field(min_length=1, max_length=500)
+    subject: str | None = Field(default=None, min_length=1, max_length=500)
+    principal_id: str | None = Field(default=None, min_length=1, max_length=46)
     display_name: str | None = Field(default=None, max_length=500)
     roles: list[str] = Field(default_factory=list, max_length=100)
     expires_in_days: int = Field(default=30, ge=1, le=90)
@@ -42,9 +44,18 @@ class ApiCredentialCreate(BaseModel):
 
     @field_validator("subject")
     @classmethod
-    def validate_subject(cls, value: str) -> str:
+    def validate_subject(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         if value.lower() == "unknown":
             raise ValueError("subject must be a stable identity")
+        return value
+
+    @field_validator("principal_id")
+    @classmethod
+    def validate_principal_id(cls, value: str | None) -> str | None:
+        if value is not None and not is_valid_principal_id(value):
+            raise ValueError("principal_id has an invalid format")
         return value
 
     @field_validator("roles")
@@ -67,6 +78,8 @@ class ApiCredentialCreate(BaseModel):
 
     @model_validator(mode="after")
     def validate_tenant_binding_contract(self):
+        if self.subject is None and self.principal_id is None:
+            raise ValueError("subject or principal_id is required")
         if (
             self.caller_type is ApiCredentialCallerType.SERVICE_API
             and self.tenant_id is None
@@ -87,6 +100,8 @@ class ApiCredentialView(BaseModel):
     credential_hint: str
     name: str
     caller_type: ApiCredentialCallerType
+    principal_id: str
+    principal_type: str
     subject: str
     display_name: str
     roles: list[str] = Field(default_factory=list)
@@ -107,6 +122,8 @@ class ApiCredentialCreated(ApiCredentialView):
 class BrowserSessionView(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    principal_id: str
+    principal_type: str
     subject: str
     display_name: str
     roles: list[str] = Field(default_factory=list)

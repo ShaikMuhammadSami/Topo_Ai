@@ -13,7 +13,7 @@ from app.models.tenant import (
     TenantView,
 )
 from app.repositories.tenant_repository import (
-    list_active_tenants_for_subject,
+    list_active_tenants_for_principal,
     list_tenant_memberships,
 )
 from app.security.approval_authorization import authenticated_principal
@@ -97,6 +97,7 @@ def create_tenant(
             session,
             display_name=value.display_name,
             creator_subject=principal.subject,
+            creator_principal_id=principal.principal_id,
         )
     except TenantPersistenceError as exc:
         raise _persistence_unavailable(exc) from exc
@@ -111,9 +112,9 @@ def list_tenants(
     try:
         return [
             tenant_view(tenant, membership)
-            for tenant, membership in list_active_tenants_for_subject(
+            for tenant, membership in list_active_tenants_for_principal(
                 session,
-                subject=principal.subject,
+                principal_id=principal.principal_id or "",
             )
         ]
     except SQLAlchemyError as exc:
@@ -139,7 +140,7 @@ def list_memberships(
     _tenant_admin(request, context)
     try:
         return [
-            membership_view(record)
+            membership_view(session, record)
             for record in list_tenant_memberships(
                 session,
                 tenant_id=context.tenant_id,
@@ -165,7 +166,9 @@ def add_membership(
             session,
             tenant_id=context.tenant_id,
             subject=value.subject,
+            principal_id=value.principal_id,
             created_by_subject=principal.subject,
+            created_by_principal_id=principal.principal_id,
         )
     except ActiveTenantRequiredError as exc:
         raise HTTPException(
@@ -226,7 +229,9 @@ def recover_membership(
             session,
             tenant_id=value.tenant_id,
             subject=value.subject,
+            principal_id=value.principal_id,
             created_by_subject=principal.subject,
+            created_by_principal_id=principal.principal_id,
         )
     except ActiveTenantRequiredError as exc:
         raise HTTPException(

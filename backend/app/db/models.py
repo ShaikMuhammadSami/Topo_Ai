@@ -4616,6 +4616,71 @@ class ExecutionIntentEventRecord(TenantOwnedRecordMixin, Base):
     )
 
 
+class AuthPrincipalRecord(Base):
+    """Security-global durable identity for a human or service actor."""
+
+    __tablename__ = "auth_principals"
+    __table_args__ = (
+        CheckConstraint(
+            "principal_type IN ('human', 'service')",
+            name="ck_auth_principals_type",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'disabled')",
+            name="ck_auth_principals_status",
+        ),
+        CheckConstraint(
+            "length(principal_id) = 46 AND substr(principal_id, 1, 10) = 'principal:'",
+            name="ck_auth_principals_id",
+        ),
+    )
+
+    principal_id: Mapped[str] = mapped_column(String(46), primary_key=True)
+    principal_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+
+
+class ExternalIdentityRecord(Base):
+    """Exact issuer-and-subject mapping to one durable human principal."""
+
+    __tablename__ = "external_identities"
+    __table_args__ = (
+        UniqueConstraint(
+            "issuer",
+            "subject",
+            name="uq_external_identities_issuer_subject",
+        ),
+        CheckConstraint(
+            "status IN ('active', 'disabled')",
+            name="ck_external_identities_status",
+        ),
+        CheckConstraint(
+            "length(external_identity_id) = 45 "
+            "AND substr(external_identity_id, 1, 9) = 'identity:'",
+            name="ck_external_identities_id",
+        ),
+        Index("ix_external_identities_principal_id", "principal_id"),
+    )
+
+    external_identity_id: Mapped[str] = mapped_column(
+        String(45),
+        primary_key=True,
+    )
+    principal_id: Mapped[str] = mapped_column(
+        String(46),
+        ForeignKey("auth_principals.principal_id"),
+        nullable=False,
+    )
+    issuer: Mapped[str] = mapped_column(String(500), nullable=False)
+    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+
+
 class AuthSessionRecord(Base):
     """Digest-only, server-side authority for a human browser session."""
 
@@ -4639,6 +4704,12 @@ class AuthSessionRecord(Base):
     csrf_digest: Mapped[str] = mapped_column(
         String(64),
         nullable=False,
+    )
+    principal_id: Mapped[str] = mapped_column(
+        String(46),
+        ForeignKey("auth_principals.principal_id"),
+        nullable=False,
+        index=True,
     )
     subject: Mapped[str] = mapped_column(
         String(500),
@@ -4706,6 +4777,12 @@ class AuthApiCredentialRecord(Base):
         nullable=False,
         index=True,
     )
+    principal_id: Mapped[str] = mapped_column(
+        String(46),
+        ForeignKey("auth_principals.principal_id"),
+        nullable=False,
+        index=True,
+    )
     subject: Mapped[str] = mapped_column(
         String(500),
         nullable=False,
@@ -4755,29 +4832,33 @@ class TenantRecord(Base):
 
 
 class TenantMembershipRecord(Base):
-    """A stable human subject's permission to enter one tenant."""
+    """A durable human principal's permission to enter one tenant."""
 
     __tablename__ = "tenant_memberships"
 
     __table_args__ = (
         UniqueConstraint(
             "tenant_id",
-            "subject",
-            name="uq_tenant_memberships_tenant_subject",
+            "principal_id",
+            name="uq_tenant_memberships_tenant_principal",
         ),
-        Index("ix_tenant_memberships_subject", "subject"),
+        Index("ix_tenant_memberships_principal_id", "principal_id"),
         Index("ix_tenant_memberships_tenant_id", "tenant_id"),
         Index(
             "ix_tenant_memberships_active_resolution",
             "tenant_id",
-            "subject",
+            "principal_id",
             "status",
         ),
     )
 
     membership_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
-    subject: Mapped[str] = mapped_column(String(500), nullable=False)
+    principal_id: Mapped[str] = mapped_column(
+        String(46),
+        ForeignKey("auth_principals.principal_id"),
+        nullable=False,
+    )
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     created_at: Mapped[str] = mapped_column(String(50), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(50), nullable=False)

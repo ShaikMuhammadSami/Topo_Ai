@@ -27,7 +27,16 @@ def create_credential(
         "--caller-type",
         help="human_api or service_api.",
     ),
-    subject: str = typer.Option(..., "--subject", help="Stable caller subject."),
+    subject: str | None = typer.Option(
+        None,
+        "--subject",
+        help="Explicit legacy-local subject when provisioning a new identity.",
+    ),
+    principal_id: str | None = typer.Option(
+        None,
+        "--principal-id",
+        help="Existing durable human or service principal ID.",
+    ),
     display_name: str | None = typer.Option(None, "--display-name"),
     role: list[str] | None = typer.Option(None, "--role"),
     expires_in_days: int = typer.Option(
@@ -55,6 +64,12 @@ def create_credential(
                 "--caller-type must be human_api or service_api."
             )
         )
+    if subject is None and principal_id is None:
+        abort(
+            InputValidationFailure(
+                "Credential creation requires --principal-id or explicit --subject."
+            )
+        )
 
     runtime = get_runtime(context)
     result = api_call(
@@ -62,6 +77,7 @@ def create_credential(
             name=name,
             caller_type=caller_type,
             subject=subject,
+            principal_id=principal_id,
             display_name=display_name,
             roles=list(role or []),
             expires_in_days=expires_in_days,
@@ -96,6 +112,7 @@ def list_credentials(
         columns=[
             ColumnSpec("NAME", ("name",)),
             ColumnSpec("TYPE", ("caller_type",)),
+            ColumnSpec("PRINCIPAL ID", ("principal_id",), max_width=60),
             ColumnSpec("SUBJECT", ("subject",)),
             ColumnSpec("ROLES", ("roles",)),
             ColumnSpec("EXPIRES", ("expires_at",)),

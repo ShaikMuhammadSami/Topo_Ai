@@ -26,9 +26,9 @@ from app.db.schema_management import (
 
 from frozen_schema_fixtures import SECRET_STORE_TABLES, frozen_0008_metadata
 
-DOMAIN_TABLE_COUNT = 45
-DOMAIN_COLUMN_COUNT = 804
-EXPECTED_HEAD = "0011_secret_enforce"
+DOMAIN_TABLE_COUNT = 47
+DOMAIN_COLUMN_COUNT = 819
+EXPECTED_HEAD = "0013_principal_enforce"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"
@@ -102,7 +102,7 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
         len(inspector.get_pk_constraint(table)["constrained_columns"])
         for table in domain_tables
     ) == DOMAIN_TABLE_COUNT + 26
-    assert sum(len(inspector.get_foreign_keys(table)) for table in domain_tables) == 1
+    assert sum(len(inspector.get_foreign_keys(table)) for table in domain_tables) == 5
     assert sum(
         column["default"] is not None
         for table in domain_tables
@@ -121,9 +121,9 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
         for table in domain_tables
         for index in inspector.get_indexes(table)
     ]
-    assert len(named_multi_column_uniques) == 13
+    assert len(named_multi_column_uniques) == 14
     assert sum(bool(index["unique"]) for index in indexes) == 9
-    assert len(indexes) == 344
+    assert len(indexes) == 348
 
     with migration_engine.connect() as connection:
         assert schema_differences(connection) == ()
@@ -154,7 +154,7 @@ def test_migration_excludes_legacy_tables_and_includes_current_drift_fixes(
     } <= delivery_indexes
 
 
-def test_tenant_foundation_schema_is_exact_and_has_no_foreign_keys(
+def test_final_tenant_membership_schema_uses_principal_authority(
     migration_engine: Engine,
 ) -> None:
     _upgrade(migration_engine)
@@ -172,7 +172,7 @@ def test_tenant_foundation_schema_is_exact_and_has_no_foreign_keys(
         "tenant_memberships": {
             "membership_id",
             "tenant_id",
-            "subject",
+            "principal_id",
             "status",
             "created_at",
             "updated_at",
@@ -190,14 +190,15 @@ def test_tenant_foundation_schema_is_exact_and_has_no_foreign_keys(
         assert {
             column["name"] for column in inspector.get_columns(table)
         } == columns
-        assert inspector.get_foreign_keys(table) == []
+        expected_foreign_keys = 1 if table == "tenant_memberships" else 0
+        assert len(inspector.get_foreign_keys(table)) == expected_foreign_keys
 
     membership_uniques = inspector.get_unique_constraints(
         "tenant_memberships"
     )
     assert any(
-        constraint["name"] == "uq_tenant_memberships_tenant_subject"
-        and constraint["column_names"] == ["tenant_id", "subject"]
+        constraint["name"] == "uq_tenant_memberships_tenant_principal"
+        and constraint["column_names"] == ["tenant_id", "principal_id"]
         for constraint in membership_uniques
     )
     binding_uniques = inspector.get_unique_constraints(

@@ -57,10 +57,8 @@ def _required_app(
         "TOPO_API_TOKEN_HASHES_JSON",
         _registry(token, roles=roles),
     )
-    if not (tenant_admin or with_schema):
-        return create_app(database_initializer=lambda: None), token
-    # Explicit opt-in for machine administration and real startup readiness.
-    # Real membership; no TenantContext override or production DB access.
+    # Every authenticated request now resolves a durable principal. Keep all
+    # variants on a disposable schema; never touch the protected developer DB.
     from sqlalchemy import create_engine
     from sqlalchemy.orm import sessionmaker
     from sqlalchemy.pool import StaticPool
@@ -251,6 +249,8 @@ def test_required_human_bearer_contract(monkeypatch) -> None:
 
     assert response.status_code == 200
     assert response.json() == {
+        "principal_id": response.json()["principal_id"],
+        "principal_type": "human",
         "subject": "test:operator",
         "display_name": "PH-2B Test Principal",
         "roles": ["admin", "operator"],
