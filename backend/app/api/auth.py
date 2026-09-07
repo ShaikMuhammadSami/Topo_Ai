@@ -42,6 +42,7 @@ from app.services.auth_api_credential_service import (
     revoke_auth_api_credential,
 )
 from app.services.principal_identity import PrincipalIdentityError
+from app.services.authority_assignments import AuthorityAssignmentError
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
@@ -257,6 +258,12 @@ def create_api_credential(
         raise HTTPException(
             status_code=403,
             detail="TENANT_ACCESS_DENIED",
+        ) from exc
+    except AuthorityAssignmentError as exc:
+        session.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="Service principal permission assignment is unavailable or conflicts.",
         ) from exc
     except PrincipalIdentityError as exc:
         raise HTTPException(

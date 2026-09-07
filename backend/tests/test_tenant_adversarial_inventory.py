@@ -72,6 +72,11 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
         "principal_identity_repository.load_active_external_identity",
         "principal_identity_repository.list_external_identities_for_principal",
         "tenant_repository.service_principal_tenant_ids",
+        "authority_repository.load_service_permission_assignment",
+        "authority_repository.add_service_permission_assignment",
+        "authority_repository.compare_and_set_service_permissions",
+        "authority_repository.load_installation_operator_assignment",
+        "authority_repository.add_installation_operator_assignment",
     }
     raw, legacy_queries, llm = [], [], []
     for path in APP.rglob("*.py"):
@@ -88,7 +93,7 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
     assert [path for path, _ in raw] == ["db/schema_management.py"]
     assert [path for path, _ in legacy_queries] == ["repositories/topology_snapshot_repository.py"]
     assert len(llm) == 12  # eight central callers + four legacy Groq branches
-    assert len(models.Base.metadata.tables) == 47
+    assert len(models.Base.metadata.tables) == 49
     owned = [t for t in models.Base.metadata.tables.values() if "tenant_id" in t.c and t.name not in {
         "tenants", "tenant_memberships", "service_api_tenant_bindings", "secret_records"}]
     # PH-4B's explicit dual-scope store is not an ordinary PH-3 domain table.

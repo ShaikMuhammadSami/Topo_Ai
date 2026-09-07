@@ -43,6 +43,7 @@ class TopoClient:
         retry_backoff: float = 0.75,
     ) -> None:
         self.api_url = validate_api_url(api_url)
+        self.tenant_id = tenant_id
         self.snapshot_capture_path = snapshot_capture_path
         self.max_retries = max(max_retries,0,)
         self.retry_backoff = max(retry_backoff,0.0,)
@@ -1548,6 +1549,7 @@ class TopoClient:
      display_name: str | None,
      roles: list[str],
      expires_in_days: int,
+     permissions: list[str] | None = None,
     ) -> dict[str, Any]:
         value = self._request(
             "POST",
@@ -1560,6 +1562,10 @@ class TopoClient:
                 "display_name": display_name,
                 "roles": roles,
                 "expires_in_days": expires_in_days,
+                "permissions": permissions,
+                "tenant_id": (
+                    self.tenant_id if caller_type == "service_api" else None
+                ),
             },
         )
         if not isinstance(value, dict):

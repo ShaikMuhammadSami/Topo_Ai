@@ -205,6 +205,7 @@ def _record(table_name: str, row: int, **overrides):
 def _seed_representative_history(engine: Engine) -> dict[str, str]:
     identifiers = {
         "principal_id": "principal:00000000-0000-4000-8000-000000000051",
+        "service_principal_id": "principal:00000000-0000-4000-8000-000000000052",
         "external_identity_id": "identity:00000000-0000-4000-8000-000000000051",
         "tenant_id": "tenant:00000000-0000-4000-8000-000000000051",
         "membership_id": "tenant-membership:ph5a-preserved",
@@ -241,6 +242,12 @@ def _seed_representative_history(engine: Engine) -> dict[str, str]:
             )
         )
         session.flush()
+        session.add(db_models.AuthPrincipalRecord(
+            principal_id=identifiers["service_principal_id"],
+            principal_type="service", display_name="PH-5B preserved service",
+            status="active", created_at=NOW, updated_at=NOW,
+        ))
+        session.flush()
         session.add_all(
             [
                 db_models.ExternalIdentityRecord(
@@ -264,10 +271,20 @@ def _seed_representative_history(engine: Engine) -> dict[str, str]:
                     membership_id=identifiers["membership_id"],
                     tenant_id=identifiers["tenant_id"],
                     principal_id=identifiers["principal_id"],
+                    role="tenant_viewer",
                     status="active",
                     created_at=NOW,
                     updated_at=NOW,
                     created_by_subject="opaque-backup-subject",
+                ),
+                db_models.ServicePrincipalPermissionRecord(
+                    principal_id=identifiers["service_principal_id"],
+                    permissions_json='["incident.read","topology.read"]',
+                    row_version=3, created_at=NOW, updated_at=NOW,
+                ),
+                db_models.InstallationOperatorAssignmentRecord(
+                    principal_id=identifiers["principal_id"], status="active",
+                    created_at=NOW, updated_at=NOW,
                 ),
             ]
         )
@@ -661,6 +678,20 @@ def test_backup_restore_preserves_representative_history() -> None:
                     assert external_identity.subject == "opaque-backup-subject"
                     assert membership.tenant_id == expected["tenant_id"]
                     assert membership.principal_id == principal.principal_id
+                    assert membership.role == "tenant_viewer"
+                    service_permissions = session.get(
+                        db_models.ServicePrincipalPermissionRecord,
+                        expected["service_principal_id"],
+                    )
+                    installation_assignment = session.get(
+                        db_models.InstallationOperatorAssignmentRecord,
+                        expected["principal_id"],
+                    )
+                    assert service_permissions is not None
+                    assert service_permissions.permissions_json == '["incident.read","topology.read"]'
+                    assert service_permissions.row_version == 3
+                    assert installation_assignment is not None
+                    assert installation_assignment.status == "active"
             finally:
                 restored.dispose()
         finally:

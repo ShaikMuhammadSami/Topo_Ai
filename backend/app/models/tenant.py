@@ -6,6 +6,7 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.models.principal_identity import is_valid_principal_id
+from app.security.authorization_policy import TenantRole
 
 
 TENANT_ID_PATTERN = re.compile(
@@ -62,6 +63,7 @@ class TenantView(BaseModel):
 class TenantMembershipCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    role: TenantRole
     principal_id: str | None = Field(default=None, min_length=1, max_length=46)
     subject: str | None = Field(default=None, min_length=1, max_length=500)
 
@@ -87,6 +89,7 @@ class TenantMembershipCreate(BaseModel):
 class TenantMembershipRecovery(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    role: TenantRole
     tenant_id: str = Field(min_length=1, max_length=64)
     principal_id: str | None = Field(default=None, min_length=1, max_length=46)
     subject: str | None = Field(default=None, min_length=1, max_length=500)
@@ -129,6 +132,7 @@ class TenantMembershipView(BaseModel):
     external_subject: str | None = None
     subject: str | None = None
     status: TenantMembershipStatus
+    role: TenantRole
     created_at: str
     updated_at: str
     created_by_subject: str

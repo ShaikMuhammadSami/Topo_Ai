@@ -113,7 +113,7 @@ def test_fresh_final_schema_is_reference_only_and_exact(migration_engine):
     assert {"signing_secret_ref", "protected_headers_secret_ref", "protected_header_names_json"} <= webhook_columns
     assert {"signing_secret", "headers_json"}.isdisjoint(webhook_columns)
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == ("0013_principal_enforce",)
+        assert current_revisions(connection) == ("0014_min_authority",)
         assert schema_differences(connection) == ()
 
 
@@ -214,5 +214,5 @@ def test_postgresql_conversion_is_row_locked_rerunnable_and_reaches_final_head(m
         } for status in statuses)
         _upgrade(engine, "head")
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0013_principal_enforce",)
+            assert current_revisions(connection) == ("0014_min_authority",)
             assert schema_differences(connection) == ()

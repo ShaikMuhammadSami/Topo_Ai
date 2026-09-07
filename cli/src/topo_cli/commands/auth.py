@@ -39,6 +39,11 @@ def create_credential(
     ),
     display_name: str | None = typer.Option(None, "--display-name"),
     role: list[str] | None = typer.Option(None, "--role"),
+    permission: list[str] | None = typer.Option(
+        None,
+        "--permission",
+        help="Explicit service permission; repeat for each code.",
+    ),
     expires_in_days: int = typer.Option(
         30,
         "--expires-in-days",
@@ -72,6 +77,21 @@ def create_credential(
         )
 
     runtime = get_runtime(context)
+    if caller_type == "service_api":
+        if not runtime.client.tenant_id:
+            abort(
+                InputValidationFailure(
+                    "Service credentials require --tenant or a profile tenant_id."
+                )
+            )
+        if principal_id is None and not permission:
+            abort(
+                InputValidationFailure(
+                    "New service principals require explicit --permission values."
+                )
+            )
+    elif permission is not None:
+        abort(InputValidationFailure("--permission is only accepted for service principals."))
     result = api_call(
         lambda: runtime.client.create_api_credential(
             name=name,
@@ -81,6 +101,7 @@ def create_credential(
             display_name=display_name,
             roles=list(role or []),
             expires_in_days=expires_in_days,
+            permissions=list(permission) if permission is not None else None,
         )
     )
     raw_secret = result.get("api_credential")

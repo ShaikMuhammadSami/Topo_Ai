@@ -145,6 +145,8 @@ def _create_named(
     }
     if tenant_id is not None:
         payload["tenant_id"] = tenant_id
+    if caller_type == "service_api":
+        payload["permissions"] = ["incident.read"]
     response = client.post(
         "/api/v1/auth/api-credentials",
         headers=_bearer(bootstrap),

@@ -166,6 +166,7 @@ def add_membership(
             session,
             tenant_id=context.tenant_id,
             subject=value.subject,
+            role=value.role,
             principal_id=value.principal_id,
             created_by_subject=principal.subject,
             created_by_principal_id=principal.principal_id,
@@ -177,6 +178,11 @@ def add_membership(
         ) from exc
     except TenantPersistenceError as exc:
         raise _persistence_unavailable(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid membership assignment.",
+        ) from exc
 
 
 @router.post(
@@ -229,6 +235,7 @@ def recover_membership(
             session,
             tenant_id=value.tenant_id,
             subject=value.subject,
+            role=value.role,
             principal_id=value.principal_id,
             created_by_subject=principal.subject,
             created_by_principal_id=principal.principal_id,
@@ -240,3 +247,8 @@ def recover_membership(
         ) from exc
     except TenantPersistenceError as exc:
         raise _persistence_unavailable(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid membership assignment.",
+        ) from exc

@@ -374,6 +374,8 @@ def _mapped_instance(table_name: str, row: int = 1, **overrides):
             protected_headers_secret_ref=None,
             protected_header_names_json="[]",
         )
+    elif table_name == "tenant_memberships":
+        values["role"] = "tenant_viewer"
     values.update(overrides)
     return _mapper_for(table_name).class_(**values)
 
@@ -494,10 +496,10 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
         assert len(_domain_table_names(connection)) == 43
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 819
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 829
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
-        ) == 73
+        ) == 75
         assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 348
         assert sum(
             1
@@ -543,6 +545,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             if inspector.get_check_constraints(name)
         }
         assert checks == {
+            "tenant_memberships": {"ck_tenant_memberships_role"},
             "change_sources": {
                 "ck_change_sources_enabled_secret",
                 "ck_change_sources_secret_ref",
@@ -577,7 +580,7 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
             (table.name, column.name)
             for table in Base.metadata.tables.values()
             for column in table.columns
-            if column.name.endswith("_json")
+            if table.name in DOMAIN_TABLE_NAMES and column.name.endswith("_json")
         ]
         timestamp_columns = [
             (table.name, column.name)
@@ -651,7 +654,7 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0013_principal_enforce",)
+            assert current_revisions(connection) == ("0014_min_authority",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -792,7 +795,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0013_principal_enforce",)
+            assert current_revisions(connection) == ("0014_min_authority",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43
@@ -977,6 +980,7 @@ def test_postgresql_named_credential_lifecycle_session_and_startup_authority(
             request=ApiCredentialCreate(
                 name="PostgreSQL service",
                 caller_type=ApiCredentialCallerType.SERVICE_API,
+                permissions=["incident.read", "incident.respond"],
                 subject="service:postgres-automation",
                 display_name="PostgreSQL Automation",
                 roles=["admin"],
@@ -1136,6 +1140,7 @@ def test_postgresql_tenant_context_atomicity_and_fixed_service_binding(
         service_payload = {
             "name": "PostgreSQL tenant service",
             "caller_type": "service_api",
+            "permissions": ["incident.read"],
             "subject": "service:postgres-tenant",
             "display_name": "PostgreSQL tenant service",
             "roles": [],
@@ -1192,6 +1197,7 @@ def test_postgresql_tenant_context_atomicity_and_fixed_service_binding(
             json={
                 "tenant_id": tenant_id,
                 "subject": "test:postgres-tenant-admin",
+                "role": "tenant_admin",
             },
         )
         assert recovered.status_code == 200

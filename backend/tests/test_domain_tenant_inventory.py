@@ -13,6 +13,7 @@ GLOBAL_REPOSITORIES = {
     "tenant_repository",
     "tenant_scope",
     "principal_identity_repository",
+    "authority_repository",
 }
 MACHINE_FUNCTIONS = {
     "agent_repository.enroll_agent",

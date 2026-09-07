@@ -105,7 +105,7 @@ def test_fresh_sqlite_principal_migration_downgrade_and_reupgrade(
 ) -> None:
     _upgrade(migration_engine)
     assert current_revisions(migration_engine.connect()) == (
-        "0013_principal_enforce",
+        "0014_min_authority",
     )
     assert {"auth_principals", "external_identities"} <= set(
         inspect(migration_engine).get_table_names()
@@ -121,7 +121,7 @@ def test_fresh_sqlite_principal_migration_downgrade_and_reupgrade(
     )
     _upgrade(migration_engine)
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == ("0013_principal_enforce",)
+        assert current_revisions(connection) == ("0014_min_authority",)
 
 
 def test_populated_legacy_identity_backfill_reuses_human_and_separates_service(

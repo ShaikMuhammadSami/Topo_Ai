@@ -72,6 +72,7 @@ def seed_domain_tenant(engine, *, subject="local-development"):
                     membership_id="membership:domain-regression:" + subject,
                     tenant_id=TEST_TENANT,
                     principal_id=principal.principal_id,
+                    role="tenant_admin",
                     status="active",
                     created_by_subject=subject,
                     created_at="2026-08-30T00:00:00+00:00",

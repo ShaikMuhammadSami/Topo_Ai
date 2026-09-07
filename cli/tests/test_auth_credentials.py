@@ -11,6 +11,7 @@ from topo_cli.config import Profile, TopoConfig
 
 class FakeCredentialClient:
     def __init__(self, **kwargs) -> None:
+        self.tenant_id = kwargs.get("tenant_id")
         self.calls: list[tuple[str, object]] = []
         self.raw_secret = "topo_api_" + secrets.token_urlsafe(48)
 
@@ -73,7 +74,10 @@ def _install_runtime(monkeypatch) -> FakeCredentialClient:
         lambda config, selected: ("test", profile),
     )
     monkeypatch.setattr(main_module, "profile_token", lambda *args: "stored-token")
-    monkeypatch.setattr(main_module, "TopoClient", lambda **kwargs: fake)
+    def create_client(**kwargs):
+        fake.tenant_id = kwargs.get("tenant_id")
+        return fake
+    monkeypatch.setattr(main_module, "TopoClient", create_client)
     return fake
 
 
@@ -197,3 +201,67 @@ def test_logout_is_local_only_and_does_not_revoke_server_credential(
     assert removed == ["test"]
     assert not any(call[0] == "revoke" for call in fake.calls)
     assert "Server credentials are unchanged" in result.output
+
+
+def test_service_creation_requires_explicit_permissions_and_selected_tenant(monkeypatch):
+    fake = _install_runtime(monkeypatch)
+    runner = CliRunner()
+    command = ["auth", "credentials", "create", "--caller-type", "service_api",
+               "--name", "reader", "--subject", "service:reader", "--output-token-stdout"]
+    tenant = "tenant:11111111-1111-4111-8111-111111111111"
+    missing_tenant = runner.invoke(main_module.app, command)
+    assert missing_tenant.exit_code == 7
+    assert "--tenant" in missing_tenant.output
+    missing_permissions = runner.invoke(main_module.app, ["--tenant", tenant, *command])
+    assert missing_permissions.exit_code == 7
+    assert "--permission" in missing_permissions.output
+    assert fake.calls == []
+    accepted = runner.invoke(main_module.app, ["--tenant", tenant, *command,
+        "--permission", "incident.read", "--permission", "topology.read"])
+    assert accepted.exit_code == 0
+    assert fake.calls[-1][1]["permissions"] == ["incident.read", "topology.read"]
+    assert fake.tenant_id == tenant
+
+
+def test_existing_service_credential_does_not_respecify_authority(monkeypatch):
+    fake = _install_runtime(monkeypatch)
+    result = CliRunner().invoke(main_module.app, [
+        "--tenant", "tenant:11111111-1111-4111-8111-111111111111",
+        "auth", "credentials", "create", "--caller-type", "service_api",
+        "--name", "reader", "--principal-id", "principal:11111111-1111-4111-8111-111111111111",
+        "--output-token-stdout",
+    ])
+    assert result.exit_code == 0
+    assert fake.calls[-1][1]["permissions"] is None
+
+
+def test_human_credential_rejects_service_permissions(monkeypatch):
+    fake = _install_runtime(monkeypatch)
+    result = CliRunner().invoke(main_module.app, ["auth", "credentials", "create",
+        "--name", "human", "--subject", "test:human", "--permission", "incident.read",
+        "--output-token-stdout"])
+    assert result.exit_code == 7
+    assert "only accepted for service" in result.output
+    assert fake.calls == []
+
+
+def test_client_credential_payload_uses_selected_service_binding_only(monkeypatch):
+    from topo_cli.client import TopoClient
+
+    tenant = "tenant:11111111-1111-4111-8111-111111111111"
+    calls = []
+    with TopoClient(api_url="https://topo.example", token=None, tenant_id=tenant,
+                    timeout=5, verify_tls=True, snapshot_capture_path="/capture") as client:
+        def request(method, path, **kwargs):
+            calls.append((method, path, kwargs["json_body"]))
+            return {"credential_id": "credential:test"}
+        monkeypatch.setattr(client, "_request", request)
+        for caller_type in ("service_api", "human_api"):
+            client.create_api_credential(name="reader", caller_type=caller_type,
+                subject="test:reader", display_name=None, roles=[], expires_in_days=30,
+                permissions=["incident.read"] if caller_type == "service_api" else None)
+    assert calls[0][:2] == ("POST", "/api/v1/auth/api-credentials")
+    assert calls[0][2]["tenant_id"] == tenant
+    assert calls[0][2]["permissions"] == ["incident.read"]
+    assert calls[1][2]["tenant_id"] is None
+    assert calls[1][2]["permissions"] is None

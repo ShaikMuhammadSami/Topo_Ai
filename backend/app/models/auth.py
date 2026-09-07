@@ -12,6 +12,7 @@ from pydantic import (
 
 from app.models.tenant import is_valid_tenant_id
 from app.models.principal_identity import is_valid_principal_id
+from app.security.authorization_policy import normalize_service_permissions
 
 
 class ApiCredentialCallerType(StrEnum):
@@ -30,6 +31,14 @@ class ApiCredentialCreate(BaseModel):
     roles: list[str] = Field(default_factory=list, max_length=100)
     expires_in_days: int = Field(default=30, ge=1, le=90)
     tenant_id: str | None = Field(default=None, min_length=1, max_length=64)
+    permissions: list[str] | None = None
+
+    @field_validator("permissions", mode="before")
+    @classmethod
+    def validate_permissions(cls, value: object) -> list[str] | None:
+        if value is None:
+            return None
+        return normalize_service_permissions(value)
 
     @field_validator("name", "subject", "display_name")
     @classmethod
@@ -90,6 +99,11 @@ class ApiCredentialCreate(BaseModel):
             and self.tenant_id is not None
         ):
             raise ValueError("tenant_id is not accepted for human_api credentials")
+        if self.caller_type is ApiCredentialCallerType.HUMAN_API:
+            if self.permissions is not None:
+                raise ValueError("permissions are only accepted for service principals")
+        elif self.principal_id is None and self.permissions is None:
+            raise ValueError("permissions are required for a new service principal")
         return self
 
 
