@@ -241,6 +241,7 @@ def test_service_principal_supports_rotation_without_human_membership(identity_f
             session,
             request=ApiCredentialCreate(
                 name="service primary",
+                permissions=["incident.read"],
                 caller_type=ApiCredentialCallerType.SERVICE_API,
                 subject="service:automation",
                 display_name="Automation",
@@ -300,6 +301,7 @@ def test_service_principal_cannot_acquire_a_second_tenant(identity_factory) -> N
             session,
             request=ApiCredentialCreate(
                 name="service primary",
+                permissions=["incident.read"],
                 caller_type=ApiCredentialCallerType.SERVICE_API,
                 subject="service:automation",
                 roles=[],
@@ -438,6 +440,7 @@ def test_human_and_service_principal_types_cannot_substitute(identity_factory) -
                 tenant_id=tenant.tenant_id,
                 principal_id=service.principal_id,
                 subject=None,
+                role="tenant_viewer",
                 created_by_subject=admin.subject,
                 created_by_principal_id=admin.principal_id,
             )

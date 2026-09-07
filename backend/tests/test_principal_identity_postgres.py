@@ -17,6 +17,7 @@ from app.db.models import (
 )
 from app.db.schema_management import alembic_config, current_revisions, schema_differences
 from app.models.auth import ApiCredentialCallerType, ApiCredentialCreate
+from app.services.authority_assignments import create_service_permission_assignment
 from app.models.principal_identity import LEGACY_LOCAL_ISSUER
 from app.services.auth_api_credential_service import create_auth_api_credential
 from app.services.auth_api_credential_service import ServiceTenantAccessError
@@ -45,7 +46,7 @@ def test_postgresql_populated_principal_migration_and_reupgrade() -> None:
             _seed_0011(connection)
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0013_principal_enforce",)
+            assert current_revisions(connection) == ("0014_min_authority",)
             assert schema_differences(connection) == ()
             assert connection.scalar(
                 text("SELECT COUNT(*) FROM auth_principals")
@@ -134,6 +135,7 @@ def test_postgresql_membership_concurrency_is_idempotent() -> None:
                     tenant_id=tenant.tenant_id,
                     principal_id=target.principal_id,
                     subject=None,
+                    role="tenant_viewer",
                     created_by_subject=admin.subject,
                     created_by_principal_id=admin.principal_id,
                 )
@@ -172,6 +174,7 @@ def test_postgresql_service_principal_survives_credential_rotation() -> None:
                 session,
                 request=ApiCredentialCreate(
                     name="first",
+                    permissions=["incident.read"],
                     caller_type=ApiCredentialCallerType.SERVICE_API,
                     subject="service:postgres",
                     roles=[],
@@ -230,6 +233,9 @@ def test_postgresql_service_principal_tenant_binding_race_has_one_authority() ->
                 creator_principal_id=admin.principal_id,
             )
             service = create_service_principal(session, display_name="Service")
+            create_service_permission_assignment(
+                session, principal_id=service.principal_id, permissions=["incident.read"],
+            )
             session.commit()
 
         barrier = Barrier(2)

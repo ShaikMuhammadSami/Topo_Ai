@@ -139,6 +139,8 @@ def _create_named(
     }
     if tenant_id is not None:
         payload["tenant_id"] = tenant_id
+    if caller_type == "service_api":
+        payload["permissions"] = ["incident.read"]
     response = client.post(
         "/api/v1/auth/api-credentials",
         headers=_bearer(token),
@@ -288,18 +290,18 @@ def test_membership_lifecycle_is_tenant_scoped_and_preserves_other_access(
         added_a = client.post(
             "/api/v1/tenant-memberships",
             headers=headers_a,
-            json={"subject": "test:viewer"},
+            json={"subject": "test:viewer", "role": "tenant_viewer"},
         )
         added_b = client.post(
             "/api/v1/tenant-memberships",
             headers=headers_b,
-            json={"subject": "test:viewer"},
+            json={"subject": "test:viewer", "role": "tenant_viewer"},
         )
         assert added_a.status_code == added_b.status_code == 200
         duplicate = client.post(
             "/api/v1/tenant-memberships",
             headers=headers_a,
-            json={"subject": "test:viewer"},
+            json={"subject": "test:viewer", "role": "tenant_viewer"},
         )
         assert duplicate.status_code == 200
         assert duplicate.json()["membership_id"] == added_a.json()[
@@ -349,7 +351,7 @@ def test_membership_lifecycle_is_tenant_scoped_and_preserves_other_access(
         reactivated = client.post(
             "/api/v1/tenant-memberships",
             headers=headers_a,
-            json={"subject": "test:viewer"},
+            json={"subject": "test:viewer", "role": "tenant_viewer"},
         )
         assert reactivated.status_code == 200
         assert reactivated.json()["membership_id"] == added_a.json()[
@@ -374,6 +376,7 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
                 "name": "missing tenant",
                 "caller_type": "service_api",
                 "subject": "service:missing",
+                "permissions": ["incident.read"],
                 "roles": [],
             },
         )
@@ -386,6 +389,7 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
                 "name": "foreign tenant",
                 "caller_type": "service_api",
                 "subject": "service:foreign",
+                "permissions": ["incident.read"],
                 "roles": [],
                 "tenant_id": tenant_b["tenant_id"],
             },
@@ -407,6 +411,7 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
                     "name": "atomic service",
                     "caller_type": "service_api",
                     "subject": "service:atomic",
+                    "permissions": ["incident.read"],
                     "roles": [],
                     "tenant_id": tenant_a["tenant_id"],
                 },
@@ -575,6 +580,7 @@ def test_direct_bootstrap_recovery_is_narrow_and_other_callers_are_denied(
         ).status_code == 200
 
         recovery_body = {
+            "role": "tenant_admin",
             "tenant_id": tenant["tenant_id"],
             "subject": "test:recovered-admin",
         }
@@ -615,6 +621,7 @@ def test_direct_bootstrap_recovery_is_narrow_and_other_callers_are_denied(
             json={
                 "tenant_id": tenant["tenant_id"],
                 "subject": "test:bootstrap-admin",
+                "role": "tenant_admin",
             },
         )
         assert restored.status_code == 200

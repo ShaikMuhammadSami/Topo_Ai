@@ -4681,6 +4681,42 @@ class ExternalIdentityRecord(Base):
     updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
 
 
+class ServicePrincipalPermissionRecord(Base):
+    """Explicit tenant-capability assignment for one durable service identity."""
+
+    __tablename__ = "service_principal_permissions"
+    __table_args__ = (
+        CheckConstraint("row_version > 0", name="ck_service_permissions_row_version"),
+    )
+
+    principal_id: Mapped[str] = mapped_column(
+        String(46), ForeignKey("auth_principals.principal_id"), primary_key=True
+    )
+    permissions_json: Mapped[str] = mapped_column(Text, nullable=False)
+    row_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+
+
+class InstallationOperatorAssignmentRecord(Base):
+    """Explicit installation authority; independent of tenant memberships."""
+
+    __tablename__ = "installation_operator_assignments"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('active', 'disabled')",
+            name="ck_installation_operator_status",
+        ),
+    )
+
+    principal_id: Mapped[str] = mapped_column(
+        String(46), ForeignKey("auth_principals.principal_id"), primary_key=True
+    )
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    updated_at: Mapped[str] = mapped_column(String(50), nullable=False)
+
+
 class AuthSessionRecord(Base):
     """Digest-only, server-side authority for a human browser session."""
 
@@ -4837,6 +4873,10 @@ class TenantMembershipRecord(Base):
     __tablename__ = "tenant_memberships"
 
     __table_args__ = (
+        CheckConstraint(
+            "role IN ('tenant_viewer', 'tenant_responder', 'tenant_admin')",
+            name="ck_tenant_memberships_role",
+        ),
         UniqueConstraint(
             "tenant_id",
             "principal_id",
@@ -4859,6 +4899,7 @@ class TenantMembershipRecord(Base):
         ForeignKey("auth_principals.principal_id"),
         nullable=False,
     )
+    role: Mapped[str] = mapped_column(String(30), nullable=False)
     status: Mapped[str] = mapped_column(String(30), nullable=False)
     created_at: Mapped[str] = mapped_column(String(50), nullable=False)
     updated_at: Mapped[str] = mapped_column(String(50), nullable=False)

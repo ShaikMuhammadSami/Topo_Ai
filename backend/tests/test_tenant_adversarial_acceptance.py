@@ -49,7 +49,8 @@ def hostile(two_tenants):
             if name == "AdminNoB" and tenant == b:
                 continue
             response = client.post("/api/v1/tenant-memberships",
-                headers=_bearer(tokens[administrator], tenant), json={"subject": subject})
+                headers=_bearer(tokens[administrator], tenant),
+                json={"subject": subject, "role": "tenant_admin"})
             assert response.status_code == 200, response.text
     for name, tenant, administrator in (("ServiceA", a, "bootstrap"), ("ServiceB", b, "other_admin")):
         principals[name] = _create_named(client, tokens[administrator],

@@ -26,9 +26,9 @@ from app.db.schema_management import (
 
 from frozen_schema_fixtures import SECRET_STORE_TABLES, frozen_0008_metadata
 
-DOMAIN_TABLE_COUNT = 47
-DOMAIN_COLUMN_COUNT = 819
-EXPECTED_HEAD = "0013_principal_enforce"
+DOMAIN_TABLE_COUNT = 49
+DOMAIN_COLUMN_COUNT = 829
+EXPECTED_HEAD = "0014_min_authority"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"
@@ -102,7 +102,7 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
         len(inspector.get_pk_constraint(table)["constrained_columns"])
         for table in domain_tables
     ) == DOMAIN_TABLE_COUNT + 26
-    assert sum(len(inspector.get_foreign_keys(table)) for table in domain_tables) == 5
+    assert sum(len(inspector.get_foreign_keys(table)) for table in domain_tables) == 7
     assert sum(
         column["default"] is not None
         for table in domain_tables
@@ -173,6 +173,7 @@ def test_final_tenant_membership_schema_uses_principal_authority(
             "membership_id",
             "tenant_id",
             "principal_id",
+            "role",
             "status",
             "created_at",
             "updated_at",

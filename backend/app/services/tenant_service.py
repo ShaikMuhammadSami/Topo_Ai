@@ -16,6 +16,7 @@ from app.models.tenant import (
 )
 from app.repositories import tenant_repository
 from app.repositories import principal_identity_repository
+from app.security.authorization_policy import TenantRole
 from app.services.principal_identity import (
     provision_external_human_principal,
     require_active_principal,
@@ -92,6 +93,7 @@ def membership_view(
         external_subject=identity.subject if identity is not None else None,
         subject=identity.subject if identity is not None else None,
         status=TenantMembershipStatus(record.status),
+        role=TenantRole(record.role),
         created_at=record.created_at,
         updated_at=record.updated_at,
         created_by_subject=record.created_by_subject,
@@ -139,6 +141,7 @@ def create_tenant_with_creator_membership(
             tenant_id=tenant.tenant_id,
             principal_id=creator_principal_id,
             status=TenantMembershipStatus.ACTIVE.value,
+            role=TenantRole.ADMIN.value,
             created_at=created_at,
             updated_at=created_at,
             created_by_subject=creator,
@@ -168,11 +171,14 @@ def add_or_reactivate_tenant_membership(
     *,
     tenant_id: str,
     subject: str | None,
+    role: TenantRole,
     principal_id: str | None = None,
     created_by_subject: str,
     created_by_principal_id: str | None = None,
     now: datetime | None = None,
 ) -> TenantMembershipView:
+    # Explicit authority input, never derived from the caller's legacy roles.
+    assigned_role = TenantRole(role)
     creator = _stable_subject(created_by_subject)
     timestamp = _utc_now_iso(now)
 
@@ -222,6 +228,7 @@ def add_or_reactivate_tenant_membership(
     if existing is not None:
         if existing.status == TenantMembershipStatus.DISABLED.value:
             existing.status = TenantMembershipStatus.ACTIVE.value
+            existing.role = assigned_role.value
             existing.updated_at = timestamp
             try:
                 session.commit()
@@ -230,6 +237,8 @@ def add_or_reactivate_tenant_membership(
                 raise TenantPersistenceError(
                     "Tenant membership persistence failed."
                 ) from exc
+        elif existing.role != assigned_role.value:
+            raise ValueError("An active membership already has a different role.")
         return membership_view(session, existing)
 
     record = TenantMembershipRecord(
@@ -237,6 +246,7 @@ def add_or_reactivate_tenant_membership(
         tenant_id=tenant_id,
         principal_id=principal_id,
         status=TenantMembershipStatus.ACTIVE.value,
+        role=assigned_role.value,
         created_at=timestamp,
         updated_at=timestamp,
         created_by_subject=creator,
@@ -255,6 +265,7 @@ def add_or_reactivate_tenant_membership(
         if (
             concurrent is not None
             and concurrent.status == TenantMembershipStatus.ACTIVE.value
+            and concurrent.role == assigned_role.value
         ):
             return membership_view(session, concurrent)
         raise TenantPersistenceError(

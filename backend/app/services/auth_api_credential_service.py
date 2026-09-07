@@ -30,6 +30,11 @@ from app.repositories.auth_api_credential_repository import (
 from app.repositories import tenant_repository
 from app.repositories import principal_identity_repository
 from app.security.principals import AuthPrincipal
+from app.services.authority_assignments import (
+    AuthorityAssignmentError,
+    create_service_permission_assignment,
+    resolve_service_permissions,
+)
 from app.services.principal_identity import (
     PrincipalIdentityError,
     PrincipalNotProvisionedError,
@@ -295,6 +300,26 @@ def create_auth_api_credential(
             raise ServiceTenantAccessError(
                 "Service principal tenant binding cannot be changed."
             )
+        if request.principal_id is None:
+            # Flush-only: principal, authority, credential, and fixed binding
+            # become durable together in the credential transaction below.
+            create_service_permission_assignment(
+                session,
+                principal_id=target_principal_id,
+                permissions=request.permissions,
+                now=created_at,
+            )
+        else:
+            existing_permissions = resolve_service_permissions(
+                session, principal_id=target_principal_id,
+            )
+            if (
+                request.permissions is not None
+                and set(request.permissions) != existing_permissions
+            ):
+                raise AuthorityAssignmentError(
+                    "SERVICE_PERMISSION_ASSIGNMENT_CONFLICT"
+                )
 
     for attempt in range(MAX_GENERATION_ATTEMPTS):
         raw_secret = API_CREDENTIAL_PREFIX + secrets.token_urlsafe(48)
@@ -317,19 +342,23 @@ def create_auth_api_credential(
             updated_at=created_at.isoformat(),
         )
         try:
-            add_auth_api_credential(session, record)
-            session.flush()
-            if tenant_id is not None:
-                tenant_repository.add_service_api_tenant_binding(
-                    session,
-                    ServiceApiTenantBindingRecord(
-                        binding_id=f"service-tenant-binding:{uuid4()}",
-                        credential_id=record.credential_id,
-                        tenant_id=tenant_id,
-                        created_at=created_at.isoformat(),
-                        created_by_subject=created_by_subject,
-                    ),
-                )
+            # Retry a generated ID/secret collision without discarding the new
+            # principal and assignment that belong to this outer transaction.
+            with session.begin_nested():
+                add_auth_api_credential(session, record)
+                session.flush()
+                if tenant_id is not None:
+                    tenant_repository.add_service_api_tenant_binding(
+                        session,
+                        ServiceApiTenantBindingRecord(
+                            binding_id=f"service-tenant-binding:{uuid4()}",
+                            credential_id=record.credential_id,
+                            tenant_id=tenant_id,
+                            created_at=created_at.isoformat(),
+                            created_by_subject=created_by_subject,
+                        ),
+                    )
+                session.flush()
             session.commit()
             return credential_created_view(
                 record,
@@ -337,8 +366,8 @@ def create_auth_api_credential(
                 tenant_id=tenant_id,
             )
         except IntegrityError as exc:
-            session.rollback()
             if attempt + 1 == MAX_GENERATION_ATTEMPTS:
+                session.rollback()
                 raise AuthApiCredentialPersistenceError(
                     "API credential generation failed safely."
                 ) from exc
