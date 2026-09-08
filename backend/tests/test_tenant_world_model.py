@@ -39,6 +39,7 @@ from test_domain_tenant_enforcement import two_tenants, tenant_app, sqlite_tenan
 from test_tenant_foundation import _bearer
 import test_lineage_candidate_admission as lineage
 import test_continuous_lifecycle as lifecycle_fixture
+from authorization_test_support import tenant_admin_authorization
 
 
 def seed_world(session, tenant, *, provider=True, source=True, label="A-world", incident_id="incident:same"):
@@ -200,12 +201,12 @@ def test_foreign_snapshot_reference_rejected_and_reconciliation_never_uses_it(tw
     _, factory, _, a, b = two_tenants
     with factory() as session:
         snapshot = lifecycle_fixture._snapshot("snapshot:foreign", observed_at=lifecycle_fixture.NOW)
-        persist_topology_checkpoint(session, snapshot=snapshot, reason=TopologyCheckpointReason.PERIODIC_RECONCILE, tenant_id=b)
-        pending = ingest_failure_signal_batch(session, signals=[lifecycle_fixture._signal("signal:pending", snapshot_id=None)], tenant_id=a)
+        persist_topology_checkpoint(session, snapshot=snapshot, reason=TopologyCheckpointReason.PERIODIC_RECONCILE, tenant_id=b, authorization_context=tenant_admin_authorization(session, b))
+        pending = ingest_failure_signal_batch(session, signals=[lifecycle_fixture._signal("signal:pending", snapshot_id=None)], tenant_id=a, authorization_context=tenant_admin_authorization(session, a))
         identifier = pending.results[0].incident_id
         incident = tenant_get(session, IncidentRecord, identifier, tenant_id=a)
         assert incident.topology_snapshot_id is None
-        assert reconcile_pending_incidents_for_checkpoint(session, snapshot_id=snapshot.snapshot_id, tenant_id=a) == []
+        assert reconcile_pending_incidents_for_checkpoint(session, snapshot_id=snapshot.snapshot_id, tenant_id=a, authorization_context=tenant_admin_authorization(session, a)) == []
         incident.topology_snapshot_id = snapshot.snapshot_id
         with pytest.raises(TenantResourceNotFound):
             tenant_commit(session, tenant_id=a)
@@ -229,13 +230,14 @@ def test_same_failure_family_creates_distinct_automatic_incidents_and_fixed_pins
         identifiers = []
         for tenant in (a, b):
             graph = lifecycle_fixture._snapshot("snapshot:same-boundary")
-            persist_topology_checkpoint(session, snapshot=graph, reason=TopologyCheckpointReason.INCIDENT_BOUNDARY, tenant_id=tenant)
-            result = ingest_failure_signal_batch(session, signals=[lifecycle_fixture._signal("signal:same-auto", snapshot_id=graph.snapshot_id)], tenant_id=tenant)
+            authorization = tenant_admin_authorization(session, tenant)
+            persist_topology_checkpoint(session, snapshot=graph, reason=TopologyCheckpointReason.INCIDENT_BOUNDARY, tenant_id=tenant, authorization_context=authorization)
+            result = ingest_failure_signal_batch(session, signals=[lifecycle_fixture._signal("signal:same-auto", snapshot_id=graph.snapshot_id)], tenant_id=tenant, authorization_context=authorization)
             identifier = result.results[0].incident_id
             identifiers.append(identifier)
             assert identifier
             assert latest_causal_analysis(session, incident_id=identifier, tenant_id=tenant) is not None
-            again = ingest_failure_signal_batch(session, signals=[lifecycle_fixture._signal("signal:same-auto", snapshot_id=graph.snapshot_id)], tenant_id=tenant)
+            again = ingest_failure_signal_batch(session, signals=[lifecycle_fixture._signal("signal:same-auto", snapshot_id=graph.snapshot_id)], tenant_id=tenant, authorization_context=authorization)
             assert again.results[0].incident_id == identifier
             incident = tenant_get(session, IncidentRecord, identifier, tenant_id=tenant)
             assert incident.topology_snapshot_id == graph.snapshot_id

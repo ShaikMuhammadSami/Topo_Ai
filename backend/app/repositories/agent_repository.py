@@ -18,6 +18,7 @@ from app.repositories.tenant_scope import (
     require_record_owner,
 )
 from app.security.machine_tenant import machine_tenant_is_active
+from app.security.authorization_enforcement import authorize_service_operation
 
 from app.db.models import (
     AgentEnrollmentTokenRecord,
@@ -278,14 +279,8 @@ def enroll_agent(
         request.enrollment_token
     )
     # MACHINE_AUTH_DERIVATION_LOOKUP: exact credential digest only.
-    observed = session.execute(
-        select(
-            AgentEnrollmentTokenRecord.expires_at,
-            AgentEnrollmentTokenRecord.revoked_at,
-            AgentEnrollmentTokenRecord.use_count,
-            AgentEnrollmentTokenRecord.max_uses,
-            AgentEnrollmentTokenRecord.tenant_id,
-        ).where(
+    observed = session.scalars(
+        select(AgentEnrollmentTokenRecord).where(
             AgentEnrollmentTokenRecord.token_hash == digest
         )
     ).one_or_none()
@@ -311,6 +306,21 @@ def enroll_agent(
     if observed.use_count >= observed.max_uses:
         session.rollback()
         raise AgentEnrollmentRejected("fully_used")
+
+    from app.security.authorization_enforcement import (
+        authorize_agent_enrollment_fixed_purpose,
+        authorize_service_operation,
+    )
+
+    enrollment_context = authorize_agent_enrollment_fixed_purpose(
+        session,
+        enrollment=observed,
+        reference_time=consumption_time,
+    )
+    authorize_service_operation(
+        "app.repositories.agent_repository.enroll_agent",
+        authorization_context=enrollment_context,
+    )
 
     try:
         consumption = session.execute(
@@ -466,7 +476,12 @@ def record_heartbeat(
     record: TopoAgentRecord,
     request: AgentHeartbeatRequest,
     tenant_id: DomainTenant,
+    authorization_context=None,
 ) -> AgentHeartbeatResponse:
+    authorize_service_operation(
+        "app.repositories.agent_repository.record_heartbeat",
+        authorization_context=authorization_context,
+    )
     require_record_owner(record, tenant_id=tenant_id)
     now = utc_now_iso()
 

@@ -29,6 +29,7 @@ from test_tenant_foundation import (
     _create_named,
     _create_tenant,
 )
+from authorization_test_support import tenant_admin_authorization
 
 
 @pytest.fixture
@@ -44,6 +45,29 @@ def tenant_app(sqlite_tenant_app):
     with _temporary_database("ph3d_domain") as engine:
         _upgrade(engine)
         factory = sessionmaker(bind=engine, expire_on_commit=False)
+        # The PostgreSQL branch uses a fresh database rather than the SQLite
+        # fixture's database, so reproduce its explicit installation-operator
+        # assignments instead of relying on legacy role text.
+        from app.models.principal_identity import LEGACY_LOCAL_ISSUER
+        from app.services.authority_assignments import grant_installation_operator
+        from app.services.principal_identity import provision_external_human_principal
+
+        with factory() as session:
+            for subject, display_name in (
+                ("test:bootstrap-admin", "Bootstrap Admin"),
+                ("test:other-admin", "Other Admin"),
+            ):
+                principal = provision_external_human_principal(
+                    session,
+                    issuer=LEGACY_LOCAL_ISSUER,
+                    subject=subject,
+                    display_name=display_name,
+                    authentication_type="api_token",
+                    roles=("admin",),
+                )
+                grant_installation_operator(
+                    session, principal_id=principal.principal_id
+                )
         application = create_app(
             auth_configuration=sqlite_application.state.auth_configuration,
             session_factory=factory,
@@ -363,6 +387,7 @@ def test_background_lifecycle_propagates_owned_root_and_correlates_in_tenant(
             session,
             signals=[_signal("signal:background", snapshot_id=snapshot.snapshot_id)],
             tenant_id=a,
+            authorization_context=tenant_admin_authorization(session, a),
         )
         incident_id = result.results[0].incident_id
         incident = session.get(models.IncidentRecord, (a, incident_id))

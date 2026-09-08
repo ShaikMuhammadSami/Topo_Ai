@@ -48,6 +48,7 @@ from app.repositories.action_approval_repository import (
 from app.security.api_tokens import (
     AuthPrincipal,
 )
+from app.security.authorization_enforcement import authorize_service_operation
 from app.services.execution_readiness import (
     build_incident_execution_readiness,
 )
@@ -812,6 +813,7 @@ def create_action_approval(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
+    authorize_service_operation("app.services.action_approval.create_action_approval")
     current_time = _utc_now(now)
     readiness = _current_readiness(
         session,
@@ -921,6 +923,7 @@ def get_action_approval(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
+    authorize_service_operation("app.services.action_approval.get_action_approval")
     record = load_action_approval_record(
         session,
         incident_id=incident_id,
@@ -975,6 +978,7 @@ def list_action_approvals(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> list[ActionApprovalView]:
+    authorize_service_operation("app.services.action_approval.list_action_approvals")
     records = list_action_approval_records(
         session,
         incident_id=incident_id,
@@ -1106,6 +1110,7 @@ def decide_action_approval(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
+    authorize_service_operation("app.services.action_approval.decide_action_approval")
     if decision not in {
         ActionApprovalStatus.APPROVED,
         ActionApprovalStatus.REJECTED,
@@ -1172,6 +1177,7 @@ def revoke_action_approval(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ActionApprovalDetail:
+    authorize_service_operation("app.services.action_approval.revoke_action_approval")
     current_time = _utc_now(now)
     record = load_action_approval_record(
         session,

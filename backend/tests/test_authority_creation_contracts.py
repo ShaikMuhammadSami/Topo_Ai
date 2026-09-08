@@ -72,7 +72,8 @@ def test_membership_explicit_role_bootstrap_and_reactivation(tenant_app):
         assert restored.json()["principal_id"] == body["principal_id"]
     with factory() as session:
         assert session.get(TenantMembershipRecord, tenant["membership_id"]).role == "tenant_admin"
-        assert session.scalar(select(func.count()).select_from(InstallationOperatorAssignmentRecord)) == 0
+        assert session.scalar(select(func.count()).select_from(InstallationOperatorAssignmentRecord)) == 2
+        assert session.get(InstallationOperatorAssignmentRecord, body["principal_id"]) is None
         assert session.scalar(select(func.count()).select_from(TenantMembershipRecord)) == 2
 
 
@@ -80,7 +81,7 @@ def test_service_rotation_preserves_principal_authority_and_revocation(tenant_ap
     application, factory, tokens = tenant_app
     with TestClient(application) as client:
         tenant = _create_tenant(client, tokens["bootstrap"])
-        headers = _bearer(tokens["bootstrap"])
+        headers = _bearer(tokens["bootstrap"], tenant["tenant_id"])
         path = "/api/v1/auth/api-credentials"
         first = client.post(path, headers=headers, json=_payload(tenant["tenant_id"]))
         assert first.status_code == 201
@@ -109,7 +110,7 @@ def test_existing_service_missing_assignment_cannot_infer_from_credential(tenant
             service = create_service_principal(session, display_name="No authority")
             principal_id = service.principal_id
             session.commit()
-        response = client.post("/api/v1/auth/api-credentials", headers=_bearer(tokens["bootstrap"]), json=_payload(tenant["tenant_id"], principal_id=principal_id))
+        response = client.post("/api/v1/auth/api-credentials", headers=_bearer(tokens["bootstrap"], tenant["tenant_id"]), json=_payload(tenant["tenant_id"], principal_id=principal_id))
         assert response.status_code == 409
     with factory() as session:
         assert session.get(ServicePrincipalPermissionRecord, principal_id) is None
@@ -126,7 +127,7 @@ def test_failed_service_binding_does_not_leave_orphan_authority(tenant_app, monk
         def unavailable(*args, **kwargs):
             raise OperationalError("binding", {}, RuntimeError("unavailable"))
         monkeypatch.setattr(tenant_repository, "add_service_api_tenant_binding", unavailable)
-        response = client.post("/api/v1/auth/api-credentials", headers=_bearer(tokens["bootstrap"]), json=_payload(tenant["tenant_id"]))
+        response = client.post("/api/v1/auth/api-credentials", headers=_bearer(tokens["bootstrap"], tenant["tenant_id"]), json=_payload(tenant["tenant_id"]))
         assert response.status_code == 503
     with factory() as session:
         assert session.scalar(select(func.count()).select_from(AuthPrincipalRecord).where(AuthPrincipalRecord.principal_type == "service")) == 0
@@ -148,7 +149,7 @@ def test_generated_credential_collision_retry_keeps_service_assignment_atomic(te
     with TestClient(application) as client:
         tenant = _create_tenant(client, tokens["bootstrap"])
         monkeypatch.setattr(service, "add_auth_api_credential", once)
-        response = client.post("/api/v1/auth/api-credentials", headers=_bearer(tokens["bootstrap"]), json=_payload(tenant["tenant_id"]))
+        response = client.post("/api/v1/auth/api-credentials", headers=_bearer(tokens["bootstrap"], tenant["tenant_id"]), json=_payload(tenant["tenant_id"]))
         assert response.status_code == 201
         principal_id = response.json()["principal_id"]
     assert len(attempts) == 2

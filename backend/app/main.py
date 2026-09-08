@@ -5,7 +5,7 @@ from collections.abc import Callable
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
@@ -58,6 +58,7 @@ from app.api.topology import router as topology_router
 from app.api.webhooks import router as webhooks_router
 from app.db.database import DATABASE_URL, SessionLocal, init_db
 from app.security.api_tokens import ApiTokenAuthMiddleware
+from app.security.authorization_enforcement import require_route_authorization
 from app.security.auth_config import (
     AuthConfiguration,
     AuthConfigurationError,
@@ -139,6 +140,7 @@ def create_app(
         openapi_url="/openapi.json" if development_docs else None,
         docs_url="/docs" if development_docs else None,
         redoc_url="/redoc" if development_docs else None,
+        dependencies=[Depends(require_route_authorization)],
     )
     application.state.auth_configuration = configuration
     application.state.session_factory = session_factory

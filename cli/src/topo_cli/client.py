@@ -1577,13 +1577,18 @@ class TopoClient:
     def list_api_credentials(
      self,
      *,
+     target_type: str = "human",
      limit: int,
      offset: int = 0,
     ) -> list[dict[str, Any]]:
         value = self._request(
             "GET",
             "/api/v1/auth/api-credentials",
-            params={"limit": limit, "offset": offset},
+            params={
+                "target_type": target_type,
+                "limit": limit,
+                "offset": offset,
+            },
         )
         return self._collection(
             value,

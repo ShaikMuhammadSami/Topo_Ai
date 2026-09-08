@@ -3,7 +3,7 @@ from __future__ import annotations
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
-from app.db.models import AuthApiCredentialRecord
+from app.db.models import AuthApiCredentialRecord, ServiceApiTenantBindingRecord
 
 
 def add_auth_api_credential(
@@ -36,9 +36,29 @@ def list_auth_api_credentials(
     *,
     limit: int,
     offset: int,
+    caller_type: str,
+    principal_id: str | None = None,
+    tenant_id: str | None = None,
 ) -> list[AuthApiCredentialRecord]:
+    statement = select(AuthApiCredentialRecord)
+    if caller_type == "human_api" and principal_id and tenant_id is None:
+        statement = statement.where(
+            AuthApiCredentialRecord.caller_type == "human_api",
+            AuthApiCredentialRecord.principal_id == principal_id,
+        )
+    elif caller_type == "service_api" and tenant_id and principal_id is None:
+        statement = statement.join(
+            ServiceApiTenantBindingRecord,
+            ServiceApiTenantBindingRecord.credential_id
+            == AuthApiCredentialRecord.credential_id,
+        ).where(
+            AuthApiCredentialRecord.caller_type == "service_api",
+            ServiceApiTenantBindingRecord.tenant_id == tenant_id,
+        )
+    else:
+        raise ValueError("CREDENTIAL_LIST_SCOPE_REQUIRED")
     statement = (
-        select(AuthApiCredentialRecord)
+        statement
         .order_by(
             AuthApiCredentialRecord.created_at.desc(),
             AuthApiCredentialRecord.credential_id.desc(),

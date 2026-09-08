@@ -125,10 +125,11 @@ def test_human_machine_creation_rejects_payload_tenant(two_tenants, path, payloa
 def test_service_fixed_binding_applies_to_machine_admin(two_tenants):
     client, _, tokens, a, b = two_tenants
     credential = _create_named(client, tokens["bootstrap"], caller_type="service_api",
-                              subject="service:machine-test", roles=["admin"], tenant_id=a)
+                              subject="service:machine-test", roles=["admin"], tenant_id=a,
+                              permissions=["integration.read"])
     headers = _bearer(credential["api_credential"])
     assert client.get("/api/v1/agents", headers=headers).status_code == 200
-    assert client.get("/api/v1/change-sources", headers=headers).status_code == 200
+    assert client.get("/api/v1/change-sources", headers=headers).status_code == 403
     assert client.get("/api/v1/agents", headers={**headers, "X-Topo-Tenant-ID": b}).status_code == 403
 
 

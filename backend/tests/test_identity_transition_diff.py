@@ -23,6 +23,8 @@ from app.services.canonical_identity import (
 from app.services.change_normalizer import normalize_snapshot_changes
 from app.services.snapshot_diff import compare_snapshots
 from app.services.topology_checkpoint import persist_topology_checkpoint
+from app.security.authorization_enforcement import bind_authorization_context
+from authorization_test_support import tenant_admin_authorization
 
 NOW = datetime(2026, 8, 23, 10, 0, tzinfo=timezone.utc)
 CLUSTER = "production"
@@ -33,7 +35,11 @@ def _session() -> Session:
     engine = create_engine("sqlite+pysqlite:///:memory:")
     Base.metadata.create_all(engine)
     seed_domain_tenant(engine)
-    return Session(engine)
+    session = Session(engine)
+    bind_authorization_context(
+        tenant_admin_authorization(session, TEST_TENANT)
+    )
+    return session
 
 
 def _count(session: Session, model) -> int:

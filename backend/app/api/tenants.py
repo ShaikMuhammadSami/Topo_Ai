@@ -21,7 +21,6 @@ from app.security.principals import AuthPrincipal
 from app.security.tenant_context import (
     HUMAN_AUTHENTICATION_TYPES,
     TENANT_ACCESS_DENIED,
-    TenantActorKind,
     TenantContext,
     require_tenant_context,
     tenant_database_session,
@@ -51,29 +50,6 @@ def _human_principal(request: Request) -> AuthPrincipal:
     return principal
 
 
-def _human_admin_principal(request: Request) -> AuthPrincipal:
-    principal = _human_principal(request)
-    if "admin" not in principal.roles:
-        raise HTTPException(
-            status_code=403,
-            detail="Administrative human authority is required.",
-        )
-    return principal
-
-
-def _tenant_admin(
-    request: Request,
-    context: TenantContext,
-) -> AuthPrincipal:
-    principal = _human_admin_principal(request)
-    if context.actor_kind is not TenantActorKind.HUMAN:
-        raise HTTPException(
-            status_code=403,
-            detail="Administrative human authority is required.",
-        )
-    return principal
-
-
 def _persistence_unavailable(exc: Exception) -> HTTPException:
     return HTTPException(
         status_code=503,
@@ -91,7 +67,7 @@ def create_tenant(
     request: Request,
     session: Session = Depends(tenant_database_session),
 ) -> TenantView:
-    principal = _human_admin_principal(request)
+    principal = _human_principal(request)
     try:
         return create_tenant_with_creator_membership(
             session,
@@ -137,7 +113,7 @@ def list_memberships(
     context: TenantContext = Depends(require_tenant_context),
     session: Session = Depends(tenant_database_session),
 ) -> list[TenantMembershipView]:
-    _tenant_admin(request, context)
+    _human_principal(request)
     try:
         return [
             membership_view(session, record)
@@ -160,7 +136,7 @@ def add_membership(
     context: TenantContext = Depends(require_tenant_context),
     session: Session = Depends(tenant_database_session),
 ) -> TenantMembershipView:
-    principal = _tenant_admin(request, context)
+    principal = _human_principal(request)
     try:
         return add_or_reactivate_tenant_membership(
             session,
@@ -195,7 +171,7 @@ def disable_membership(
     context: TenantContext = Depends(require_tenant_context),
     session: Session = Depends(tenant_database_session),
 ) -> TenantMembershipView:
-    _tenant_admin(request, context)
+    _human_principal(request)
     try:
         return disable_tenant_membership(
             session,
@@ -223,7 +199,6 @@ def recover_membership(
     principal = authenticated_principal(request)
     if (
         principal.authentication_type != "api_token"
-        or "admin" not in principal.roles
         or getattr(request.state, "direct_static_bearer", False) is not True
     ):
         raise HTTPException(

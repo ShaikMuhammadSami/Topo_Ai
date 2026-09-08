@@ -18,6 +18,7 @@ from datetime import (
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from app.security.authorization_enforcement import authorize_service_operation
 
 from app.db.models import (
     RuntimeDependencyRecord,
@@ -348,7 +349,12 @@ def record_sensor_heartbeat(
     agent: TopoAgentRecord,
     request: RuntimeSensorHeartbeatRequest,
     tenant_id: DomainTenant,
+    authorization_context=None,
 ) -> RuntimeSensorHeartbeatResponse:
+    authorize_service_operation(
+        "app.repositories.runtime_observability_repository.record_sensor_heartbeat",
+        authorization_context=authorization_context,
+    )
     _touch_sensor(
         session=session,
         agent=agent,
@@ -590,7 +596,12 @@ def ingest_runtime_event_batch(
     agent: TopoAgentRecord,
     request: RuntimeEventBatchRequest,
     tenant_id: DomainTenant,
+    authorization_context=None,
 ) -> RuntimeEventBatchReceipt:
+    authorize_service_operation(
+        "app.repositories.runtime_observability_repository.ingest_runtime_event_batch",
+        authorization_context=authorization_context,
+    )
     if (
         request.cluster_name
         != agent.cluster_name

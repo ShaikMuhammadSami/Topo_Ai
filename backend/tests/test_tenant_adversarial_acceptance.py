@@ -16,6 +16,7 @@ from sqlalchemy import select
 
 from app.db import models
 from app.models.causal_rca import CausalAnalysisRequest
+from app.models.auth import ApiCredentialCallerType, ApiCredentialCreate
 from app.models.incident_outcome import IncidentOutcome, IncidentResponseActionObservation
 from app.models.ownership import OwnershipMappingCreate
 from app.repositories.causal_analysis_repository import latest_causal_analysis
@@ -24,6 +25,7 @@ from app.repositories.incident_record_repository import load_incident_record
 from app.repositories.snapshot_repository import load_snapshot
 from app.repositories.tenant_scope import TenantResourceNotFound, tenant_get, tenant_commit
 from app.services.causal_rca import analyze_causal_rca
+from app.services.auth_api_credential_service import create_auth_api_credential
 from app.services.incident_context import build_incident_operational_context
 from app.services.incident_memory import build_incident_feature_profile
 from app.services.ownership_resolver import create_ownership_mapping
@@ -43,8 +45,19 @@ def hostile(two_tenants):
         ("AB", "ph3g:both", ["operator"]),
         ("AdminNoB", "ph3g:admin-no-b", ["admin"]),
     ):
-        principals[name] = _create_named(client, tokens["bootstrap"],
-            caller_type="human_api", subject=subject, roles=roles)["api_credential"]
+        with factory() as session:
+            principals[name] = create_auth_api_credential(
+                session,
+                request=ApiCredentialCreate(
+                    name=f"PH-3G {name}",
+                    caller_type=ApiCredentialCallerType.HUMAN_API,
+                    subject=subject,
+                    display_name=subject,
+                    roles=roles,
+                    expires_in_days=30,
+                ),
+                created_by_subject="test:bootstrap-admin",
+            ).api_credential
         for tenant, administrator in ((a, "bootstrap"), (b, "other_admin")):
             if name == "AdminNoB" and tenant == b:
                 continue

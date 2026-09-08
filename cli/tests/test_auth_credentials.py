@@ -132,6 +132,7 @@ def test_credential_list_json_omits_secret_and_revoke_uses_identifier(
     assert "api_credential" not in listing.stdout
     assert revoked.exit_code == 0
     assert ("revoke", "api-credential:test") in fake.calls
+    assert ("list", {"target_type": "human", "limit": 100, "offset": 0}) in fake.calls
 
 
 def test_named_credential_login_stores_only_in_keyring_boundary(

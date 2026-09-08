@@ -22,6 +22,9 @@ from app.main import create_app
 from app import main as main_module
 from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
 from app.services.secret_store import EncryptedDatabaseSecretStore
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER
+from app.services.authority_assignments import grant_installation_operator
+from app.services.principal_identity import provision_external_human_principal
 from app.repositories import tenant_repository
 from app.security.api_tokens import token_digest
 from app.security.auth_config import load_auth_configuration
@@ -81,6 +84,20 @@ def tenant_app(monkeypatch):
     )
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
+    with factory() as session:
+        for name in ("bootstrap", "other_admin"):
+            subject, display_name, roles = callers[name]
+            principal = provision_external_human_principal(
+                session,
+                issuer=LEGACY_LOCAL_ISSUER,
+                subject=subject,
+                display_name=display_name,
+                authentication_type="api_token",
+                roles=tuple(roles),
+            )
+            grant_installation_operator(
+                session, principal_id=principal.principal_id or ""
+            )
     application = create_app(
         auth_configuration=configuration,
         session_factory=factory,
@@ -128,6 +145,7 @@ def _create_named(
     subject: str,
     roles: list[str],
     tenant_id: str | None = None,
+    permissions: list[str] | None = None,
 ) -> dict:
     payload = {
         "name": f"PH-3B {caller_type}",
@@ -140,10 +158,13 @@ def _create_named(
     if tenant_id is not None:
         payload["tenant_id"] = tenant_id
     if caller_type == "service_api":
-        payload["permissions"] = ["incident.read"]
+        payload["permissions"] = permissions or ["incident.read"]
+    headers = _bearer(token)
+    if tenant_id is not None:
+        headers["X-Topo-Tenant-ID"] = tenant_id
     response = client.post(
         "/api/v1/auth/api-credentials",
-        headers=_bearer(token),
+        headers=headers,
         json=payload,
     )
     assert response.status_code == 201
@@ -384,7 +405,7 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
 
         foreign = client.post(
             "/api/v1/auth/api-credentials",
-            headers=_bearer(tokens["bootstrap"]),
+            headers=_bearer(tokens["bootstrap"], tenant_a["tenant_id"]),
             json={
                 "name": "foreign tenant",
                 "caller_type": "service_api",
@@ -406,7 +427,7 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
             )
             failed = client.post(
                 "/api/v1/auth/api-credentials",
-                headers=_bearer(tokens["bootstrap"]),
+                headers=_bearer(tokens["bootstrap"], tenant_a["tenant_id"]),
                 json={
                     "name": "atomic service",
                     "caller_type": "service_api",
@@ -448,8 +469,8 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
         assert mismatching.status_code == 403
 
         listing = client.get(
-            "/api/v1/auth/api-credentials",
-            headers=_bearer(tokens["bootstrap"]),
+            "/api/v1/auth/api-credentials?target_type=service",
+            headers=_bearer(tokens["bootstrap"], tenant_a["tenant_id"]),
         )
         service_view = next(
             item
@@ -467,7 +488,7 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
                 "/api/v1/auth/api-credentials/"
                 f"{created['credential_id']}/revoke"
             ),
-            headers=_bearer(tokens["bootstrap"]),
+            headers=_bearer(tokens["bootstrap"], tenant_a["tenant_id"]),
         )
         assert revoked.status_code == 200
         assert client.get(
@@ -491,7 +512,7 @@ def test_service_credential_binding_is_fixed_visible_and_atomic(
         ) == 1
 
 
-def test_human_credentials_share_subject_membership_and_never_get_binding(
+def test_human_credentials_are_self_only_and_never_get_binding(
     tenant_app,
 ) -> None:
     application, factory, tokens = tenant_app
@@ -504,12 +525,16 @@ def test_human_credentials_share_subject_membership_and_never_get_binding(
             subject="test:bootstrap-admin",
             roles=["admin"],
         )
-        named_other = _create_named(
-            client,
-            tokens["bootstrap"],
-            caller_type="human_api",
-            subject="test:different-admin",
-            roles=["admin"],
+        named_other = client.post(
+            "/api/v1/auth/api-credentials",
+            headers=_bearer(tokens["bootstrap"]),
+            json={
+                "name": "forbidden other human",
+                "caller_type": "human_api",
+                "subject": "test:different-admin",
+                "roles": ["admin"],
+                "expires_in_days": 30,
+            },
         )
 
         assert client.get(
@@ -519,10 +544,11 @@ def test_human_credentials_share_subject_membership_and_never_get_binding(
                 tenant["tenant_id"],
             ),
         ).status_code == 200
+        assert named_other.status_code == 403
         assert client.get(
             "/api/v1/tenant-context",
             headers=_bearer(
-                named_other["api_credential"],
+                tokens["viewer"],
                 tenant["tenant_id"],
             ),
         ).status_code == 403
@@ -534,10 +560,7 @@ def test_human_credentials_share_subject_membership_and_never_get_binding(
             .select_from(ServiceApiTenantBindingRecord)
             .where(
                 ServiceApiTenantBindingRecord.credential_id.in_(
-                    [
-                        named_same["credential_id"],
-                        named_other["credential_id"],
-                    ]
+                    [named_same["credential_id"]]
                 )
             )
         )

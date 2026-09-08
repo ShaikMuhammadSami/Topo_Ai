@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session
 from app.models.auth import (
     ApiCredentialCreate,
     ApiCredentialCreated,
+    ApiCredentialCallerType,
+    ApiCredentialTargetType,
     ApiCredentialView,
     BrowserSessionView,
 )
@@ -20,8 +22,17 @@ from app.repositories.auth_session_repository import load_auth_session
 from app.repositories.tenant_repository import (
     load_service_api_tenant_binding,
     service_binding_tenant_ids,
+    service_principal_tenant_ids,
 )
 from app.security.approval_authorization import authenticated_principal
+from app.security.authorization_enforcement import (
+    authorize_authentication_self_service,
+    authorize_persisted_credential_target,
+    authorize_service_operation,
+    authorize_service_credential_scope,
+    require_human_authenticator_caller,
+)
+from app.security.authorization_policy import Permission
 from app.security.auth_config import AuthConfiguration
 from app.security.principals import AuthPrincipal
 from app.security.session_auth import (
@@ -46,20 +57,6 @@ from app.services.authority_assignments import AuthorityAssignmentError
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
-
-
-def _credential_admin(request: Request) -> AuthPrincipal:
-    principal = authenticated_principal(request)
-    if principal.authentication_type not in {
-        "api_token",
-        "human_api_token",
-        "session",
-    } or "admin" not in principal.roles:
-        raise HTTPException(
-            status_code=403,
-            detail="Administrative human authority is required.",
-        )
-    return principal
 
 
 def _configuration(request: Request) -> AuthConfiguration:
@@ -241,7 +238,41 @@ def create_api_credential(
     request: Request,
     session: Session = Depends(_auth_database_session),
 ) -> ApiCredentialCreated:
-    principal = _credential_admin(request)
+    principal = require_human_authenticator_caller(request)
+    if value.caller_type is ApiCredentialCallerType.HUMAN_API:
+        if value.principal_id not in {None, principal.principal_id}:
+            raise HTTPException(status_code=403, detail="CREDENTIAL_TARGET_DENIED")
+        if value.subject not in {None, principal.subject}:
+            raise HTTPException(status_code=403, detail="CREDENTIAL_TARGET_DENIED")
+        # Target identity and legacy authentication metadata are derived from
+        # the authenticated caller, never accepted as an authority claim.
+        value = value.model_copy(update={
+            "principal_id": principal.principal_id,
+            "subject": None,
+            "roles": list(principal.roles),
+        })
+        authorize_service_operation(
+            "authenticator.human.create",
+            authorization_context=authorize_authentication_self_service(principal),
+        )
+    else:
+        tenant_context, _ = authorize_service_credential_scope(
+            request,
+            session,
+            principal=principal,
+            required_permission=Permission.CREDENTIAL_ROTATE,
+            operation="create",
+            expected_tenant_id=value.tenant_id,
+        )
+        if value.principal_id is not None:
+            target_tenants = service_principal_tenant_ids(
+                session, value.principal_id
+            )
+            if target_tenants and target_tenants != {tenant_context.tenant_id}:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Principal identity is unavailable.",
+                )
     try:
         return create_auth_api_credential(
             session,
@@ -281,19 +312,42 @@ def create_api_credential(
 @router.get("/api-credentials", response_model=list[ApiCredentialView])
 def list_api_credentials(
     request: Request,
+    target_type: ApiCredentialTargetType = ApiCredentialTargetType.HUMAN,
     limit: int = 100,
     offset: int = 0,
     session: Session = Depends(_auth_database_session),
 ) -> list[ApiCredentialView]:
-    _credential_admin(request)
+    principal = require_human_authenticator_caller(request)
     if not 1 <= limit <= 1000 or offset < 0:
         raise HTTPException(status_code=422, detail="Invalid pagination.")
     try:
-        records = list_auth_api_credentials(
-            session,
-            limit=limit,
-            offset=offset,
-        )
+        if target_type is ApiCredentialTargetType.HUMAN:
+            authorize_service_operation(
+                "authenticator.human.list",
+                authorization_context=authorize_authentication_self_service(principal),
+            )
+            records = list_auth_api_credentials(
+                session,
+                limit=limit,
+                offset=offset,
+                caller_type=ApiCredentialCallerType.HUMAN_API.value,
+                principal_id=principal.principal_id,
+            )
+        else:
+            tenant_context, _ = authorize_service_credential_scope(
+                request,
+                session,
+                principal=principal,
+                required_permission=Permission.CREDENTIAL_METADATA_READ,
+                operation="list",
+            )
+            records = list_auth_api_credentials(
+                session,
+                limit=limit,
+                offset=offset,
+                caller_type=ApiCredentialCallerType.SERVICE_API.value,
+                tenant_id=tenant_context.tenant_id,
+            )
         tenant_ids = service_binding_tenant_ids(
             session,
             (record.credential_id for record in records),
@@ -321,7 +375,6 @@ def get_api_credential(
     request: Request,
     session: Session = Depends(_auth_database_session),
 ) -> ApiCredentialView:
-    _credential_admin(request)
     try:
         record = load_auth_api_credential(session, credential_id)
         if record is None:
@@ -329,6 +382,9 @@ def get_api_credential(
                 status_code=404,
                 detail="API credential not found.",
             )
+        authorize_persisted_credential_target(
+            request, session, record=record, operation="get"
+        )
         binding = load_service_api_tenant_binding(session, credential_id)
         return credential_view(
             record,
@@ -350,7 +406,7 @@ def revoke_api_credential(
     request: Request,
     session: Session = Depends(_auth_database_session),
 ) -> ApiCredentialView:
-    principal = _credential_admin(request)
+    principal = require_human_authenticator_caller(request)
     try:
         record = load_auth_api_credential(session, credential_id)
         if record is None:
@@ -358,6 +414,9 @@ def revoke_api_credential(
                 status_code=404,
                 detail="API credential not found.",
             )
+        authorize_persisted_credential_target(
+            request, session, record=record, operation="revoke"
+        )
         revoke_auth_api_credential(
             session,
             record=record,

@@ -1,5 +1,9 @@
 from __future__ import annotations
 from app.security.machine_tenant import machine_tenant_is_active
+from app.security.authorization_enforcement import (
+    authorize_provider_fixed_purpose,
+    authorize_service_operation,
+)
 from app.repositories.tenant_scope import (
     tenant_commit,
     DomainTenant,
@@ -686,6 +690,16 @@ def ingest_change_source_webhook(
     tenant_id = source.tenant_id
     if not machine_tenant_is_active(session, tenant_id=tenant_id):
         raise WebhookAuthenticationError("Provider authentication failed.")
+
+    provider_authority = authorize_provider_fixed_purpose(
+        session,
+        source=source,
+        fixed_purpose="app.services.change_source_ingest.ingest_change_source_webhook",
+    )
+    authorize_service_operation(
+        "app.services.change_source_ingest.ingest_change_source_webhook",
+        authorization_context=provider_authority,
+    )
 
     try:
         payload = json.loads(
