@@ -26,9 +26,9 @@ from app.db.schema_management import (
 
 from frozen_schema_fixtures import SECRET_STORE_TABLES, frozen_0008_metadata
 
-DOMAIN_TABLE_COUNT = 49
-DOMAIN_COLUMN_COUNT = 829
-EXPECTED_HEAD = "0014_min_authority"
+DOMAIN_TABLE_COUNT = 50
+DOMAIN_COLUMN_COUNT = 844
+EXPECTED_HEAD = "0015_security_audit"
 BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"
@@ -123,7 +123,7 @@ def test_empty_sqlite_upgrade_has_exact_schema_parity(
     ]
     assert len(named_multi_column_uniques) == 14
     assert sum(bool(index["unique"]) for index in indexes) == 9
-    assert len(indexes) == 348
+    assert len(indexes) == 352
 
     with migration_engine.connect() as connection:
         assert schema_differences(connection) == ()

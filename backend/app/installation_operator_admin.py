@@ -11,6 +11,8 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.db.database import SessionLocal, init_db
 from app.db.schema_management import SchemaAuthorityError
 from app.models.principal_identity import is_valid_principal_id
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
+from app.security.authorization_policy import Permission
 from app.services.authority_assignments import (
     AuthorityAssignmentError,
     disable_installation_operator,
@@ -18,6 +20,7 @@ from app.services.authority_assignments import (
     grant_installation_operator,
 )
 from app.services.principal_identity import PrincipalIdentityError
+from app.services.security_audit import append_local_operator_security_event
 
 
 class _SafeArgumentParser(argparse.ArgumentParser):
@@ -52,6 +55,17 @@ def main(argv: list[str] | None = None) -> int:
             elif args.command == "disable":
                 disable_installation_operator(session, principal_id=args.principal_id)
             result = get_installation_operator_status(session, principal_id=args.principal_id)
+            if args.command == "status":
+                append_local_operator_security_event(
+                    session,
+                    action=SecurityAuditAction.INSTALLATION_OPERATOR_INSPECTED,
+                    permissions=[Permission.INSTALLATION_STATUS_READ],
+                    resource_type=(
+                        SecurityAuditResourceType.INSTALLATION_OPERATOR_ASSIGNMENT
+                    ),
+                    resource_id=args.principal_id,
+                )
+                session.commit()
         print(json.dumps(result, sort_keys=True))
         return 0
     except (PrincipalIdentityError, AuthorityAssignmentError, SQLAlchemyError, SchemaAuthorityError) as exc:

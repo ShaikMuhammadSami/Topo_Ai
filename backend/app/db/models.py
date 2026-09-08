@@ -4924,3 +4924,66 @@ class ServiceApiTenantBindingRecord(Base):
     tenant_id: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[str] = mapped_column(String(50), nullable=False)
     created_by_subject: Mapped[str] = mapped_column(String(500), nullable=False)
+
+
+class SecurityAuditEventRecord(Base):
+    """Append-only security/admin evidence under the application threat model."""
+
+    __tablename__ = "security_audit_events"
+    __table_args__ = (
+        CheckConstraint(
+            "actor_kind IN ('human', 'service', 'agent', 'provider', 'local_operator')",
+            name="ck_security_audit_actor_kind",
+        ),
+        CheckConstraint(
+            "authority_kind IN ('authentication_self_service', 'human_tenant', "
+            "'service_tenant', 'installation', 'agent_fixed_purpose', "
+            "'provider_fixed_purpose', 'local_operator')",
+            name="ck_security_audit_authority_kind",
+        ),
+        CheckConstraint(
+            "result IN ('allowed', 'denied')",
+            name="ck_security_audit_result",
+        ),
+        CheckConstraint(
+            "length(audit_event_id) = 42 "
+            "AND substr(audit_event_id, 1, 6) = 'audit:'",
+            name="ck_security_audit_event_id",
+        ),
+        Index(
+            "ix_security_audit_tenant_occurred",
+            "tenant_id",
+            "occurred_at",
+        ),
+        Index(
+            "ix_security_audit_actor_occurred",
+            "actor_principal_id",
+            "occurred_at",
+        ),
+        Index(
+            "ix_security_audit_action_occurred",
+            "action",
+            "occurred_at",
+        ),
+        Index("ix_security_audit_request_id", "request_id"),
+    )
+
+    audit_event_id: Mapped[str] = mapped_column(String(42), primary_key=True)
+    occurred_at: Mapped[str] = mapped_column(String(50), nullable=False)
+    actor_principal_id: Mapped[str | None] = mapped_column(
+        String(46), nullable=True
+    )
+    actor_kind: Mapped[str] = mapped_column(String(24), nullable=False)
+    actor_reference: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )
+    authentication_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    authority_kind: Mapped[str] = mapped_column(String(40), nullable=False)
+    tenant_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    action: Mapped[str] = mapped_column(String(80), nullable=False)
+    permissions_json: Mapped[str] = mapped_column(Text, nullable=False)
+    resource_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    resource_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    result: Mapped[str] = mapped_column(String(16), nullable=False)
+    reason_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    request_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

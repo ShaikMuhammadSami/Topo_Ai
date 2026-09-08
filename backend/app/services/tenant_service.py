@@ -16,7 +16,9 @@ from app.models.tenant import (
 )
 from app.repositories import tenant_repository
 from app.repositories import principal_identity_repository
-from app.security.authorization_policy import TenantRole
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
+from app.security.authorization_policy import Permission, TenantRole
+from app.services.security_audit import append_allowed_security_event
 from app.services.principal_identity import (
     provision_external_human_principal,
     require_active_principal,
@@ -150,6 +152,14 @@ def create_tenant_with_creator_membership(
             tenant_repository.add_tenant(session, tenant)
             session.flush()
             tenant_repository.add_tenant_membership(session, membership)
+            append_allowed_security_event(
+                session,
+                action=SecurityAuditAction.TENANT_CREATED,
+                permissions=[Permission.INSTALLATION_BOOTSTRAP],
+                resource_type=SecurityAuditResourceType.TENANT,
+                resource_id=tenant.tenant_id,
+                tenant_id=tenant.tenant_id,
+            )
             session.commit()
             return tenant_view(tenant, membership)
         except IntegrityError as exc:
@@ -176,6 +186,7 @@ def add_or_reactivate_tenant_membership(
     created_by_subject: str,
     created_by_principal_id: str | None = None,
     now: datetime | None = None,
+    recovery: bool = False,
 ) -> TenantMembershipView:
     # Explicit authority input, never derived from the caller's legacy roles.
     assigned_role = TenantRole(role)
@@ -231,6 +242,22 @@ def add_or_reactivate_tenant_membership(
             existing.role = assigned_role.value
             existing.updated_at = timestamp
             try:
+                append_allowed_security_event(
+                    session,
+                    action=(
+                        SecurityAuditAction.TENANT_MEMBERSHIP_RECOVERED
+                        if recovery
+                        else SecurityAuditAction.TENANT_MEMBERSHIP_REACTIVATED
+                    ),
+                    permissions=[
+                        Permission.INSTALLATION_RECOVERY
+                        if recovery
+                        else Permission.MEMBER_MANAGE
+                    ],
+                    resource_type=SecurityAuditResourceType.TENANT_MEMBERSHIP,
+                    resource_id=existing.membership_id,
+                    tenant_id=tenant_id,
+                )
                 session.commit()
             except SQLAlchemyError as exc:
                 session.rollback()
@@ -253,6 +280,22 @@ def add_or_reactivate_tenant_membership(
     )
     try:
         tenant_repository.add_tenant_membership(session, record)
+        append_allowed_security_event(
+            session,
+            action=(
+                SecurityAuditAction.TENANT_MEMBERSHIP_RECOVERED
+                if recovery
+                else SecurityAuditAction.TENANT_MEMBERSHIP_CREATED
+            ),
+            permissions=[
+                Permission.INSTALLATION_RECOVERY
+                if recovery
+                else Permission.MEMBER_MANAGE
+            ],
+            resource_type=SecurityAuditResourceType.TENANT_MEMBERSHIP,
+            resource_id=record.membership_id,
+            tenant_id=tenant_id,
+        )
         session.commit()
         return membership_view(session, record)
     except IntegrityError as exc:
@@ -297,6 +340,14 @@ def disable_tenant_membership(
     record.status = TenantMembershipStatus.DISABLED.value
     record.updated_at = _utc_now_iso(now)
     try:
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.TENANT_MEMBERSHIP_DISABLED,
+            permissions=[Permission.MEMBER_MANAGE],
+            resource_type=SecurityAuditResourceType.TENANT_MEMBERSHIP,
+            resource_id=record.membership_id,
+            tenant_id=tenant_id,
+        )
         session.commit()
         return membership_view(session, record)
     except SQLAlchemyError as exc:

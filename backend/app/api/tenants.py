@@ -214,6 +214,7 @@ def recover_membership(
             principal_id=value.principal_id,
             created_by_subject=principal.subject,
             created_by_principal_id=principal.principal_id,
+            recovery=True,
         )
     except ActiveTenantRequiredError as exc:
         raise HTTPException(

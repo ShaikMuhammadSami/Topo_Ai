@@ -14,6 +14,7 @@ from app.models.auth import (
     ApiCredentialView,
     BrowserSessionView,
 )
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
 from app.repositories.auth_api_credential_repository import (
     list_auth_api_credentials,
     load_auth_api_credential,
@@ -54,6 +55,7 @@ from app.services.auth_api_credential_service import (
 )
 from app.services.principal_identity import PrincipalIdentityError
 from app.services.authority_assignments import AuthorityAssignmentError
+from app.services.security_audit import append_allowed_security_event
 
 
 router = APIRouter(prefix="/api/v1/auth", tags=["authentication"])
@@ -352,13 +354,24 @@ def list_api_credentials(
             session,
             (record.credential_id for record in records),
         )
-        return [
+        result = [
             credential_view(
                 record,
                 tenant_id=tenant_ids.get(record.credential_id),
             )
             for record in records
         ]
+        if target_type is ApiCredentialTargetType.SERVICE:
+            append_allowed_security_event(
+                session,
+                action=SecurityAuditAction.SERVICE_API_CREDENTIAL_LISTED,
+                permissions=[Permission.CREDENTIAL_METADATA_READ],
+                resource_type=SecurityAuditResourceType.API_CREDENTIAL,
+                resource_id=None,
+                tenant_id=tenant_context.tenant_id,
+            )
+            session.commit()
+        return result
     except (SQLAlchemyError, AuthApiCredentialPersistenceError) as exc:
         raise HTTPException(
             status_code=503,
@@ -382,14 +395,26 @@ def get_api_credential(
                 status_code=404,
                 detail="API credential not found.",
             )
-        authorize_persisted_credential_target(
+        context = authorize_persisted_credential_target(
             request, session, record=record, operation="get"
         )
         binding = load_service_api_tenant_binding(session, credential_id)
-        return credential_view(
+        result = credential_view(
             record,
             tenant_id=binding.tenant_id if binding is not None else None,
         )
+        if record.caller_type == ApiCredentialCallerType.SERVICE_API.value:
+            append_allowed_security_event(
+                session,
+                action=SecurityAuditAction.SERVICE_API_CREDENTIAL_INSPECTED,
+                permissions=[Permission.CREDENTIAL_METADATA_READ],
+                resource_type=SecurityAuditResourceType.API_CREDENTIAL,
+                resource_id=record.credential_id,
+                tenant_id=binding.tenant_id if binding is not None else None,
+                authorization_context=context,
+            )
+            session.commit()
+        return result
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=503,

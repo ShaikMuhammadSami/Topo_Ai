@@ -18,7 +18,8 @@ from app.db.schema_management import (
 
 
 PARENT = "0013_principal_enforce"
-HEAD = "0014_min_authority"
+AUTHORITY_REVISION = "0014_min_authority"
+HEAD = "0015_security_audit"
 NEW_TABLES = {"service_principal_permissions", "installation_operator_assignments"}
 TENANT_A = "tenant:aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
 TENANT_B = "tenant:bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
@@ -140,7 +141,7 @@ def authority_migration_engine(tmp_path: Path):
 def test_0014_is_the_only_static_minimum_authority_migration() -> None:
     scripts = script_directory()
     assert scripts.get_heads() == [HEAD]
-    revision = scripts.get_revision(HEAD)
+    revision = scripts.get_revision(AUTHORITY_REVISION)
     assert revision.down_revision == PARENT
     assert Path(revision.path).name == "0014_minimum_authority_bundles.py"
     source = Path(revision.path).read_text(encoding="utf-8")
@@ -154,14 +155,9 @@ def test_fresh_sqlite_authority_schema_is_exact_without_defaults(authority_migra
     engine = authority_migration_engine
     _migrate(engine, PARENT)
     before = set(inspect(engine).get_table_names())
-    _migrate(engine)
+    _migrate(engine, AUTHORITY_REVISION)
     inspector = inspect(engine)
     assert set(inspector.get_table_names()) - before == NEW_TABLES
-    assert len(Base.metadata.tables) == 49
-    assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 829
-    with engine.connect() as connection:
-        assert current_revisions(connection) == (HEAD,)
-        assert schema_differences(connection) == ()
     role = next(column for column in inspector.get_columns("tenant_memberships") if column["name"] == "role")
     assert not role["nullable"] and role["default"] is None
     assert Base.metadata.tables["tenant_memberships"].c.role.default is None
@@ -169,6 +165,12 @@ def test_fresh_sqlite_authority_schema_is_exact_without_defaults(authority_migra
     for table_name in NEW_TABLES:
         assert "tenant_id" not in Base.metadata.tables[table_name].c
         assert all(column["default"] is None for column in inspector.get_columns(table_name))
+    _migrate(engine, HEAD)
+    assert len(Base.metadata.tables) == 50
+    assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 844
+    with engine.connect() as connection:
+        assert current_revisions(connection) == (HEAD,)
+        assert schema_differences(connection) == ()
 
 
 def test_populated_sqlite_backfills_explicit_legacy_authority_without_operator_inference(authority_migration_engine) -> None:

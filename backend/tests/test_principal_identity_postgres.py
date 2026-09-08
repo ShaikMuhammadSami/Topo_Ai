@@ -46,7 +46,7 @@ def test_postgresql_populated_principal_migration_and_reupgrade() -> None:
             _seed_0011(connection)
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0014_min_authority",)
+            assert current_revisions(connection) == ("0015_security_audit",)
             assert schema_differences(connection) == ()
             assert connection.scalar(
                 text("SELECT COUNT(*) FROM auth_principals")

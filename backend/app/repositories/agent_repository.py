@@ -40,6 +40,9 @@ from app.models.agents import (
     AgentPluginStatusView,
     AgentPluginsResponse,
 )
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
+from app.security.authorization_policy import Permission
+from app.services.security_audit import append_allowed_security_event
 
 
 def _now() -> datetime:
@@ -255,6 +258,14 @@ def create_enrollment_token(
     )
 
     session.add(record)
+    append_allowed_security_event(
+        session,
+        action=SecurityAuditAction.AGENT_ENROLLMENT_TOKEN_CREATED,
+        permissions=[Permission.CREDENTIAL_ROTATE],
+        resource_type=SecurityAuditResourceType.AGENT_ENROLLMENT_TOKEN,
+        resource_id=record.enrollment_token_id,
+        tenant_id=tenant_value(tenant_id),
+    )
     tenant_commit(session, tenant_id=tenant_id)
 
     return AgentEnrollmentTokenResponse(
@@ -374,6 +385,15 @@ def enroll_agent(
             updated_at=consumption_time_iso,
         )
         session.add(record)
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.AGENT_ENROLLED,
+            permissions=[],
+            resource_type=SecurityAuditResourceType.AGENT,
+            resource_id=record.agent_id,
+            tenant_id=observed.tenant_id,
+            authorization_context=enrollment_context,
+        )
         tenant_commit(session, tenant_id=observed.tenant_id)
     except Exception:
         session.rollback()
@@ -582,6 +602,14 @@ def revoke_agent(
     record.revoked_at = now
     record.updated_at = now
 
+    append_allowed_security_event(
+        session,
+        action=SecurityAuditAction.AGENT_REVOKED,
+        permissions=[Permission.CREDENTIAL_ROTATE],
+        resource_type=SecurityAuditResourceType.AGENT,
+        resource_id=record.agent_id,
+        tenant_id=record.tenant_id,
+    )
     tenant_commit(session, tenant_id=tenant_id)
 
     return _to_detail(record)

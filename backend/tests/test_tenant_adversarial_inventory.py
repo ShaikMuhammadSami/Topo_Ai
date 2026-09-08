@@ -76,6 +76,7 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
         "authority_repository.compare_and_set_service_permissions",
         "authority_repository.load_installation_operator_assignment",
         "authority_repository.add_installation_operator_assignment",
+        "security_audit_repository.append_security_audit_event",
     }
     raw, legacy_queries, llm = [], [], []
     for path in APP.rglob("*.py"):
@@ -92,10 +93,12 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
     assert [path for path, _ in raw] == ["db/schema_management.py"]
     assert [path for path, _ in legacy_queries] == ["repositories/topology_snapshot_repository.py"]
     assert len(llm) == 12  # eight central callers + four legacy Groq branches
-    assert len(models.Base.metadata.tables) == 49
+    assert len(models.Base.metadata.tables) == 50
     owned = [t for t in models.Base.metadata.tables.values() if "tenant_id" in t.c and t.name not in {
-        "tenants", "tenant_memberships", "service_api_tenant_bindings", "secret_records"}]
-    # PH-4B's explicit dual-scope store is not an ordinary PH-3 domain table.
+        "tenants", "tenant_memberships", "service_api_tenant_bindings",
+        "secret_records", "security_audit_events"}]
+    # PH-4B's dual-scope store and PH-5D's security-global ledger are not
+    # ordinary PH-3 domain tables.
     assert models.Base.metadata.tables["secret_records"].c.tenant_id.nullable
     assert "tenant_id" not in models.Base.metadata.tables["secret_versions"].c
     assert len(owned) == 38

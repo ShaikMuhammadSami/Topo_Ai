@@ -21,6 +21,7 @@ from app.models.auth import (
     ApiCredentialCreated,
     ApiCredentialView,
 )
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
 from app.repositories.auth_api_credential_repository import (
     active_human_credentials,
     add_auth_api_credential,
@@ -35,6 +36,8 @@ from app.services.authority_assignments import (
     create_service_permission_assignment,
     resolve_service_permissions,
 )
+from app.security.authorization_policy import Permission
+from app.services.security_audit import append_allowed_security_event
 from app.services.principal_identity import (
     PrincipalIdentityError,
     PrincipalNotProvisionedError,
@@ -359,6 +362,22 @@ def create_auth_api_credential(
                         ),
                     )
                 session.flush()
+            append_allowed_security_event(
+                session,
+                action=(
+                    SecurityAuditAction.HUMAN_API_CREDENTIAL_CREATED
+                    if request.caller_type is ApiCredentialCallerType.HUMAN_API
+                    else SecurityAuditAction.SERVICE_API_CREDENTIAL_CREATED
+                ),
+                permissions=(
+                    []
+                    if request.caller_type is ApiCredentialCallerType.HUMAN_API
+                    else [Permission.CREDENTIAL_ROTATE]
+                ),
+                resource_type=SecurityAuditResourceType.API_CREDENTIAL,
+                resource_id=record.credential_id,
+                tenant_id=tenant_id,
+            )
             session.commit()
             return credential_created_view(
                 record,
@@ -447,6 +466,25 @@ def revoke_auth_api_credential(
     record.revoked_by_subject = revoked_by_subject
     record.updated_at = revoked_at
     try:
+        binding = tenant_repository.load_service_api_tenant_binding(
+            session, record.credential_id
+        )
+        append_allowed_security_event(
+            session,
+            action=(
+                SecurityAuditAction.HUMAN_API_CREDENTIAL_REVOKED
+                if record.caller_type == ApiCredentialCallerType.HUMAN_API.value
+                else SecurityAuditAction.SERVICE_API_CREDENTIAL_REVOKED
+            ),
+            permissions=(
+                []
+                if record.caller_type == ApiCredentialCallerType.HUMAN_API.value
+                else [Permission.CREDENTIAL_ROTATE]
+            ),
+            resource_type=SecurityAuditResourceType.API_CREDENTIAL,
+            resource_id=record.credential_id,
+            tenant_id=binding.tenant_id if binding is not None else None,
+        )
         session.commit()
     except SQLAlchemyError as exc:
         session.rollback()
