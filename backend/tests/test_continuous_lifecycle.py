@@ -74,6 +74,11 @@ from app.services.topology_checkpoint import (
     is_topology_affecting_change_event,
     persist_topology_checkpoint,
 )
+from app.security.authorization_enforcement import (
+    authorize_agent_fixed_purpose,
+    bind_authorization_context,
+)
+from authorization_test_support import tenant_admin_authorization
 
 NOW = datetime(
     2026,
@@ -91,7 +96,11 @@ def _session() -> Session:
     )
     Base.metadata.create_all(engine)
     seed_domain_tenant(engine)
-    return Session(engine)
+    session = Session(engine)
+    bind_authorization_context(
+        tenant_admin_authorization(session, TEST_TENANT)
+    )
+    return session
 
 
 def _snapshot(
@@ -1119,6 +1128,11 @@ def test_pinned_snapshot_never_moves_on_later_correlated_signal() -> None:
 def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
     session = _session()
     agent = _agent(session)
+    agent_authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
     persist_agent_snapshot(
         session,
         agent=agent,
@@ -1129,7 +1143,8 @@ def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
             pod_uid="pod-old",
             pod_name="payment-api-old-7bkhv",
             replica_uid="rs-old",
-        ),
+            ),
+        authorization_context=agent_authorization,
     )
     watcher_signal_id = "signal:kubernetes-event:boundary"
     receipt = persist_agent_snapshot(
@@ -1146,6 +1161,7 @@ def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
             checkpoint_reason="incident_boundary",
             trigger_signal_ids=[watcher_signal_id],
         ),
+        authorization_context=agent_authorization,
     )
     watcher_signal = _signal(
         watcher_signal_id,

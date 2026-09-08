@@ -4,6 +4,7 @@ import hashlib
 from typing import Any
 
 from sqlalchemy.orm import Session
+from app.security.authorization_enforcement import authorize_service_operation
 
 from app.db.models import (
     TopoAgentRecord,
@@ -888,7 +889,12 @@ def persist_agent_snapshot(
     *,
     agent: TopoAgentRecord,
     submission: AgentSnapshotSubmission,
+    authorization_context=None,
 ) -> AgentSnapshotReceipt:
+    authorize_service_operation(
+        "app.services.agent_snapshot_ingest.persist_agent_snapshot",
+        authorization_context=authorization_context,
+    )
     snapshot = build_agent_snapshot(
         agent=agent,
         submission=submission,
@@ -998,6 +1004,7 @@ def persist_agent_snapshot(
         derive_changes=True,
         force=(reason == TopologyCheckpointReason.MANUAL),
         tenant_id=agent.tenant_id,
+        authorization_context=authorization_context,
     )
 
     checkpoint_snapshot = snapshot.model_copy(
@@ -1016,6 +1023,7 @@ def persist_agent_snapshot(
         session,
         snapshot_id=checkpoint.snapshot_id,
         tenant_id=agent.tenant_id,
+        authorization_context=authorization_context,
     )
 
     if failure_signals:
@@ -1024,6 +1032,7 @@ def persist_agent_snapshot(
                 session=session,
                 signals=failure_signals,
                 tenant_id=agent.tenant_id,
+                authorization_context=authorization_context,
             )
 
         except Exception as exc:

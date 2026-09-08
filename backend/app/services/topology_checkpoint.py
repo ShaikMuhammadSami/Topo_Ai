@@ -229,7 +229,14 @@ def persist_topology_checkpoint(
     derive_changes: bool = True,
     force: bool = False,
     tenant_id: DomainTenant,
+    authorization_context=None,
 ) -> TopologyCheckpointResult:
+    from app.security.authorization_enforcement import authorize_service_operation
+
+    authorize_service_operation(
+        "app.services.topology_checkpoint.persist_topology_checkpoint",
+        authorization_context=authorization_context,
+    )
     bind_world_value(snapshot, tenant_id=tenant_id)
     trigger_ids = list(
         dict.fromkeys(trigger_event_ids or [])

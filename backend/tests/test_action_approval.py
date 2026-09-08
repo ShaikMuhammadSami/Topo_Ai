@@ -72,6 +72,16 @@ NOW = datetime(
 )
 
 
+@pytest.fixture(autouse=True)
+def preserved_dormant_approval_foundation(monkeypatch):
+    """Exercise preserved 14G mechanics below the PH-5C V1 deny boundary."""
+    monkeypatch.setattr(
+        service,
+        "authorize_service_operation",
+        lambda *_args, **_kwargs: None,
+    )
+
+
 @pytest.fixture
 def session():
     engine = create_engine(
@@ -1288,7 +1298,9 @@ def test_approval_list_limit_is_enforced_by_api(
         headers=_bearer(tokens["bootstrap"], tenant["tenant_id"]),
     )
 
-    assert response.status_code == 422
+    # PH-5C denies the dormant V1 execution surface before request validation.
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "V1_EXECUTION_DISABLED"
 
 
 def test_database_tables_preserve_current_and_event_history(

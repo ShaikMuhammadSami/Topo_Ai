@@ -11,7 +11,6 @@ from fastapi.testclient import TestClient
 
 import app.api.agents as agents_api
 import app.api.change_source_webhooks as webhook_api
-import app.security.agent_tokens as agent_security
 from app.main import create_app
 from app.models.agents import AgentEnrollmentTokenResponse
 from app.security.api_tokens import AuthPrincipal, token_digest
@@ -259,7 +258,7 @@ def test_required_human_bearer_contract(monkeypatch) -> None:
     assert response.json()["subject"] != "local-development"
 
 
-def test_non_admin_is_forbidden_on_admin_route(monkeypatch) -> None:
+def test_legacy_viewer_text_does_not_reduce_explicit_tenant_admin_authority(monkeypatch) -> None:
     application, token = _required_app(monkeypatch, roles=("viewer",), tenant_admin=True)
     response = TestClient(application).post(
         "/api/v1/agents/enrollment-tokens",
@@ -267,7 +266,7 @@ def test_non_admin_is_forbidden_on_admin_route(monkeypatch) -> None:
         json={"max_uses": 1},
     )
 
-    assert response.status_code == 403
+    assert response.status_code == 201
 
 
 def test_valid_admin_preserves_admin_route(monkeypatch) -> None:
@@ -320,21 +319,27 @@ def test_operator_and_viewer_approval_authorization_is_preserved() -> None:
 
 
 def test_agent_and_human_bearers_are_not_interchangeable(monkeypatch) -> None:
-    application, human_token = _required_app(monkeypatch)
-    agent_token = "ph2b-agent-bearer-" + ("a" * 32)
-    agent_record = SimpleNamespace(
-        agent_id="agent:test",
-        collection_interval_seconds=30,
-        heartbeat_interval_seconds=10,
-        namespace_scope_json="[]",
-    )
-
-    monkeypatch.setattr(
-        agent_security,
-        "authenticate_agent",
-        lambda *, session, token: agent_record if token == agent_token else None,
-    )
+    application, human_token = _required_app(monkeypatch, tenant_admin=True)
     client = TestClient(application)
+    enrollment = client.post(
+        "/api/v1/agents/enrollment-tokens",
+        headers={"Authorization": f"Bearer {human_token}", **TEST_HEADERS},
+        json={"max_uses": 1},
+    )
+    assert enrollment.status_code == 201
+    enrolled = client.post(
+        "/api/v1/agents/enroll",
+        json={
+            "enrollment_token": enrollment.json()["enrollment_token"],
+            "name": "PH-2B boundary agent",
+            "cluster_name": "ph2b-cluster",
+            "environment": "test",
+            "version": "1.0.0",
+            "namespace_scope": [],
+        },
+    )
+    assert enrolled.status_code == 201
+    agent_token = enrolled.json()["agent_token"]
 
     agent_response = client.get(
         "/api/v1/agent/config",

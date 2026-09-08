@@ -115,20 +115,46 @@ class ManagedTopoEnvironment:
             text=True,
         )
         try:
-            bounded_wait(
+            bootstrap_identity = bounded_wait(
                 lambda: self.client.get("/api/v1/system/whoami"),
                 lambda response: response.status == 200,
                 timeout_seconds=45,
                 interval_seconds=1,
             )
+            if (
+                not isinstance(bootstrap_identity.body, dict)
+                or not isinstance(
+                    bootstrap_identity.body.get("principal_id"),
+                    str,
+                )
+            ):
+                raise RuntimeError(
+                    "Isolated bootstrap identity response was invalid."
+                )
+            operator_grant = subprocess.run(
+                [
+                    str(python),
+                    "-m",
+                    "app.installation_operator_admin",
+                    "grant",
+                    bootstrap_identity.body["principal_id"],
+                ],
+                cwd=REPOSITORY_ROOT / "backend",
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if operator_grant.returncode != 0:
+                raise RuntimeError(
+                    "Isolated installation-operator grant failed."
+                )
             created = self.client.post(
                 "/api/v1/auth/api-credentials",
                 {
                     "name": "isolated-evaluation",
                     "caller_type": "human_api",
-                    "subject": "evaluation:runner",
-                    "display_name": "Topo Evaluation Runner",
-                    "roles": ["admin"],
+                    "principal_id": bootstrap_identity.body["principal_id"],
                     "expires_in_days": 1,
                 },
             )

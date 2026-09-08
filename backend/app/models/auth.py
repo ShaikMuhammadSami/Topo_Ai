@@ -20,6 +20,11 @@ class ApiCredentialCallerType(StrEnum):
     SERVICE_API = "service_api"
 
 
+class ApiCredentialTargetType(StrEnum):
+    HUMAN = "human"
+    SERVICE = "service"
+
+
 class ApiCredentialCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

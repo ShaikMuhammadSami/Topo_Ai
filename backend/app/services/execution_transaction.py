@@ -43,6 +43,7 @@ from app.repositories.execution_intent_repository import (
     load_execution_intent_record,
 )
 from app.security.api_tokens import AuthPrincipal
+from app.security.authorization_enforcement import authorize_service_operation
 from app.services.action_approval import (
     ActionApprovalNotFoundError,
     _sanitize_reason,
@@ -700,6 +701,7 @@ def create_execution_intent(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
+    authorize_service_operation("app.services.execution_transaction.create_execution_intent")
     current_time = _utc_now(now)
 
     try:
@@ -767,6 +769,7 @@ def get_execution_intent(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
+    authorize_service_operation("app.services.execution_transaction.get_execution_intent")
     record = load_execution_intent_record(
         session,
         incident_id=incident_id,
@@ -805,6 +808,7 @@ def list_execution_intents(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> list[ExecutionIntentView]:
+    authorize_service_operation("app.services.execution_transaction.list_execution_intents")
     records = list_execution_intent_records(
         session,
         incident_id=incident_id,
@@ -852,6 +856,7 @@ def cancel_execution_intent(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
+    authorize_service_operation("app.services.execution_transaction.cancel_execution_intent")
     current_time = _utc_now(now)
     record = load_execution_intent_record(
         session,
@@ -921,6 +926,7 @@ def claim_execution_intent(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ExecutionClaimReceipt:
+    authorize_service_operation("app.services.execution_transaction.claim_execution_intent")
     worker_principal = _worker_principal(worker)
     current_time = _utc_now(now)
     record = load_execution_intent_record(
@@ -1009,6 +1015,7 @@ def release_execution_claim(
     now: datetime | None = None,
     tenant_id: DomainTenant,
 ) -> ExecutionIntentDetail:
+    authorize_service_operation("app.services.execution_transaction.release_execution_claim")
     worker_principal = _worker_principal(worker)
     current_time = _utc_now(now)
     record = load_execution_intent_record(

@@ -154,31 +154,6 @@ def _principal_subject(
     )
 
 
-def _require_admin(
-    request: Request,
-) -> None:
-    principal = getattr(
-        request.state,
-        "principal",
-        None,
-    )
-
-    roles = getattr(
-        principal,
-        "roles",
-        (),
-    )
-
-    if "admin" not in roles:
-        raise HTTPException(
-            status_code=403,
-            detail=(
-                "The admin role is "
-                "required."
-            ),
-        )
-
-
 @admin_router.post(
     "/enrollment-tokens",
     response_model=(
@@ -197,8 +172,6 @@ def create_token(
     ),
     tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentEnrollmentTokenResponse:
-    _require_admin(request)
-
     return create_enrollment_token(
         session=session,
         tenant_id=tenant_context.tenant_id,
@@ -329,8 +302,6 @@ def revoke(
     ),
     tenant_context: TenantContext = Depends(require_tenant_context),
 ) -> AgentDetail:
-    _require_admin(request)
-
     result = revoke_agent(
         session=session,
         tenant_id=tenant_context.tenant_id,
@@ -381,6 +352,7 @@ def runtime_config(
 def heartbeat(
     request:
         AgentHeartbeatRequest,
+    http_request: Request,
     agent: TopoAgentRecord = Depends(
         require_agent
     ),
@@ -393,6 +365,11 @@ def heartbeat(
         record=agent,
         tenant_id=agent.tenant_id,
         request=request,
+        authorization_context=getattr(
+            http_request.state,
+            "authorization_context",
+            None,
+        ),
     )
 
 
@@ -408,6 +385,7 @@ def heartbeat(
 def submit_snapshot(
     submission:
         AgentSnapshotSubmission,
+    request: Request,
     agent: TopoAgentRecord = Depends(
         require_agent
     ),
@@ -431,6 +409,11 @@ def submit_snapshot(
         session=session,
         agent=agent,
         submission=submission,
+        authorization_context=getattr(
+            request.state,
+            "authorization_context",
+            None,
+        ),
     )
 
 
@@ -468,6 +451,7 @@ def get_agent_plugins(
 )
 def runtime_sensor_heartbeat(
     request: RuntimeSensorHeartbeatRequest,
+    http_request: Request,
     agent: TopoAgentRecord = Depends(require_agent),
     session: Session = Depends(get_session),
 ) -> RuntimeSensorHeartbeatResponse:
@@ -476,6 +460,11 @@ def runtime_sensor_heartbeat(
         agent=agent,
         request=request,
         tenant_id=agent.tenant_id,
+        authorization_context=getattr(
+            http_request.state,
+            "authorization_context",
+            None,
+        ),
     )
 
 
@@ -486,6 +475,7 @@ def runtime_sensor_heartbeat(
 )
 def runtime_event_batch(
     request: RuntimeEventBatchRequest,
+    http_request: Request,
     agent: TopoAgentRecord = Depends(require_agent),
     session: Session = Depends(get_session),
 ) -> RuntimeEventBatchReceipt:
@@ -495,6 +485,11 @@ def runtime_event_batch(
             agent=agent,
             request=request,
             tenant_id=agent.tenant_id,
+            authorization_context=getattr(
+                http_request.state,
+                "authorization_context",
+                None,
+            ),
         )
 
     except ValueError as exc:
@@ -672,6 +667,7 @@ def submit_change_events(
 )
 def submit_failure_signals(
     request: FailureSignalBatchRequest,
+    http_request: Request,
     agent: TopoAgentRecord = Depends(require_agent),
     session: Session = Depends(get_session),
 ) -> FailureSignalBatchResult:
@@ -707,4 +703,9 @@ def submit_failure_signals(
         session=session,
         signals=request.signals,
         tenant_id=agent.tenant_id,
+        authorization_context=getattr(
+            http_request.state,
+            "authorization_context",
+            None,
+        ),
     )

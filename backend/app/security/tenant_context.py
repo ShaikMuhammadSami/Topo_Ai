@@ -157,6 +157,9 @@ def require_tenant_context(
     request: Request,
     session: Session = Depends(get_session),
 ) -> TenantContext:
+    authorized = getattr(request.state, "tenant_context", None)
+    if isinstance(authorized, TenantContext):
+        return authorized
     principal = authenticated_principal(request)
     selected_tenant_id: str | None
     if principal.authentication_type == "service_api_token":

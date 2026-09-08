@@ -14,6 +14,7 @@ from app.db.database import Base, get_session
 from app.db.models import AuthApiCredentialRecord
 from app.main import create_app
 from app.models.auth import ApiCredentialCallerType, ApiCredentialCreate
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER
 from app.security.api_tokens import token_digest
 from app.security.auth_config import (
     AuthConfigurationError,
@@ -26,6 +27,8 @@ from app.services.auth_api_credential_service import (
     create_auth_api_credential,
     credential_secret_digest,
 )
+from app.services.authority_assignments import grant_installation_operator
+from app.services.principal_identity import provision_external_human_principal
 import app.services.auth_api_credential_service as credential_service
 
 
@@ -58,6 +61,19 @@ def credential_app(monkeypatch):
     )
     factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
+    with factory() as session:
+        principal = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject="test:bootstrap-admin",
+            display_name="Bootstrap Admin",
+            authentication_type="api_token",
+            roles=("admin",),
+        )
+        grant_installation_operator(
+            session,
+            principal_id=principal.principal_id,
+        )
     application = create_app(
         auth_configuration=configuration,
         session_factory=factory,
@@ -85,7 +101,7 @@ def _create(
     bootstrap: str,
     *,
     caller_type: str = "human_api",
-    subject: str = "test:named-admin",
+    subject: str = "test:bootstrap-admin",
     roles: list[str] | None = None,
     tenant_id: str | None = None,
 ):
@@ -101,9 +117,12 @@ def _create(
         payload["tenant_id"] = tenant_id
     if caller_type == "service_api":
         payload["permissions"] = ["incident.read"]
+    headers = _bearer(bootstrap)
+    if tenant_id is not None:
+        headers["X-Topo-Tenant-ID"] = tenant_id
     return client.post(
         "/api/v1/auth/api-credentials",
-        headers=_bearer(bootstrap),
+        headers=headers,
         json=payload,
     )
 
@@ -173,7 +192,7 @@ def test_named_auth_updates_last_used_and_revocation_is_immediate(
             headers=_bearer(raw_secret),
         )
         assert revoked.status_code == 200
-        assert revoked.json()["revoked_by_subject"] == "test:named-admin"
+        assert revoked.json()["revoked_by_subject"] == "test:bootstrap-admin"
         assert client.get(
             "/api/v1/system/whoami",
             headers=_bearer(raw_secret),
@@ -258,7 +277,7 @@ def test_service_credential_is_api_only_and_cannot_manage_credentials(
         ).status_code in {401, 404}
 
 
-def test_expired_unknown_and_non_admin_credentials_fail_closed(
+def test_expired_unknown_and_other_human_targets_fail_closed(
     credential_app,
 ) -> None:
     application, bootstrap, factory, _ = credential_app
@@ -286,31 +305,13 @@ def test_expired_unknown_and_non_admin_credentials_fail_closed(
             headers=_bearer("topo_api_" + secrets.token_urlsafe(48)),
         ).status_code == 401
 
-        viewer_created = _create(
+        other_human = _create(
             client,
             bootstrap,
             subject="test:viewer",
             roles=["viewer"],
-        ).json()
-        viewer = viewer_created["api_credential"]
-        assert client.post(
-            "/api/v1/auth/api-credentials",
-            headers=_bearer(viewer),
-            json={
-                "name": "forbidden",
-                "caller_type": "human_api",
-                "subject": "test:forbidden",
-                "roles": ["admin"],
-                "expires_in_days": 30,
-            },
-        ).status_code == 403
-        assert client.post(
-            (
-                "/api/v1/auth/api-credentials/"
-                f"{viewer_created['credential_id']}/revoke"
-            ),
-            headers=_bearer(viewer),
-        ).status_code == 403
+        )
+        assert other_human.status_code == 403
 
 
 @pytest.mark.parametrize("days", [0, 91])

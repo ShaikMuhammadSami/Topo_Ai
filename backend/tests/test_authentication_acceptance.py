@@ -27,6 +27,9 @@ from app.models.secret_store import SecretMaterial
 from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
 from app.services.secret_consumer_policy import source_binding
 from app.services.secret_store import EncryptedDatabaseSecretStore
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER
+from app.services.authority_assignments import grant_installation_operator
+from app.services.principal_identity import provision_external_human_principal
 from app.security.api_tokens import token_digest
 from app.security.auth_config import AuthMode, load_auth_configuration
 from app.security.auth_routing import RouteAuthDomain, classify_route
@@ -69,6 +72,18 @@ def acceptance_app(monkeypatch):
     session_factory = sessionmaker(bind=engine, expire_on_commit=False)
     Base.metadata.create_all(engine)
     seed_domain_tenant(engine, subject="test:bootstrap-admin")
+    with session_factory() as session:
+        principal = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject="test:bootstrap-admin",
+            display_name="Bootstrap Admin",
+            authentication_type="api_token",
+            roles=("admin", "operator"),
+        )
+        grant_installation_operator(
+            session, principal_id=principal.principal_id or ""
+        )
     application = create_app(
         auth_configuration=configuration,
         session_factory=session_factory,
@@ -147,9 +162,12 @@ def _create_named(
         payload["tenant_id"] = tenant_id
     if caller_type == "service_api":
         payload["permissions"] = ["incident.read"]
+    headers = _bearer(bootstrap)
+    if tenant_id is not None:
+        headers["X-Topo-Tenant-ID"] = tenant_id
     response = client.post(
         "/api/v1/auth/api-credentials",
-        headers=_bearer(bootstrap),
+        headers=headers,
         json=payload,
     )
     assert response.status_code == 201
@@ -255,7 +273,7 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
             bootstrap,
             name="Named Admin",
             caller_type="human_api",
-            subject="test:named-admin",
+            subject="test:bootstrap-admin",
             roles=["admin"],
         )
         named_viewer = _create_named(
@@ -263,7 +281,7 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
             bootstrap,
             name="Named Viewer",
             caller_type="human_api",
-            subject="test:named-viewer",
+            subject="test:bootstrap-admin",
             roles=["viewer"],
         )
         named_service = _create_named(
@@ -428,7 +446,7 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
         "named_admin_agent": 401,
         "named_admin_provider": 401,
         "named_viewer_human": 200,
-        "named_viewer_admin": 403,
+        "named_viewer_admin": 200,
         "named_viewer_agent": 401,
         "named_viewer_provider": 401,
         "service_human": 200,

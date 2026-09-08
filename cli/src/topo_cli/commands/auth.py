@@ -118,11 +118,28 @@ def create_credential(
 @credentials_app.command("list")
 def list_credentials(
     context: typer.Context,
+    target_type: str = typer.Option(
+        "human",
+        "--target-type",
+        help="List caller-owned human credentials or selected-tenant service credentials.",
+    ),
     limit: int = typer.Option(100, "--limit", min=1, max=1000),
 ) -> None:
     runtime = get_runtime(context)
+    if target_type not in {"human", "service"}:
+        abort(InputValidationFailure("--target-type must be human or service."))
+    if target_type == "service" and not runtime.client.tenant_id:
+        abort(
+            InputValidationFailure(
+                "Service credential listing requires --tenant or a profile tenant_id."
+            )
+        )
     values = api_call(
-        lambda: runtime.client.list_api_credentials(limit=limit, offset=0)
+        lambda: runtime.client.list_api_credentials(
+            target_type=target_type,
+            limit=limit,
+            offset=0,
+        )
     )
     if runtime.output_format is OutputFormat.JSON:
         emit_json(values)

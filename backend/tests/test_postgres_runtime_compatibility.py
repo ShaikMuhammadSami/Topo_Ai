@@ -164,6 +164,7 @@ from app.security.auth_config import (
     load_auth_configuration,
 )
 from app.security.session_auth import CSRF_COOKIE_NAME, SESSION_COOKIE_NAME
+from app.security.authorization_enforcement import authorize_agent_fixed_purpose
 from app.services.causal_rca import _confidence_level
 from app.services.auth_api_credential_service import (
     authenticate_auth_api_credential,
@@ -187,6 +188,9 @@ from app.services.temporal_semantics import (
 )
 from app.repositories import tenant_repository
 from app.services.tenant_service import create_tenant_with_creator_membership
+from app.services.authority_assignments import grant_installation_operator
+from app.services.principal_identity import provision_external_human_principal
+from app.models.principal_identity import LEGACY_LOCAL_ISSUER
 
 POSTGRES_URL = os.getenv("TOPO_TEST_POSTGRES_URL", "").strip()
 pytestmark = pytest.mark.skipif(
@@ -1099,6 +1103,18 @@ def test_postgresql_tenant_context_atomicity_and_fixed_service_binding(
         ),
     )
     configuration = load_auth_configuration(database_url=_postgres_url())
+    with session_factory() as session:
+        bootstrap_principal = provision_external_human_principal(
+            session,
+            issuer=LEGACY_LOCAL_ISSUER,
+            subject="test:postgres-tenant-admin",
+            display_name="PostgreSQL Tenant Admin",
+            authentication_type="api_token",
+            roles=("admin",),
+        )
+        grant_installation_operator(
+            session, principal_id=bootstrap_principal.principal_id
+        )
     application = create_app(
         auth_configuration=configuration,
         session_factory=session_factory,
@@ -1157,14 +1173,14 @@ def test_postgresql_tenant_context_atomicity_and_fixed_service_binding(
             )
             binding_failure = client.post(
                 "/api/v1/auth/api-credentials",
-                headers=bearer,
+                headers=tenant_headers,
                 json={**service_payload, "subject": "service:rolled-back"},
             )
         assert binding_failure.status_code == 503
 
         service = client.post(
             "/api/v1/auth/api-credentials",
-            headers=bearer,
+            headers=tenant_headers,
             json=service_payload,
         )
         assert service.status_code == 201
@@ -1632,6 +1648,7 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
             agent_id="agent:runtime-postgres",
             cluster_name="cluster-a",
             tenant_id=TEST_TENANT,
+            revoked_at=None,
         )
         session.add(agent)
         session.commit()
@@ -1677,6 +1694,14 @@ def test_representative_repositories_and_services_round_trip_on_postgresql(
                 metadata={"heartbeat_interval_seconds": 30},
             ),
             tenant_id=TEST_TENANT,
+            authorization_context=authorize_agent_fixed_purpose(
+                session,
+                agent=agent,
+                fixed_purpose=(
+                    "app.repositories.runtime_observability_repository."
+                    "ingest_runtime_event_batch"
+                ),
+            ),
         )
         assert runtime_receipt.dependency_count == 1
         sensors = list_runtime_sensors(

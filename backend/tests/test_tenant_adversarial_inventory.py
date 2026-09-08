@@ -55,7 +55,6 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
         "auth_api_credential_repository.add_auth_api_credential",
         "auth_api_credential_repository.load_auth_api_credential",
         "auth_api_credential_repository.load_auth_api_credential_by_digest",
-        "auth_api_credential_repository.list_auth_api_credentials",
         "auth_api_credential_repository.update_auth_api_credential_last_used",
         "auth_api_credential_repository.active_human_credentials",
         "auth_session_repository.add_auth_session", "auth_session_repository.load_auth_session",

@@ -722,6 +722,7 @@ def reconcile_pending_incidents_for_checkpoint(
     snapshot_id: str,
     limit: int = 100,
     tenant_id: DomainTenant,
+    authorization_context=None,
 ) -> list[AutomaticIncidentResult]:
     """
     Complete only incidents for which this checkpoint is
@@ -729,6 +730,12 @@ def reconcile_pending_incidents_for_checkpoint(
     the newest topology snapshot.
     """
 
+    from app.security.authorization_enforcement import authorize_service_operation
+
+    authorize_service_operation(
+        "app.services.continuous_lifecycle.reconcile_pending_incidents_for_checkpoint",
+        authorization_context=authorization_context,
+    )
     snapshot = load_snapshot(session, snapshot_id, tenant_id=tenant_id)
 
     if snapshot is None:
@@ -851,7 +858,14 @@ def ingest_failure_signal_batch(
     *,
     signals: list[NormalizedSignal],
     tenant_id: DomainTenant,
+    authorization_context=None,
 ) -> FailureSignalBatchResult:
+    from app.security.authorization_enforcement import authorize_service_operation
+
+    authorize_service_operation(
+        "app.services.continuous_lifecycle.ingest_failure_signal_batch",
+        authorization_context=authorization_context,
+    )
     bound: list[tuple[NormalizedSignal, list[str]]] = [
         bind_signal_to_incident_topology(
             session,
