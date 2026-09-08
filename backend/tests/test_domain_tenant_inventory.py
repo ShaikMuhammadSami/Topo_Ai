@@ -14,6 +14,7 @@ GLOBAL_REPOSITORIES = {
     "tenant_scope",
     "principal_identity_repository",
     "authority_repository",
+    "security_audit_repository",
 }
 MACHINE_FUNCTIONS = {
     "agent_repository.enroll_agent",

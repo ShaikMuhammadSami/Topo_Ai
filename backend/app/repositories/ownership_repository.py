@@ -17,6 +17,9 @@ from app.models.ownership import (
     OwnershipSource,
     ServiceCriticality,
 )
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
+from app.security.authorization_policy import Permission
+from app.services.security_audit import append_allowed_security_event
 
 
 def _to_view(
@@ -242,6 +245,14 @@ def save_ownership_mapping(
 
     if existing is None:
         session.add(record)
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.OWNERSHIP_MAPPING_UPSERTED,
+            permissions=[Permission.OWNERSHIP_MANAGE],
+            resource_type=SecurityAuditResourceType.OWNERSHIP_MAPPING,
+            resource_id=record.ownership_id,
+            tenant_id=record.tenant_id,
+        )
         tenant_commit(session, tenant_id=tenant_id)
         session.refresh(record)
 
@@ -302,6 +313,14 @@ def save_ownership_mapping(
 
     existing.updated_at = utc_now_iso()
 
+    append_allowed_security_event(
+        session,
+        action=SecurityAuditAction.OWNERSHIP_MAPPING_UPSERTED,
+        permissions=[Permission.OWNERSHIP_MANAGE],
+        resource_type=SecurityAuditResourceType.OWNERSHIP_MAPPING,
+        resource_id=existing.ownership_id,
+        tenant_id=existing.tenant_id,
+    )
     tenant_commit(session, tenant_id=tenant_id)
     session.refresh(existing)
 

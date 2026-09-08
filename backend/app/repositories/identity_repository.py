@@ -23,6 +23,9 @@ from app.models.identity import (
     IdentityResolutionResult,
     IdentityResolutionSummary,
 )
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
+from app.security.authorization_policy import Permission
+from app.services.security_audit import append_allowed_security_event
 
 
 def save_identity_resolution(
@@ -201,6 +204,14 @@ def upsert_identity_override(
         record.active = True
         record.updated_at = now
 
+    append_allowed_security_event(
+        session,
+        action=SecurityAuditAction.IDENTITY_OVERRIDE_UPSERTED,
+        permissions=[Permission.TENANT_SETTINGS_MANAGE],
+        resource_type=SecurityAuditResourceType.IDENTITY_OVERRIDE,
+        resource_id=record.override_id,
+        tenant_id=tenant_value(tenant_id),
+    )
     tenant_commit(session, tenant_id=tenant_id)
     session.refresh(record)
 
@@ -272,6 +283,14 @@ def deactivate_identity_override(
     record.active = False
     record.updated_at = utc_now_iso()
 
+    append_allowed_security_event(
+        session,
+        action=SecurityAuditAction.IDENTITY_OVERRIDE_DEACTIVATED,
+        permissions=[Permission.TENANT_SETTINGS_MANAGE],
+        resource_type=SecurityAuditResourceType.IDENTITY_OVERRIDE,
+        resource_id=record.override_id,
+        tenant_id=tenant_value(tenant_id),
+    )
     tenant_commit(session, tenant_id=tenant_id)
 
     return True

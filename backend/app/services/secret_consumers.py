@@ -16,6 +16,7 @@ from app.db.models import (
     utc_now_iso,
 )
 from app.models.change_sources import ChangeSourceCreate, ChangeSourceUpdate, ChangeSourceView
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
 from app.models.secret_store import SecretBinding, SecretMaterial, SecretPurpose, SecretStoreError
 from app.models.webhooks import WebhookEndpointCreate, WebhookEndpointUpdate, WebhookEndpointView
 from app.repositories.change_source_repository import (
@@ -36,6 +37,8 @@ from app.services.secret_consumer_policy import (
     webhook_binding,
 )
 from app.services.secret_store import SecretStore
+from app.services.security_audit import append_allowed_security_event
+from app.security.authorization_policy import Permission
 
 
 class SecretConsumerError(ValueError):
@@ -171,6 +174,14 @@ def create_change_source_secure(
             )
             record.secret_ref = descriptor.secret_ref
         session.add(record)
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.CHANGE_SOURCE_CREATED,
+            permissions=[Permission.INTEGRATION_MANAGE, Permission.CREDENTIAL_ROTATE],
+            resource_type=SecurityAuditResourceType.CHANGE_SOURCE,
+            resource_id=source_id,
+            tenant_id=tenant_value(tenant_id),
+        )
         tenant_commit(session, tenant_id=tenant_id)
         return change_source_view(record)
     except SecretConsumerError:
@@ -296,6 +307,14 @@ def update_change_source_secure(
         record.filters_json = json.dumps(filters, sort_keys=True, separators=(",", ":"))
         record.status = "configured" if record.enabled else "disabled"
         record.updated_at = utc_now_iso()
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.CHANGE_SOURCE_UPDATED,
+            permissions=[Permission.INTEGRATION_MANAGE, Permission.CREDENTIAL_ROTATE],
+            resource_type=SecurityAuditResourceType.CHANGE_SOURCE,
+            resource_id=source_id,
+            tenant_id=tenant_value(tenant_id),
+        )
         tenant_commit(session, tenant_id=tenant_id)
         return change_source_view(record)
     except SecretConsumerError:
@@ -398,6 +417,14 @@ def create_webhook_endpoint_secure(
             tenant_id=tenant_value(tenant_id),
         )
         session.add(record)
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.WEBHOOK_ENDPOINT_CREATED,
+            permissions=[Permission.INTEGRATION_MANAGE, Permission.CREDENTIAL_ROTATE],
+            resource_type=SecurityAuditResourceType.WEBHOOK_ENDPOINT,
+            resource_id=webhook_id,
+            tenant_id=tenant_value(tenant_id),
+        )
         tenant_commit(session, tenant_id=tenant_id)
         return _endpoint_to_view(record)
     except SecretConsumerError:
@@ -492,6 +519,14 @@ def update_webhook_endpoint_secure(
                     sorted(headers, key=str.lower), separators=(",", ":")
                 )
         record.updated_at = utc_now_iso()
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.WEBHOOK_ENDPOINT_UPDATED,
+            permissions=[Permission.INTEGRATION_MANAGE, Permission.CREDENTIAL_ROTATE],
+            resource_type=SecurityAuditResourceType.WEBHOOK_ENDPOINT,
+            resource_id=webhook_id,
+            tenant_id=tenant_value(tenant_id),
+        )
         tenant_commit(session, tenant_id=tenant_id)
         return _endpoint_to_view(record)
     except SecretConsumerError:

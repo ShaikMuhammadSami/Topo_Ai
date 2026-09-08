@@ -16,13 +16,19 @@ from app.db.schema_management import script_directory
 SECRET_STORE_TABLES = {"secret_records", "secret_versions"}
 PRINCIPAL_TABLES = {"auth_principals", "external_identities"}
 AUTHORITY_TABLES = {"service_principal_permissions", "installation_operator_assignments"}
+SECURITY_AUDIT_TABLES = {"security_audit_events"}
 
 
 def frozen_0008_metadata():
     """PH-3's exact 43-table contract, before the additive secret store."""
     metadata = MetaData()
     for table in Base.metadata.tables.values():
-        if table.name not in SECRET_STORE_TABLES | PRINCIPAL_TABLES | AUTHORITY_TABLES:
+        if table.name not in (
+            SECRET_STORE_TABLES
+            | PRINCIPAL_TABLES
+            | AUTHORITY_TABLES
+            | SECURITY_AUDIT_TABLES
+        ):
             copied = table.to_metadata(metadata)
             if copied.name in {
                 "auth_sessions",

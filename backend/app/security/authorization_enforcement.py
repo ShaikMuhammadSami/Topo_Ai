@@ -12,6 +12,7 @@ from contextvars import ContextVar, Token
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from collections.abc import Callable
 from typing import AsyncGenerator
 
 from fastapi import Depends, HTTPException, Request
@@ -69,10 +70,12 @@ class AuthorizationFailure(RuntimeError):
         code: str,
         *,
         required_permissions: frozenset[Permission] = frozenset(),
+        authorization_context: AuthorizationContext | None = None,
     ) -> None:
         super().__init__(code)
         self.code = code
         self.required_permissions = required_permissions
+        self.authorization_context = authorization_context
 
 
 _CONTEXT_CONSTRUCTION_TOKEN = object()
@@ -143,6 +146,18 @@ def _context(
         fixed_purpose=fixed_purpose,
         request_id=request_id,
     )
+
+
+def _principal_attempt_context(principal: AuthPrincipal) -> AuthorizationContext:
+    """Represent a trusted actor without claiming an unvalidated tenant scope."""
+
+    if principal.principal_type == PrincipalType.HUMAN.value:
+        kind = AuthorityKind.HUMAN_TENANT
+    elif principal.principal_type == PrincipalType.SERVICE.value:
+        kind = AuthorityKind.SERVICE_TENANT
+    else:
+        raise AuthorizationFailure("AUTHORITY_IDENTITY_UNAVAILABLE")
+    return _context(principal, authority_kind=kind)
 
 
 _AGENT_FIXED_PURPOSES = frozenset({
@@ -263,11 +278,16 @@ def authorize_provider_fixed_purpose(
 
 
 def _require_permissions(
-    effective: frozenset[Permission], required: frozenset[Permission]
+    effective: frozenset[Permission],
+    required: frozenset[Permission],
+    *,
+    authorization_context: AuthorizationContext | None = None,
 ) -> None:
     if not required.issubset(effective):
         raise AuthorizationFailure(
-            "PERMISSION_DENIED", required_permissions=required
+            "PERMISSION_DENIED",
+            required_permissions=required,
+            authorization_context=authorization_context,
         )
 
 
@@ -317,13 +337,18 @@ def authorize_tenant(
         kind = AuthorityKind.SERVICE_TENANT
     else:  # pragma: no cover - enum closes this branch
         raise AuthorizationFailure("AUTHORITY_KIND_MISMATCH")
-    _require_permissions(effective, required_permissions)
-    return _context(
+    context = _context(
         principal,
         authority_kind=kind,
         tenant_id=tenant_context.tenant_id,
         permissions=effective,
     )
+    _require_permissions(
+        effective,
+        required_permissions,
+        authorization_context=context,
+    )
+    return context
 
 
 def authorize_installation(
@@ -333,16 +358,25 @@ def authorize_installation(
     required_permissions: frozenset[Permission],
 ) -> AuthorizationContext:
     if principal.principal_type != PrincipalType.HUMAN.value:
-        raise AuthorizationFailure("AUTHORITY_KIND_MISMATCH")
+        raise AuthorizationFailure(
+            "AUTHORITY_KIND_MISMATCH",
+            required_permissions=required_permissions,
+            authorization_context=_principal_attempt_context(principal),
+        )
     effective = resolve_installation_permissions(
         session, principal_id=principal.principal_id or ""
     )
-    _require_permissions(effective, required_permissions)
-    return _context(
+    context = _context(
         principal,
         authority_kind=AuthorityKind.INSTALLATION,
         permissions=effective,
     )
+    _require_permissions(
+        effective,
+        required_permissions,
+        authorization_context=context,
+    )
+    return context
 
 
 def authorize_authentication_self_service(
@@ -361,7 +395,12 @@ def require_human_authenticator_caller(request: Request) -> AuthPrincipal:
         principal.principal_type != PrincipalType.HUMAN.value
         or principal.authentication_type not in HUMAN_AUTHENTICATION_TYPES
     ):
-        raise _forbidden(AuthorizationFailure("HUMAN_AUTHORITY_REQUIRED"))
+        raise _forbidden(
+            AuthorizationFailure(
+                "HUMAN_AUTHORITY_REQUIRED",
+                authorization_context=_principal_attempt_context(principal),
+            )
+        )
     return principal
 
 
@@ -389,7 +428,13 @@ def authorize_service_credential_scope(
             and expected_tenant_id != tenant_context.tenant_id
         )
     ):
-        raise _forbidden(AuthorizationFailure("TENANT_ACCESS_DENIED"))
+        raise _forbidden(
+            AuthorizationFailure(
+                "TENANT_ACCESS_DENIED",
+                required_permissions=frozenset({required_permission}),
+                authorization_context=_principal_attempt_context(principal),
+            )
+        )
     try:
         context = authorize_tenant(
             session,
@@ -486,58 +531,125 @@ def authorize_service_operation(
     operation_id: str,
     *,
     authorization_context: AuthorizationContext | None = None,
+    audit_session_factory: Callable[[], Session] | None = None,
 ) -> AuthorizationContext:
     """Enforce one frozen operation entry; unknown operations fail closed."""
+    context = authorization_context or current_authorization_context()
     try:
         plan = operation_authorization_plan(operation_id)
     except KeyError as exc:
-        raise AuthorizationFailure("UNKNOWN_AUTHORIZATION_OPERATION") from exc
-    if plan.authority.intent is AuthorizationIntent.V1_DORMANT_EXECUTION_DENY:
-        raise AuthorizationFailure("V1_EXECUTION_DISABLED")
-    context = authorization_context or current_authorization_context()
-    if not isinstance(context, AuthorizationContext):
-        raise AuthorizationFailure("AUTHORIZATION_CONTEXT_REQUIRED")
-    intent = plan.authority.intent
-    if intent is AuthorizationIntent.TENANT_PERMISSION:
-        if context.authority_kind in {
-            AuthorityKind.HUMAN_TENANT,
-            AuthorityKind.SERVICE_TENANT,
-        }:
-            _require_permissions(
-                context.effective_permissions, plan.authority.permissions
-            )
-        elif context.authority_kind in {
-            AuthorityKind.AGENT_FIXED_PURPOSE,
-            AuthorityKind.PROVIDER_FIXED_PURPOSE,
-        }:
-            if context.fixed_purpose not in plan.delegated_callers:
-                raise AuthorizationFailure("MACHINE_PURPOSE_MISMATCH")
-        else:
-            raise AuthorizationFailure("AUTHORITY_KIND_MISMATCH")
-    elif intent is AuthorizationIntent.INSTALLATION_PERMISSION:
-        if context.authority_kind is not AuthorityKind.INSTALLATION:
-            raise AuthorizationFailure("AUTHORITY_KIND_MISMATCH")
-        _require_permissions(
-            context.effective_permissions, plan.authority.permissions
+        failure = AuthorizationFailure(
+            "UNKNOWN_AUTHORIZATION_OPERATION",
+            authorization_context=(
+                context if isinstance(context, AuthorizationContext) else None
+            ),
         )
-    elif intent is AuthorizationIntent.AUTHENTICATION_SELF_SERVICE:
-        if context.authority_kind is not AuthorityKind.AUTHENTICATION_SELF_SERVICE:
-            raise AuthorizationFailure("AUTHORITY_KIND_MISMATCH")
-    elif intent is AuthorizationIntent.AGENT_FIXED_PURPOSE:
-        if (
-            context.authority_kind is not AuthorityKind.AGENT_FIXED_PURPOSE
-            or context.fixed_purpose != operation_id
+        if failure.authorization_context is not None:
+            from app.services.security_audit import append_authorization_denial
+
+            append_authorization_denial(
+                authorization_context=failure.authorization_context,
+                required_permissions=frozenset(),
+                failure_code=failure.code,
+                session_factory=audit_session_factory,
+            )
+        raise failure from exc
+    try:
+        if plan.authority.intent is AuthorizationIntent.V1_DORMANT_EXECUTION_DENY:
+            raise AuthorizationFailure(
+                "V1_EXECUTION_DISABLED",
+                authorization_context=(
+                    context if isinstance(context, AuthorizationContext) else None
+                ),
+            )
+        if not isinstance(context, AuthorizationContext):
+            raise AuthorizationFailure("AUTHORIZATION_CONTEXT_REQUIRED")
+        intent = plan.authority.intent
+        if intent is AuthorizationIntent.TENANT_PERMISSION:
+            if context.authority_kind in {
+                AuthorityKind.HUMAN_TENANT,
+                AuthorityKind.SERVICE_TENANT,
+            }:
+                _require_permissions(
+                    context.effective_permissions,
+                    plan.authority.permissions,
+                    authorization_context=context,
+                )
+            elif context.authority_kind in {
+                AuthorityKind.AGENT_FIXED_PURPOSE,
+                AuthorityKind.PROVIDER_FIXED_PURPOSE,
+            }:
+                if context.fixed_purpose not in plan.delegated_callers:
+                    raise AuthorizationFailure(
+                        "MACHINE_PURPOSE_MISMATCH",
+                        required_permissions=plan.authority.permissions,
+                        authorization_context=context,
+                    )
+            else:
+                raise AuthorizationFailure(
+                    "AUTHORITY_KIND_MISMATCH",
+                    required_permissions=plan.authority.permissions,
+                    authorization_context=context,
+                )
+        elif intent is AuthorizationIntent.INSTALLATION_PERMISSION:
+            if context.authority_kind is not AuthorityKind.INSTALLATION:
+                raise AuthorizationFailure(
+                    "AUTHORITY_KIND_MISMATCH",
+                    required_permissions=plan.authority.permissions,
+                    authorization_context=context,
+                )
+            _require_permissions(
+                context.effective_permissions,
+                plan.authority.permissions,
+                authorization_context=context,
+            )
+        elif intent is AuthorizationIntent.AUTHENTICATION_SELF_SERVICE:
+            if context.authority_kind is not AuthorityKind.AUTHENTICATION_SELF_SERVICE:
+                raise AuthorizationFailure(
+                    "AUTHORITY_KIND_MISMATCH",
+                    authorization_context=context,
+                )
+        elif intent is AuthorizationIntent.AGENT_FIXED_PURPOSE:
+            if (
+                context.authority_kind is not AuthorityKind.AGENT_FIXED_PURPOSE
+                or context.fixed_purpose != operation_id
+            ):
+                raise AuthorizationFailure(
+                    "MACHINE_PURPOSE_MISMATCH",
+                    authorization_context=context,
+                )
+        elif intent is AuthorizationIntent.PROVIDER_FIXED_PURPOSE:
+            if (
+                context.authority_kind is not AuthorityKind.PROVIDER_FIXED_PURPOSE
+                or context.fixed_purpose != operation_id
+            ):
+                raise AuthorizationFailure(
+                    "MACHINE_PURPOSE_MISMATCH",
+                    authorization_context=context,
+                )
+        else:
+            raise AuthorizationFailure(
+                "AUTHORITY_KIND_MISMATCH",
+                authorization_context=context,
+            )
+        return context
+    except AuthorizationFailure as failure:
+        if failure.authorization_context is None and isinstance(
+            context, AuthorizationContext
         ):
-            raise AuthorizationFailure("MACHINE_PURPOSE_MISMATCH")
-    elif intent is AuthorizationIntent.PROVIDER_FIXED_PURPOSE:
-        if (
-            context.authority_kind is not AuthorityKind.PROVIDER_FIXED_PURPOSE
-            or context.fixed_purpose != operation_id
-        ):
-            raise AuthorizationFailure("MACHINE_PURPOSE_MISMATCH")
-    else:
-        raise AuthorizationFailure("AUTHORITY_KIND_MISMATCH")
-    return context
+            failure.authorization_context = context
+        if failure.authorization_context is not None:
+            from app.services.security_audit import append_authorization_denial
+
+            append_authorization_denial(
+                authorization_context=failure.authorization_context,
+                required_permissions=(
+                    failure.required_permissions or plan.authority.permissions
+                ),
+                failure_code=failure.code,
+                session_factory=audit_session_factory,
+            )
+        raise
 
 
 def _forbidden(failure: AuthorizationFailure) -> HTTPException:
@@ -546,7 +658,12 @@ def _forbidden(failure: AuthorizationFailure) -> HTTPException:
         detail["required_permissions"] = sorted(
             item.value for item in failure.required_permissions
         )
-    return HTTPException(status_code=403, detail=detail)
+    error = HTTPException(status_code=403, detail=detail)
+    # Trusted internal metadata only; FastAPI serializes `detail`, not this
+    # object reference.  The global guard uses it to preserve exact denial
+    # reason/actor semantics without parsing public error text.
+    error.authorization_failure = failure
+    return error
 
 
 def _selected_tenant_id(request: Request, principal: AuthPrincipal) -> str | None:
@@ -628,24 +745,39 @@ async def require_route_authorization(
     if intent is AuthorizationIntent.PUBLIC:
         yield
         return
-    if intent is AuthorizationIntent.V1_DORMANT_EXECUTION_DENY:
-        # Preserve the accepted authentication-before-authorization ordering:
-        # anonymous and revoked callers remain 401, while every authenticated
-        # V1 authority receives the same bounded disabled-surface denial.
-        authenticated_principal(request)
-        raise _forbidden(AuthorizationFailure("V1_EXECUTION_DISABLED"))
-    if intent in {
-        AuthorizationIntent.AGENT_FIXED_PURPOSE,
-        AuthorizationIntent.PROVIDER_FIXED_PURPOSE,
-    }:
-        # Their existing route dependencies/services authenticate the exact
-        # enrolled agent or provider proof.  They never become Permissions.
-        yield
-        return
+    from app.services.security_audit import (
+        append_authorization_denial,
+        bind_security_audit_request,
+        reset_security_audit_request,
+    )
 
-    principal = authenticated_principal(request)
+    session_factory = getattr(request.app.state, "session_factory", None)
+    audit_token: Token | None = None
+    if callable(session_factory):
+        audit_token = bind_security_audit_request(session_factory)
     token: Token | None = None
+    principal: AuthPrincipal | None = None
     try:
+        if intent is AuthorizationIntent.V1_DORMANT_EXECUTION_DENY:
+            # Preserve authentication-before-authorization ordering: anonymous
+            # or revoked callers remain 401; a trusted actor receives the same
+            # bounded disabled-surface 403 plus a durable denial event.
+            principal = authenticated_principal(request)
+            raise AuthorizationFailure(
+                "V1_EXECUTION_DISABLED",
+                required_permissions=plan.authority.permissions,
+                authorization_context=_principal_attempt_context(principal),
+            )
+        if intent in {
+            AuthorizationIntent.AGENT_FIXED_PURPOSE,
+            AuthorizationIntent.PROVIDER_FIXED_PURPOSE,
+        }:
+            # Route dependencies derive exact machine identity.  Their direct
+            # service guards can use the audit request scope bound above.
+            yield
+            return
+
+        principal = authenticated_principal(request)
         if intent in {
             AuthorizationIntent.AUTHENTICATION_SELF_SERVICE,
             AuthorizationIntent.AUTHENTICATOR_CREDENTIAL_POLICY,
@@ -676,7 +808,9 @@ async def require_route_authorization(
             request.state.tenant_context = tenant_context
             try:
                 _require_permissions(
-                    context.effective_permissions, plan.authority.permissions
+                    context.effective_permissions,
+                    plan.authority.permissions,
+                    authorization_context=context,
                 )
             except AuthorizationFailure:
                 _mask_absent_tenant_resource(
@@ -691,9 +825,68 @@ async def require_route_authorization(
         token = bind_authorization_context(context)
         yield
     except AuthorizationFailure as exc:
+        context = exc.authorization_context
+        if context is None and principal is not None:
+            context = _principal_attempt_context(principal)
+        append_authorization_denial(
+            authorization_context=context,
+            required_permissions=(
+                exc.required_permissions or plan.authority.permissions
+            ),
+            failure_code=exc.code,
+        )
         raise _forbidden(exc) from exc
+    except HTTPException as exc:
+        if exc.status_code == 403 and principal is not None:
+            failure = getattr(exc, "authorization_failure", None)
+            context = (
+                failure.authorization_context
+                if isinstance(failure, AuthorizationFailure)
+                else getattr(request.state, "authorization_context", None)
+            )
+            if context is None:
+                context = _principal_attempt_context(principal)
+            detail = exc.detail
+            failure_code = (
+                failure.code
+                if isinstance(failure, AuthorizationFailure)
+                else (
+                    detail
+                    if detail in {
+                        "CREDENTIAL_TARGET_DENIED",
+                        "TENANT_ACCESS_DENIED",
+                    }
+                    else "AUTHORITY_KIND_MISMATCH"
+                )
+            )
+            required = (
+                failure.required_permissions
+                if isinstance(failure, AuthorizationFailure)
+                and failure.required_permissions
+                else plan.authority.permissions
+            )
+            append_authorization_denial(
+                authorization_context=context,
+                required_permissions=required,
+                failure_code=failure_code,
+            )
+        raise
     except (AuthorityAssignmentError, PrincipalIdentityError) as exc:
-        raise _forbidden(AuthorizationFailure("AUTHORITY_UNAVAILABLE")) from exc
+        failure = AuthorizationFailure(
+            str(exc) if str(exc) else "AUTHORITY_UNAVAILABLE",
+            required_permissions=plan.authority.permissions,
+            authorization_context=(
+                _principal_attempt_context(principal)
+                if principal is not None
+                else None
+            ),
+        )
+        append_authorization_denial(
+            authorization_context=failure.authorization_context,
+            required_permissions=failure.required_permissions,
+            failure_code=failure.code,
+        )
+        raise _forbidden(failure) from exc
     except SQLAlchemyError as exc:
         raise HTTPException(
             status_code=503, detail="Authorization service is unavailable."
@@ -701,3 +894,5 @@ async def require_route_authorization(
     finally:
         if token is not None:
             reset_authorization_context(token)
+        if audit_token is not None:
+            reset_security_audit_request(audit_token)

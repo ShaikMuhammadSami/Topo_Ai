@@ -18,6 +18,7 @@ from app.db.models import (
     ServicePrincipalPermissionRecord,
 )
 from app.models.principal_identity import PrincipalType, is_valid_principal_id
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
 from app.repositories import authority_repository as repository
 from app.repositories import principal_identity_repository
 from app.security.authorization_policy import (
@@ -32,6 +33,10 @@ from app.services.principal_identity import (
     PrincipalNotProvisionedError,
     PrincipalTypeMismatchError,
     require_active_principal,
+)
+from app.services.security_audit import (
+    append_allowed_security_event,
+    append_local_operator_security_event,
 )
 
 
@@ -152,6 +157,13 @@ def update_service_permissions(
             permissions_json=canonical, updated_at=_timestamp(now),
         ):
             raise AuthorityAssignmentError("SERVICE_PERMISSIONS_CONCURRENT_MODIFICATION")
+        append_allowed_security_event(
+            session,
+            action=SecurityAuditAction.SERVICE_PERMISSIONS_UPDATED,
+            permissions=[Permission.CREDENTIAL_ROTATE],
+            resource_type=SecurityAuditResourceType.SERVICE_PRINCIPAL,
+            resource_id=principal_id,
+        )
         session.commit()
     except (AuthorityAssignmentError, SQLAlchemyError):
         session.rollback()
@@ -192,6 +204,13 @@ def grant_installation_operator(
             record.updated_at = _timestamp(now)
         elif record.status != "active":
             raise AuthorityAssignmentError("INSTALLATION_ASSIGNMENT_INVALID")
+        append_local_operator_security_event(
+            session,
+            action=SecurityAuditAction.INSTALLATION_OPERATOR_GRANTED,
+            permissions=[Permission.INSTALLATION_RECOVERY],
+            resource_type=SecurityAuditResourceType.INSTALLATION_OPERATOR_ASSIGNMENT,
+            resource_id=principal_id,
+        )
         session.commit()
         return record
     except (AuthorityAssignmentError, SQLAlchemyError):
@@ -213,6 +232,13 @@ def disable_installation_operator(
         if record.status == "active":
             record.status = "disabled"
             record.updated_at = _timestamp(now)
+        append_local_operator_security_event(
+            session,
+            action=SecurityAuditAction.INSTALLATION_OPERATOR_DISABLED,
+            permissions=[Permission.INSTALLATION_RECOVERY],
+            resource_type=SecurityAuditResourceType.INSTALLATION_OPERATOR_ASSIGNMENT,
+            resource_id=principal_id,
+        )
         session.commit()
         return record
     except (AuthorityAssignmentError, SQLAlchemyError):

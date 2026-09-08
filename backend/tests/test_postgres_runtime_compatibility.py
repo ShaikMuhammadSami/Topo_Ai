@@ -500,11 +500,11 @@ def test_accepted_schema_parity_and_postgresql_storage_contract(
         assert schema_differences(connection) == ()
         inspector = inspect(connection)
         assert len(_domain_table_names(connection)) == 43
-        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 829
+        assert sum(len(table.columns) for table in Base.metadata.tables.values()) == 844
         assert sum(
             1 for table in Base.metadata.tables.values() for _ in table.primary_key
-        ) == 75
-        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 348
+        ) == 76
+        assert sum(len(table.indexes) for table in Base.metadata.tables.values()) == 352
         assert sum(
             1
             for table in Base.metadata.tables.values()
@@ -658,7 +658,7 @@ def test_postgresql_0001_to_0002_0003_0004_to_0005_lifecycle() -> None:
 
         _upgrade(engine)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0014_min_authority",)
+            assert current_revisions(connection) == ("0015_security_audit",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
 
@@ -799,7 +799,7 @@ def test_postgresql_two_tenant_explicit_backfill_parity_and_reupgrade() -> None:
 
         _upgrade(engine, legacy_tenant_id=POSTGRES_TENANT_B)
         with engine.connect() as connection:
-            assert current_revisions(connection) == ("0014_min_authority",)
+            assert current_revisions(connection) == ("0015_security_audit",)
             assert inspect_schema_authority(connection).ok
             assert schema_differences(connection) == ()
             assert len(_domain_table_names(connection)) == 43

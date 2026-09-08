@@ -13,16 +13,20 @@ import os
 import sys
 from uuid import uuid4
 
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
 from app.db.database import SessionLocal, init_db
 from app.models.secret_store import SecretMaterial, SecretStoreError
+from app.models.security_audit import SecurityAuditAction, SecurityAuditResourceType
+from app.security.authorization_policy import Permission
 from app.security.secret_keyring import load_secret_store_configuration
 from app.services.installation_secrets import (
     INSTALLATION_INTEGRATIONS,
     installation_binding,
 )
 from app.services.secret_store import EncryptedDatabaseSecretStore
+from app.services.security_audit import append_local_operator_security_event
 
 _KNOWN_IMPORTS = {
     "openai": "OPENAI_API_KEY",
@@ -75,7 +79,7 @@ def _material(args: argparse.Namespace) -> SecretMaterial:
 def _safe_status(store: EncryptedDatabaseSecretStore, session: Session, name: str):
     try:
         descriptor = store.describe_for_binding(session, installation_binding(name))
-        return {
+        result = {
             "integration": name,
             "configured": descriptor.status == "active",
             "status": descriptor.status,
@@ -83,13 +87,23 @@ def _safe_status(store: EncryptedDatabaseSecretStore, session: Session, name: st
         }
     except SecretStoreError as exc:
         if str(exc) == "SECRET_NOT_FOUND":
-            return {
+            result = {
                 "integration": name,
                 "configured": False,
                 "status": "unconfigured",
                 "updated_at": None,
             }
-        raise
+        else:
+            raise
+    append_local_operator_security_event(
+        session,
+        action=SecurityAuditAction.INSTALLATION_SECRET_INSPECTED,
+        permissions=[Permission.INSTALLATION_STATUS_READ],
+        resource_type=SecurityAuditResourceType.SECRET_RECORD,
+        resource_id=name,
+    )
+    session.commit()
+    return result
 
 
 def _mutate(
@@ -143,6 +157,20 @@ def _mutate(
                     actor=actor,
                     expected_row_version=descriptor.row_version,
                 )
+    audit_actions = {
+        "set": SecurityAuditAction.INSTALLATION_SECRET_SET,
+        "reprovision": SecurityAuditAction.INSTALLATION_SECRET_REPROVISIONED,
+        "rotate": SecurityAuditAction.INSTALLATION_SECRET_ROTATED,
+        "import-known-env": SecurityAuditAction.INSTALLATION_SECRET_IMPORTED,
+        "revoke": SecurityAuditAction.INSTALLATION_SECRET_REVOKED,
+    }
+    append_local_operator_security_event(
+        session,
+        action=audit_actions[args.command],
+        permissions=[Permission.INSTALLATION_SECRET_MANAGE],
+        resource_type=SecurityAuditResourceType.SECRET_RECORD,
+        resource_id=args.integration,
+    )
     session.commit()
     output: dict[str, object] = {
         "integration": args.integration,
@@ -169,8 +197,11 @@ def main(argv: list[str] | None = None) -> int:
                 output = _mutate(store, session, args)
         print(json.dumps(output, sort_keys=True))
         return 0
-    except SecretStoreError as exc:
-        code = str(exc)
+    except (SecretStoreError, SQLAlchemyError) as exc:
+        if isinstance(exc, SQLAlchemyError):
+            code = "INSTALLATION_SECRET_OPERATION_FAILED"
+        else:
+            code = str(exc)
         if code not in {
             "SECRET_NOT_FOUND", "SECRET_REVOKED", "SECRET_OPERATION_CONFLICT",
             "SECRET_CONCURRENT_MODIFICATION", "SECRET_STORE_DISABLED",

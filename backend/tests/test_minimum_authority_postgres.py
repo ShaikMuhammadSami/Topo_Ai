@@ -20,7 +20,7 @@ from app.services.authority_assignments import (
     resolve_service_permissions, update_service_permissions,
 )
 from test_minimum_authority_migrations import (
-    HEAD, HUMAN_A, NEW_TABLES, PARENT, SERVICE_A,
+    AUTHORITY_REVISION, HEAD, HUMAN_A, NEW_TABLES, PARENT, SERVICE_A,
     _assert_populated_authority, _migrate, _seed_0013,
 )
 from test_postgres_runtime_compatibility import _temporary_database
@@ -43,8 +43,11 @@ def test_postgresql_fresh_authority_schema_and_disposable_downgrade() -> None:
         _assert_postgres_read_committed(engine)
         _migrate(engine, PARENT)
         before = set(inspect(engine).get_table_names())
-        _migrate(engine)
+        _migrate(engine, AUTHORITY_REVISION)
         assert set(inspect(engine).get_table_names()) - before == NEW_TABLES
+        with engine.connect() as connection:
+            assert current_revisions(connection) == (AUTHORITY_REVISION,)
+        _migrate(engine, HEAD)
         with engine.connect() as connection:
             assert current_revisions(connection) == (HEAD,)
             assert schema_differences(connection) == ()

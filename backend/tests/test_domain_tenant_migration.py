@@ -216,12 +216,17 @@ def test_domain_table_partition_and_nullable_orm_ownership_are_exact() -> None:
     from frozen_schema_fixtures import (
         AUTHORITY_TABLES,
         PRINCIPAL_TABLES,
+        SECURITY_AUDIT_TABLES,
         SECRET_STORE_TABLES,
         frozen_0008_metadata,
     )
     all_tables = set(frozen_0008_metadata().tables)
     assert set(Base.metadata.tables) == (
-        all_tables | SECRET_STORE_TABLES | PRINCIPAL_TABLES | AUTHORITY_TABLES
+        all_tables
+        | SECRET_STORE_TABLES
+        | PRINCIPAL_TABLES
+        | AUTHORITY_TABLES
+        | SECURITY_AUDIT_TABLES
     )
     assert len(all_tables) == 43
     assert len(PH3C_DOMAIN) == 35
@@ -266,7 +271,7 @@ def test_fresh_sqlite_requires_no_legacy_tenant_and_creates_none(
     _upgrade(migration_engine)
 
     with migration_engine.connect() as connection:
-        assert current_revisions(connection) == ("0014_min_authority",)
+        assert current_revisions(connection) == ("0015_security_audit",)
         assert connection.scalar(text("SELECT COUNT(*) FROM tenants")) == 0
         assert schema_differences(connection) == ()
         assert inspect_schema_authority(connection).ok
