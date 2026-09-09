@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 import logging
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 from sqlalchemy.orm import Session
@@ -99,6 +100,17 @@ def _bounded(value: str | None, *, field: str) -> str | None:
         or any(ord(character) < 32 or ord(character) == 127 for character in value)
     ):
         raise SecurityAuditValidationError(f"AUDIT_{field.upper()}_INVALID")
+    if field == "resource_id":
+        try:
+            parsed = urlsplit(value)
+        except ValueError as exc:
+            raise SecurityAuditValidationError(
+                "AUDIT_RESOURCE_ID_INVALID"
+            ) from exc
+        if parsed.scheme in {"http", "https"} and (
+            parsed.username is not None or parsed.password is not None
+        ):
+            raise SecurityAuditValidationError("AUDIT_RESOURCE_ID_INVALID")
     return value
 
 
