@@ -10,6 +10,7 @@ from typing import (
 )
 
 from openai import OpenAI
+from groq import Groq
 from pydantic import BaseModel
 
 from app.security.secret_redaction import sanitize_structured
@@ -17,6 +18,8 @@ from app.services.installation_secrets import (
     installation_secret_is_configured,
     installation_secret_text,
 )
+from app.security.egress_policy import Resolver, SystemResolver
+from app.services.egress_http import groq_http_client, openai_http_client
 
 
 DEFAULT_OPENAI_MODEL = "gpt-5-mini"
@@ -92,7 +95,10 @@ def sanitize_untrusted_data(
     return sanitize_structured(value, depth=depth)
 
 
-def _openai_client() -> OpenAI:
+def _openai_client(
+    *,
+    resolver: Resolver | None = None,
+) -> OpenAI:
     api_key = installation_secret_text("openai")
 
     if not api_key:
@@ -104,6 +110,24 @@ def _openai_client() -> OpenAI:
         api_key=api_key,
         timeout=60.0,
         max_retries=2,
+        http_client=openai_http_client(resolver=resolver or SystemResolver()),
+    )
+
+
+def create_groq_client(
+    *,
+    resolver: Resolver | None = None,
+) -> Groq:
+    api_key = installation_secret_text("groq")
+    if not api_key:
+        raise OpenAIConfigurationError(
+            "Groq installation credential is not configured."
+        )
+    return Groq(
+        api_key=api_key,
+        timeout=60.0,
+        max_retries=2,
+        http_client=groq_http_client(resolver=resolver or SystemResolver()),
     )
 
 

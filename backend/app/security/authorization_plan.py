@@ -239,8 +239,10 @@ POST /api/v1/integrations/webhooks/{webhook_id}/test
 POST /api/v1/change-sources
 PATCH /api/v1/change-sources/{source_id}
 POST /api/v1/integrations/webhooks
-PATCH /api/v1/integrations/webhooks/{webhook_id}
 """, "These combined endpoints can configure integration and create/rotate/revoke reversible credentials. Require BOTH authorities for the entire endpoint, including metadata-only payloads; no implicit service credential-administration exception."),
+    *_routes(I.TENANT_PERMISSION, "integration.manage", """
+PATCH /api/v1/integrations/webhooks/{webhook_id}
+""", "Webhook metadata and same-origin path changes require integration authority; origin or protected-credential changes dynamically require credential.rotate as well."),
     *_routes(I.TENANT_PERMISSION, "credential.rotate", """
 POST /api/v1/agents/enrollment-tokens
 POST /api/v1/agents/{agent_id}/revoke
@@ -395,7 +397,7 @@ _OPERATION_ENTRIES = (
     _operation("app.services.secret_consumers.create_change_source_secure", I.TENANT_PERMISSION, "integration.manage credential.rotate", "Bounded credential lifecycle; combined integration/secret calls require all listed permissions. No raw-secret read authority."),
     _operation("app.services.secret_consumers.update_change_source_secure", I.TENANT_PERMISSION, "integration.manage credential.rotate", "Bounded credential lifecycle; combined integration/secret calls require all listed permissions. No raw-secret read authority."),
     _operation("app.services.secret_consumers.create_webhook_endpoint_secure", I.TENANT_PERMISSION, "integration.manage credential.rotate", "Bounded credential lifecycle; combined integration/secret calls require all listed permissions. No raw-secret read authority."),
-    _operation("app.services.secret_consumers.update_webhook_endpoint_secure", I.TENANT_PERMISSION, "integration.manage credential.rotate", "Bounded credential lifecycle; combined integration/secret calls require all listed permissions. No raw-secret read authority."),
+    _operation("app.services.secret_consumers.update_webhook_endpoint_secure", I.TENANT_PERMISSION, "integration.manage", "Webhook metadata is integration-managed; origin and protected-credential changes dynamically require credential.rotate. No raw-secret read authority."),
     _operation("app.repositories.identity_repository.upsert_identity_override", I.TENANT_PERMISSION, "tenant.settings.manage", "Existing low-level operation: PH-5C enforces its calling service boundary; PH-3 repository tenant predicates remain independent."),
     _operation("app.repositories.identity_repository.deactivate_identity_override", I.TENANT_PERMISSION, "tenant.settings.manage", "Existing low-level operation: PH-5C enforces its calling service boundary; PH-3 repository tenant predicates remain independent."),
     _operation("app.services.ownership_resolver.create_ownership_mapping", I.TENANT_PERMISSION, "ownership.manage", "Tenant-scoped operation; direct invocation requires the listed semantic permission."),

@@ -39,6 +39,16 @@ from app.services.secret_consumer_policy import (
 from app.services.secret_store import SecretStore
 from app.services.security_audit import append_allowed_security_event
 from app.security.authorization_policy import Permission
+from app.security.authorization_enforcement import (
+    AuthorizationContext,
+    require_authorization_permissions,
+)
+from app.security.egress_policy import (
+    EgressPolicyError,
+    EgressPurpose,
+    Resolver,
+    canonicalize_destination,
+)
 
 
 class SecretConsumerError(ValueError):
@@ -374,9 +384,10 @@ def create_webhook_endpoint_secure(
     tenant_id: DomainTenant,
     actor: str,
     store: SecretStore,
+    resolver: Resolver | None = None,
 ) -> WebhookEndpointView:
     try:
-        url = validate_webhook_url(request.url)
+        url = validate_webhook_url(request.url, resolver=resolver)
         webhook_id = f"webhook:{uuid4().hex}"
         signing_ref = None
         header_ref = None
@@ -450,6 +461,8 @@ def update_webhook_endpoint_secure(
     actor: str,
     store: SecretStore,
     idempotency_key: str | None,
+    resolver: Resolver | None = None,
+    authorization_context: AuthorizationContext | None = None,
 ) -> WebhookEndpointView:
     try:
         record = load_webhook_endpoint_record(
@@ -458,12 +471,44 @@ def update_webhook_endpoint_secure(
         if record is None:
             raise SecretConsumerError("Webhook not found.", 404)
         fields = request.model_fields_set
-        if request.name is not None:
-            record.name = request.name
+        required_permissions = {Permission.INTEGRATION_MANAGE}
+        next_url = record.url
         if "url" in fields:
             if request.url is None:
                 raise SecretConsumerError("Webhook URL is required.")
-            record.url = validate_webhook_url(request.url)
+            try:
+                current_origin = canonicalize_destination(
+                    record.url, purpose=EgressPurpose.TENANT_WEBHOOK_DELIVERY
+                ).origin
+            except EgressPolicyError:
+                # A pre-PH-6B legacy destination is never trusted, but an
+                # authorized rotation may replace it with a valid authority.
+                current_origin = None
+            try:
+                candidate = canonicalize_destination(
+                    request.url, purpose=EgressPurpose.TENANT_WEBHOOK_DELIVERY
+                )
+            except EgressPolicyError as exc:
+                raise SecretConsumerError(exc.code.value) from None
+            next_url = candidate.url
+            if current_origin != candidate.origin:
+                required_permissions.add(Permission.CREDENTIAL_ROTATE)
+        if {"signing_secret", "headers"} & fields:
+            required_permissions.add(Permission.CREDENTIAL_ROTATE)
+        if authorization_context is not None:
+            require_authorization_permissions(
+                frozenset(required_permissions),
+                authorization_context=authorization_context,
+            )
+        if "url" in fields:
+            # Check data-dependent authority before controlled DNS so an
+            # under-authorized caller cannot use this route as a resolver
+            # oracle. Egress denial remains a distinct, bounded failure.
+            next_url = validate_webhook_url(next_url, resolver=resolver)
+        if request.name is not None:
+            record.name = request.name
+        if "url" in fields:
+            record.url = next_url
         if request.event_types is not None:
             record.event_types_json = json.dumps([value.value for value in request.event_types])
         if request.active is not None:
@@ -522,7 +567,7 @@ def update_webhook_endpoint_secure(
         append_allowed_security_event(
             session,
             action=SecurityAuditAction.WEBHOOK_ENDPOINT_UPDATED,
-            permissions=[Permission.INTEGRATION_MANAGE, Permission.CREDENTIAL_ROTATE],
+            permissions=sorted(required_permissions, key=lambda value: value.value),
             resource_type=SecurityAuditResourceType.WEBHOOK_ENDPOINT,
             resource_id=webhook_id,
             tenant_id=tenant_value(tenant_id),

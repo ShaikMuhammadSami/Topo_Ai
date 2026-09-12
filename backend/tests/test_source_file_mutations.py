@@ -359,8 +359,7 @@ def test_provider_shaped_responses_flow_through_real_connector_and_ingest(
             return Response(_commit())
         raise AssertionError(f"Unexpected provider GET: {url}")
 
-    def provider_stream(method: str, url: str, **kwargs):
-        assert method == "GET"
+    def provider_stream(url: str, **kwargs):
         ref = kwargs["params"]["ref"]
         assert url.endswith("/contents/config/mode.txt")
         if ref == PARENT_SHA:
@@ -379,8 +378,12 @@ def test_provider_shaped_responses_flow_through_real_connector_and_ingest(
             }
         )
 
-    monkeypatch.setattr("app.connectors.github_connector.httpx.get", provider_get)
-    monkeypatch.setattr("app.connectors.github_connector.httpx.stream", provider_stream)
+    class ProviderEgress:
+        def get_json(self, url, *, headers, params=None):
+            return provider_get(url, params=params, headers=headers).json()
+
+        def get_source_json(self, url, *, headers, params, maximum_bytes):
+            return provider_stream(url, params=params, headers=headers).json()
     settings = GitHubSettings(
         owner="example",
         repository="platform",
@@ -390,7 +393,7 @@ def test_provider_shaped_responses_flow_through_real_connector_and_ingest(
         timeout_seconds=1,
         commit_limit=20,
     )
-    connector = GitHubConnector(settings)
+    connector = GitHubConnector(settings, egress=ProviderEgress())
     sessions = _session_factory()
     with sessions() as session:
         receipt = _ingest(session, monkeypatch, connector)

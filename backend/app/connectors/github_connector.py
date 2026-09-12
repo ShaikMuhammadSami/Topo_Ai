@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import base64
-import json
 import os
 from dataclasses import dataclass, field
 from typing import Any, Callable
@@ -9,11 +8,31 @@ from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
 
-from app.security.secret_redaction import validate_service_base_url
+from app.security.egress_policy import (
+    EgressErrorCode,
+    EgressPolicyError,
+    EgressPurpose,
+    Resolver,
+    SystemResolver,
+    canonicalize_destination,
+)
+from app.services.egress_http import GitHubEgress
 from app.services.installation_secrets import installation_secret_text
 
 
 MAX_GITHUB_ARTIFACT_BYTES = 32 * 1024 * 1024
+
+
+def _validated_api_url(value: str) -> str:
+    try:
+        destination = canonicalize_destination(
+            value, purpose=EgressPurpose.GITHUB_API_JSON_READ
+        )
+        if destination.query:
+            raise EgressPolicyError(EgressErrorCode.DESTINATION_INVALID)
+        return destination.url.rstrip("/")
+    except EgressPolicyError:
+        raise ValueError("GitHub API URL is not allowed.") from None
 
 
 class GitHubConnectorError(RuntimeError):
@@ -96,9 +115,8 @@ class GitHubSettings:
             owner=owner,
             repository=repository,
             token=None,
-            api_url=validate_service_base_url(
-                os.getenv("TOPO_GITHUB_API_URL", "https://api.github.com"),
-                label="GitHub API URL",
+            api_url=_validated_api_url(
+                os.getenv("TOPO_GITHUB_API_URL", "https://api.github.com")
             ),
             api_version=os.getenv(
                 "TOPO_GITHUB_API_VERSION",
@@ -135,9 +153,8 @@ class GitHubSettings:
             owner=owner,
             repository=repository,
             token=None,
-            api_url=validate_service_base_url(
-                os.getenv("TOPO_GITHUB_API_URL", "https://api.github.com"),
-                label="GitHub API URL",
+            api_url=_validated_api_url(
+                os.getenv("TOPO_GITHUB_API_URL", "https://api.github.com")
             ),
             api_version=os.getenv(
                 "TOPO_GITHUB_API_VERSION",
@@ -158,8 +175,16 @@ class GitHubConnector:
     def __init__(
         self,
         settings: GitHubSettings,
+        *,
+        resolver: Resolver | None = None,
+        egress: GitHubEgress | None = None,
     ) -> None:
         self.settings = settings
+        self._resolver = resolver or SystemResolver()
+        self._egress = egress or GitHubEgress(
+            api_url=settings.api_url,
+            resolver=self._resolver,
+        )
 
     def _headers(self) -> dict[str, str]:
         headers = {
@@ -197,23 +222,11 @@ class GitHubConnector:
         )
 
         try:
-            response = httpx.get(
+            return self._egress.get_json(
                 url,
                 params=params,
                 headers=self._headers(),
-                timeout=(
-                    self.settings
-                    .timeout_seconds
-                ),
-                follow_redirects=False,
             )
-
-            if _is_redirect_status(response.status_code):
-                raise GitHubConnectorError(
-                    "GitHub API redirect was not accepted."
-                )
-
-            response.raise_for_status()
 
         except httpx.HTTPStatusError as exc:
             status_code = (
@@ -226,19 +239,10 @@ class GitHubConnector:
                 status_code=status_code,
             ) from None
 
-        except httpx.RequestError:
+        except (httpx.RequestError, EgressPolicyError):
             raise GitHubConnectorError(
                 "Could not reach the GitHub API."
             ) from None
-
-        try:
-            return response.json()
-
-        except ValueError as exc:
-            raise GitHubConnectorError(
-                "GitHub returned an invalid "
-                "JSON response."
-            ) from exc
 
     def _get_bounded_json(
         self,
@@ -253,39 +257,22 @@ class GitHubConnector:
             f"{path.lstrip('/')}"
         )
         try:
-            with httpx.stream(
-                "GET",
+            return self._egress.get_source_json(
                 url,
                 params=params,
                 headers=self._headers(),
-                timeout=self.settings.timeout_seconds,
-                follow_redirects=False,
-            ) as response:
-                if _is_redirect_status(response.status_code):
-                    raise GitHubConnectorError(
-                        "GitHub content API redirect was not accepted."
-                    )
-                response.raise_for_status()
-                declared = response.headers.get("content-length")
-                if (
-                    declared
-                    and declared.isdigit()
-                    and int(declared) > maximum_response_bytes
-                ):
-                    raise GitHubResponseLimitError(
-                        "GitHub content response exceeded the safe byte limit."
-                    )
-                chunks: list[bytes] = []
-                received = 0
-                for chunk in response.iter_bytes():
-                    received += len(chunk)
-                    if received > maximum_response_bytes:
-                        raise GitHubResponseLimitError(
-                            "GitHub content response exceeded the safe byte limit."
-                        )
-                    chunks.append(chunk)
+                maximum_bytes=maximum_response_bytes,
+            )
         except GitHubResponseLimitError:
             raise
+        except EgressPolicyError as exc:
+            if exc.code is EgressErrorCode.RESPONSE_TOO_LARGE:
+                raise GitHubResponseLimitError(
+                    "GitHub content response exceeded the safe byte limit."
+                ) from None
+            raise GitHubConnectorError(
+                "Could not reach the GitHub content API."
+            ) from None
         except httpx.HTTPStatusError as exc:
             raise GitHubConnectorError(
                 "GitHub content API returned "
@@ -297,12 +284,6 @@ class GitHubConnector:
                 "Could not reach the GitHub content API."
             ) from None
 
-        try:
-            return json.loads(b"".join(chunks))
-        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-            raise GitHubConnectorError(
-                "GitHub returned invalid bounded content JSON."
-            ) from exc
 
     def get_repository(
         self,
@@ -583,36 +564,37 @@ class GitHubConnector:
             response = None
             current_url = url
             for _ in range(4):
-                response = httpx.get(
+                response = self._egress.get_artifact_hop(
                     current_url,
                     headers=headers,
-                    timeout=self.settings.timeout_seconds,
-                    follow_redirects=False,
                 )
                 if not _is_redirect_status(response.status_code):
                     break
-                location = response.headers.get("location")
-                if not location:
-                    raise GitHubConnectorError(
-                        "GitHub artifact redirect was invalid."
-                    )
-                target = urljoin(current_url, location)
-                parsed = urlsplit(target)
-                if (
-                    parsed.scheme not in {"http", "https"}
-                    or not parsed.hostname
-                    or parsed.username is not None
-                    or parsed.password is not None
-                ):
-                    raise GitHubConnectorError(
-                        "GitHub artifact redirect was unsafe."
-                    )
-                if _origin(target) != _origin(current_url):
-                    headers = {
-                        "Accept": "application/octet-stream",
-                        "User-Agent": "topo-ai-infrastructure-intelligence",
-                    }
-                current_url = target
+                try:
+                    location = response.headers.get("location")
+                    if not location:
+                        raise GitHubConnectorError(
+                            "GitHub artifact redirect was invalid."
+                        )
+                    target = urljoin(current_url, location)
+                    parsed = urlsplit(target)
+                    if (
+                        parsed.scheme not in {"http", "https"}
+                        or not parsed.hostname
+                        or parsed.username is not None
+                        or parsed.password is not None
+                    ):
+                        raise GitHubConnectorError(
+                            "GitHub artifact redirect was unsafe."
+                        )
+                    if _origin(target) != _origin(current_url):
+                        headers = {
+                            "Accept": "application/octet-stream",
+                            "User-Agent": "topo-ai-infrastructure-intelligence",
+                        }
+                    current_url = target
+                finally:
+                    _close_egress_response(response)
             else:
                 raise GitHubConnectorError(
                     "GitHub artifact redirect limit was exceeded."
@@ -623,25 +605,43 @@ class GitHubConnector:
                 )
             response.raise_for_status()
         except httpx.HTTPStatusError as exc:
+            _close_egress_response(exc.response)
             raise GitHubConnectorError(
                 "GitHub artifact download returned "
                 f"{exc.response.status_code}."
             ) from exc
-        except httpx.RequestError:
+        except (httpx.RequestError, EgressPolicyError):
             raise GitHubConnectorError(
                 "Could not download the GitHub artifact."
             ) from None
-        declared = response.headers.get("content-length")
-        if declared and declared.isdigit() and int(declared) > MAX_GITHUB_ARTIFACT_BYTES:
+        try:
+            declared = response.headers.get("content-length")
+            if (
+                declared
+                and declared.isdigit()
+                and int(declared) > MAX_GITHUB_ARTIFACT_BYTES
+            ):
+                raise GitHubConnectorError(
+                    "GitHub build artifact exceeds the safe size limit."
+                )
+            payload = bytearray()
+            for chunk in response.iter_bytes():
+                payload.extend(chunk)
+                if len(payload) > MAX_GITHUB_ARTIFACT_BYTES:
+                    raise GitHubConnectorError(
+                        "GitHub build artifact exceeds the safe size limit."
+                    )
+            return bytes(payload)
+        except EgressPolicyError as exc:
+            if exc.code is EgressErrorCode.RESPONSE_TOO_LARGE:
+                raise GitHubConnectorError(
+                    "GitHub build artifact exceeds the safe size limit."
+                ) from None
             raise GitHubConnectorError(
-                "GitHub build artifact exceeds the safe size limit."
-            )
-        payload = response.content
-        if len(payload) > MAX_GITHUB_ARTIFACT_BYTES:
-            raise GitHubConnectorError(
-                "GitHub build artifact exceeds the safe size limit."
-            )
-        return payload
+                "Could not download the GitHub artifact."
+            ) from None
+        finally:
+            _close_egress_response(response)
 
 
 def _origin(value: str) -> tuple[str, str, int | None]:
@@ -651,3 +651,10 @@ def _origin(value: str) -> tuple[str, str, int | None]:
 
 def _is_redirect_status(status_code: int) -> bool:
     return 300 <= status_code < 400
+
+
+def _close_egress_response(response: httpx.Response) -> None:
+    response.close()
+    client = response.extensions.pop("topo_egress_client", None)
+    if isinstance(client, httpx.Client):
+        client.close()

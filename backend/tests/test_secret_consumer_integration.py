@@ -165,19 +165,21 @@ def test_webhook_credentials_are_reference_only_and_decrypted_at_delivery(consum
     header_value = "ph4c-header-marker-" + secrets.token_urlsafe(24)
     observed: dict[str, str] = {}
 
-    class Response:
-        status_code = 204
-        text = "ok"
+    def deliver_once(
+        destination,
+        *,
+        body,
+        headers,
+        resolver,
+        network_backend=None,
+        timeout_seconds=30.0,
+    ):
+        observed.update(headers)
+        return 204
 
-    class Client:
-        def __init__(self, **kwargs): pass
-        def __enter__(self): return self
-        def __exit__(self, *args): return None
-        def post(self, url, *, content, headers):
-            observed.update(headers)
-            return Response()
-
-    monkeypatch.setattr("app.services.webhook_delivery.httpx.Client", Client)
+    monkeypatch.setattr(
+        "app.services.webhook_delivery.deliver_webhook_once", deliver_once
+    )
     with TestClient(application) as client:
         created = client.post("/api/v1/integrations/webhooks", headers=headers, json={
             "name": "Secure outbound", "url": "https://example.test/topo",
@@ -247,19 +249,21 @@ def test_outbound_replacement_is_active_only_and_clear_revokes(consumer_app, mon
     new = "ph4c-new-signing-" + secrets.token_urlsafe(24)
     signatures: list[str | None] = []
 
-    class Response:
-        status_code = 204
-        text = "ok"
+    def deliver_once(
+        destination,
+        *,
+        body,
+        headers,
+        resolver,
+        network_backend=None,
+        timeout_seconds=30.0,
+    ):
+        signatures.append(headers.get("X-Topo-Signature"))
+        return 204
 
-    class Client:
-        def __init__(self, **kwargs): pass
-        def __enter__(self): return self
-        def __exit__(self, *args): return None
-        def post(self, url, *, content, headers):
-            signatures.append(headers.get("X-Topo-Signature"))
-            return Response()
-
-    monkeypatch.setattr("app.services.webhook_delivery.httpx.Client", Client)
+    monkeypatch.setattr(
+        "app.services.webhook_delivery.deliver_webhook_once", deliver_once
+    )
     with TestClient(application) as client:
         created = client.post("/api/v1/integrations/webhooks", headers=headers, json={
             "name": "Replace", "url": "https://example.test/replace",

@@ -21,6 +21,25 @@ os.environ["TOPO_BROWSER_ALLOWED_ORIGINS_JSON"] = json.dumps(
 
 
 from app.db.database import SessionLocal  # noqa: E402
+from app.security.egress_policy import SystemResolver  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def deterministic_reserved_test_dns(monkeypatch):
+    """Keep synthetic test authorities offline under the real egress policy."""
+    original = SystemResolver.resolve
+
+    def resolve(self, hostname: str, port: int):
+        if (
+            hostname.endswith(".test")
+            or hostname.endswith(".example")
+            or hostname.endswith(".example.com")
+            or hostname == "example.com"
+        ):
+            return ("93.184.216.34",)
+        return original(self, hostname, port)
+
+    monkeypatch.setattr(SystemResolver, "resolve", resolve)
 
 
 @pytest.fixture

@@ -124,7 +124,12 @@ def test_openai_uses_db_credential_and_never_environment_fallback(
         lambda **kwargs: observed.append(kwargs) or SimpleNamespace(),
     )
     llm_client._openai_client()
-    assert observed == [{"api_key": marker, "timeout": 60.0, "max_retries": 2}]
+    assert len(observed) == 1
+    assert observed[0]["api_key"] == marker
+    assert observed[0]["timeout"] == 60.0
+    assert observed[0]["max_retries"] == 2
+    assert isinstance(observed[0]["http_client"], httpx.Client)
+    observed[0]["http_client"].close()
 
 
 def test_github_runtime_uses_db_credential_and_public_mode_remains_possible(
@@ -157,6 +162,10 @@ def test_github_artifact_cross_origin_redirect_strips_bearer(monkeypatch):
     )
     observed = []
 
+    class FakeEgress:
+        def get_artifact_hop(self, url, *, headers):
+            return fake_get(url, headers=headers)
+
     def fake_get(url, **kwargs):
         observed.append((url, dict(kwargs["headers"])))
         request = httpx.Request("GET", url)
@@ -168,8 +177,7 @@ def test_github_artifact_cross_origin_redirect_strips_bearer(monkeypatch):
             )
         return httpx.Response(200, content=b"zip", request=request)
 
-    monkeypatch.setattr("app.connectors.github_connector.httpx.get", fake_get)
-    assert GitHubConnector(settings).download_actions_artifact(1) == b"zip"
+    assert GitHubConnector(settings, egress=FakeEgress()).download_actions_artifact(1) == b"zip"
     assert observed[0][1]["Authorization"] == f"Bearer {marker}"
     assert "Authorization" not in observed[1][1]
 

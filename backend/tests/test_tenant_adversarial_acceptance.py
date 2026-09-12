@@ -327,14 +327,11 @@ def test_both_real_machine_pipelines_collide_without_crossing_worlds(hostile, mo
     from app.services import webhook_delivery
     delivered = []
 
-    class Transport:
-        def __enter__(self): return self
-        def __exit__(self, *_): return False
-        def post(self, url, **kwargs):
-            delivered.append(url)
-            return SimpleNamespace(status_code=200, text="accepted")
-
-    monkeypatch.setattr(webhook_delivery, "httpx", SimpleNamespace(Client=lambda **_: Transport()))
+    monkeypatch.setattr(
+        webhook_delivery,
+        "deliver_webhook_once",
+        lambda destination, **_: delivered.append(destination.destination.url) or 200,
+    )
     with h.factory() as session:
         for tenant, actor in ((h.a, "A"), (h.b, "B")):
             create_webhook_endpoint_secure(

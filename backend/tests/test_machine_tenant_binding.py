@@ -141,20 +141,15 @@ def test_real_agent_snapshot_failure_rca_briefing_carries_tenant(two_tenants, mo
 
     delivered_urls = []
 
-    class LocalTransport:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_):
-            return False
-
-        def post(self, url, **_):
-            delivered_urls.append(url)
-            return SimpleNamespace(status_code=200, text="accepted")
-
     # Only network I/O is substituted; event selection, dispatch and durable
     # delivery bookkeeping run unchanged through the actual lifecycle.
-    monkeypatch.setattr(webhook_delivery, "httpx", SimpleNamespace(Client=lambda **_: LocalTransport()))
+    monkeypatch.setattr(
+        webhook_delivery,
+        "deliver_webhook_once",
+        lambda destination, **_: delivered_urls.append(
+            destination.destination.url
+        ) or 200,
+    )
     with factory() as s:
         for tenant, name in ((a, "a"), (b, "b")):
             create_webhook_endpoint_secure(

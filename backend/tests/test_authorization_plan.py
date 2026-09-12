@@ -216,11 +216,13 @@ def test_combined_integration_secret_operations_require_all_permissions():
         ("POST", "/api/v1/change-sources"),
         ("PATCH", "/api/v1/change-sources/{source_id}"),
         ("POST", "/api/v1/integrations/webhooks"),
-        ("PATCH", "/api/v1/integrations/webhooks/{webhook_id}"),
     ]:
         permissions = route_authorization_plan(*key).authority.permissions
         assert permissions == {Permission("integration.manage"), Permission("credential.rotate")}
         assert not permissions <= SERVICE_ASSIGNABLE_PERMISSIONS
+    assert route_authorization_plan(
+        "PATCH", "/api/v1/integrations/webhooks/{webhook_id}"
+    ).authority.permissions == {Permission("integration.manage")}
     for key in [
         ("GET", "/api/v1/change-sources"),
         ("GET", "/api/v1/change-sources/{source_id}"),
