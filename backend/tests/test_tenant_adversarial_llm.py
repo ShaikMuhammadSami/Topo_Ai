@@ -91,14 +91,8 @@ def test_outbound_context_is_tenant_owned_before_sdk_call(hostile, monkeypatch, 
     monkeypatch.setenv("TOPO_AI_LLM_PROVIDER", provider)
     monkeypatch.setattr(llm_client, "OpenAI", lambda **_: SimpleNamespace(
         responses=SimpleNamespace(create=sdk_request, parse=sdk_request)))
-    for module in (incident_explanation, incident_copilot, investigation_planner, post_incident_report):
-        monkeypatch.setattr(
-            module,
-            "installation_secret_text",
-            lambda integration: "ph3g-not-a-live-key" if integration == "groq" else None,
-        )
-        monkeypatch.setattr(module, "Groq", lambda **_: SimpleNamespace(
-            chat=SimpleNamespace(completions=SimpleNamespace(create=sdk_request))))
+    monkeypatch.setattr(llm_client, "Groq", lambda **_: SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=sdk_request))))
     with h.factory() as session:
         result = invoke(path, session, h.a if actor == "A" else h.b, "auto")
     assert captured, (provider, path, "no assembled context reached transport")

@@ -116,28 +116,30 @@ def test_network_capable_imports_and_browser_fetch_are_reviewed() -> None:
     assert "process.env.NODE_ENV === 'production'" in layout
 
 
-def test_direct_server_dispatch_sites_remain_frozen() -> None:
+def test_direct_server_dispatch_sites_are_centralized_after_ph6b() -> None:
     expected = {
-        "backend/app/connectors/github_connector.py": {
-            "httpx.get(": 2,
-            "httpx.stream(": 1,
-        },
-        "backend/app/services/webhook_delivery.py": {"client.post(": 1},
+        "backend/app/connectors/github_connector.py": {"httpx.get(": 0, "httpx.stream(": 0},
+        "backend/app/services/webhook_delivery.py": {"httpx.Client(": 0},
+        "backend/app/services/egress_http.py": {"httpx.Client(": 1},
         "backend/app/services/llm_client.py": {
             ".responses.create(": 1,
             ".responses.parse(": 1,
         },
         "backend/app/services/incident_copilot.py": {
             "client.chat.completions.create(": 1,
+            "Groq(": 0,
         },
         "backend/app/services/incident_explanation.py": {
             "client.chat.completions.create(": 1,
+            "Groq(": 0,
         },
         "backend/app/services/investigation_planner.py": {
             "client.chat.completions.create(": 1,
+            "Groq(": 0,
         },
         "backend/app/services/post_incident_report.py": {
             "client.chat.completions.create(": 1,
+            "Groq(": 0,
         },
         "agent/src/topo_agent/client.py": {
             "httpx.Client(": 1,

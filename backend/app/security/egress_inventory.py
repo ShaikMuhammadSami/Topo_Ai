@@ -957,9 +957,11 @@ EGRESS_CALLSITES = (
 )
 
 
-NETWORK_CAPABLE_SOURCE_FILES = frozenset({
+NETWORK_CAPABLE_SOURCE_FILES = frozenset(
     item.source_file for item in EGRESS_CALLSITES
-}) | frozenset({
+) | frozenset({
+    "backend/app/security/egress_policy.py",
+    "backend/app/services/egress_http.py",
     "backend/app/services/execution_readiness.py",
     "backend/app/services/incident_briefing.py",
     "backend/app/services/incident_similarity.py",

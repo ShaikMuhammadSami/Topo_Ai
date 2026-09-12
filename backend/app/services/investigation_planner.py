@@ -11,7 +11,6 @@ from datetime import datetime
 from enum import Enum
 from typing import Any
 
-from groq import Groq
 from sqlalchemy.orm import Session
 
 from app.models.incident_explanation import (
@@ -35,10 +34,10 @@ from app.services.incident_explanation import (
 )
 from app.services.llm_client import (
     configured_openai_model,
+    create_groq_client,
     generate_openai_structured,
     resolve_configured_provider,
 )
-from app.services.installation_secrets import installation_secret_text
 
 INVESTIGATION_PROMPT_VERSION = (
     "investigation-planner-groq-0.1.0"
@@ -1062,18 +1061,7 @@ def _groq_plan(
     evidence: list[GroundingEvidence],
     model_name: str,
 ) -> GeneratedInvestigationPlan:
-    api_key = installation_secret_text("groq")
-
-    if not api_key:
-        raise InvestigationPlanGenerationError(
-            "Groq installation credential is not configured."
-        )
-
-    client = Groq(
-        api_key=api_key,
-        timeout=60.0,
-        max_retries=2,
-    )
+    client = create_groq_client()
 
     payload = {
         "prompt_version":

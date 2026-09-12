@@ -60,6 +60,7 @@ def create_webhook(
         return create_webhook_endpoint_secure(
             session=session, request=payload, tenant_id=tenant_context.tenant_id,
             actor=tenant_context.authenticated_subject, store=store,
+            resolver=getattr(request.app.state, "egress_resolver", None),
         )
     except SecretConsumerError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -104,6 +105,10 @@ def patch_webhook(
             tenant_id=tenant_context.tenant_id,
             actor=tenant_context.authenticated_subject, store=store,
             idempotency_key=idempotency_key,
+            resolver=getattr(request.app.state, "egress_resolver", None),
+            authorization_context=getattr(
+                request.state, "authorization_context", None
+            ),
         )
     except SecretConsumerError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
@@ -158,6 +163,10 @@ def test_webhook(
         event=event,
         tenant_id=tenant_context.tenant_id,
         secret_store=getattr(request.app.state, "secret_store", None),
+        resolver=getattr(request.app.state, "egress_resolver", None),
+        network_backend=getattr(
+            request.app.state, "egress_network_backend", None
+        ),
     )
 
 

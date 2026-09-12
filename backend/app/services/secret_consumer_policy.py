@@ -5,13 +5,19 @@ from __future__ import annotations
 import json
 import re
 from typing import Literal
-from urllib.parse import parse_qsl, urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.models.change_events import ChangeEventEntityReference
 from app.models.change_sources import ChangeSourceType
 from app.models.secret_store import SecretBinding, SecretPurpose, SecretScope
+from app.security.egress_policy import (
+    EgressPolicyError,
+    EgressPurpose,
+    Resolver,
+    SystemResolver,
+    prepare_destination,
+)
 
 
 GITLAB_SIGNATURE_DEFAULT_SECONDS = 300
@@ -24,11 +30,13 @@ MAX_PROTECTED_HEADER_BUNDLE = 65536
 _CONTROLLED_HEADERS = frozenset(
     {
         "connection",
+        "cookie",
         "content-length",
         "content-type",
         "expect",
         "host",
         "proxy-connection",
+        "proxy-authorization",
         "te",
         "trailer",
         "transfer-encoding",
@@ -38,22 +46,6 @@ _CONTROLLED_HEADERS = frozenset(
         "x-topo-event-id",
         "x-topo-signature",
         "x-topo-timestamp",
-    }
-)
-_CREDENTIAL_QUERY_KEYS = frozenset(
-    {
-        "accesskey",
-        "accesstoken",
-        "apikey",
-        "auth",
-        "authorization",
-        "credential",
-        "key",
-        "password",
-        "secret",
-        "signature",
-        "sig",
-        "token",
     }
 )
 _HEADER_NAME = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]{1,128}\Z")
@@ -204,24 +196,19 @@ def webhook_binding(
     )
 
 
-def validate_webhook_url(value: str) -> str:
+def validate_webhook_url(
+    value: str,
+    *,
+    resolver: Resolver | None = None,
+) -> str:
     try:
-        parsed = urlparse(value)
-        if (
-            parsed.scheme not in {"http", "https"}
-            or not parsed.hostname
-            or parsed.username is not None
-            or parsed.password is not None
-            or parsed.fragment
-        ):
-            raise ValueError()
-        for name, _ in parse_qsl(parsed.query, keep_blank_values=True):
-            normalized = re.sub(r"[^a-z0-9]", "", name.lower())
-            if normalized in _CREDENTIAL_QUERY_KEYS:
-                raise ValueError()
-    except (TypeError, ValueError):
-        raise ProviderPolicyError("WEBHOOK_URL_CREDENTIALS_FORBIDDEN") from None
-    return value
+        return prepare_destination(
+            value,
+            purpose=EgressPurpose.TENANT_WEBHOOK_DELIVERY,
+            resolver=resolver or SystemResolver(),
+        ).destination.url
+    except EgressPolicyError as exc:
+        raise ProviderPolicyError(exc.code.value) from None
 
 
 def validate_protected_headers(headers: dict[str, str]) -> dict[str, str]:
@@ -236,6 +223,8 @@ def validate_protected_headers(headers: dict[str, str]) -> dict[str, str]:
             or not _HEADER_NAME.fullmatch(name)
             or lowered in observed
             or lowered in _CONTROLLED_HEADERS
+            or lowered == "forwarded"
+            or lowered.startswith("x-forwarded-")
             or not isinstance(value, str)
             or not 1 <= len(value) <= MAX_HEADER_VALUE
             or any(ord(character) < 32 or ord(character) == 127 for character in value)

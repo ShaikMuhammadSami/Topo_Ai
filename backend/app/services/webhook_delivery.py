@@ -15,6 +15,7 @@ from datetime import (
 )
 from uuid import uuid4
 
+import httpcore
 import httpx
 from sqlalchemy.orm import Session
 
@@ -38,6 +39,14 @@ from app.services.secret_consumers import SecretConsumerError, load_webhook_secr
 from app.services.secret_runtime import runtime_secret_store
 from app.models.secret_store import SecretStoreError
 from app.services.secret_store import SecretStore
+from app.security.egress_policy import (
+    EgressPolicyError,
+    EgressPurpose,
+    Resolver,
+    SystemResolver,
+    prepare_destination,
+)
+from app.services.egress_http import deliver_webhook_once
 
 
 def build_webhook_event(
@@ -125,6 +134,8 @@ def deliver_event_to_endpoint(
     *,
     tenant_id: DomainTenant,
     secret_store: SecretStore | None = None,
+    resolver: Resolver | None = None,
+    network_backend: httpcore.NetworkBackend | None = None,
 ) -> WebhookDeliveryView:
     require_record_owner(endpoint, tenant_id=tenant_id)
     body = _event_body(event)
@@ -144,28 +155,6 @@ def deliver_event_to_endpoint(
             event.occurred_at.isoformat(),
     }
 
-    try:
-        store = secret_store or runtime_secret_store()
-        signing_secret, protected_headers, sensitive_values = load_webhook_secrets(
-            session, endpoint=endpoint, tenant_id=tenant_id, store=store
-        )
-    except (SecretConsumerError, SecretStoreError):
-        signing_secret, protected_headers, sensitive_values = None, {}, ()
-        credential_error = "Webhook credential service is unavailable."
-    else:
-        credential_error = None
-
-    headers.update(protected_headers)
-
-    if signing_secret:
-        headers[
-            "X-Topo-Signature"
-        ] = _signature(
-            signing_secret,
-            body,
-        )
-        sensitive_values = (*sensitive_values, headers["X-Topo-Signature"])
-
     response_status = None
     response_body = None
     error_message = None
@@ -176,31 +165,44 @@ def deliver_event_to_endpoint(
 
     attempt_count = 0
 
-    if credential_error is not None:
-        attempt_count = 0
+    destination_resolver = resolver or SystemResolver()
+    credentials_loaded = False
+    credential_error = None
 
-    for attempt in ([] if credential_error is not None else range(
+    for attempt in range(
         1,
         endpoint.max_attempts + 1,
-    )):
+    ):
         attempt_count = attempt
 
         try:
-            with httpx.Client(
-                timeout=(
-                    endpoint
-                    .timeout_seconds
-                ),
-                follow_redirects=False,
-            ) as client:
-                response = client.post(
-                    endpoint.url,
-                    content=body,
-                    headers=headers,
-                )
+            destination = prepare_destination(
+                endpoint.url,
+                purpose=EgressPurpose.TENANT_WEBHOOK_DELIVERY,
+                resolver=destination_resolver,
+            )
+            if not credentials_loaded:
+                try:
+                    store = secret_store or runtime_secret_store()
+                    signing_secret, protected_headers, _ = load_webhook_secrets(
+                        session, endpoint=endpoint, tenant_id=tenant_id, store=store
+                    )
+                except (SecretConsumerError, SecretStoreError):
+                    credential_error = "Webhook credential service is unavailable."
+                    attempt_count = 0
+                    break
+                headers.update(protected_headers)
+                if signing_secret:
+                    headers["X-Topo-Signature"] = _signature(signing_secret, body)
+                credentials_loaded = True
 
-            response_status = (
-                response.status_code
+            response_status = deliver_webhook_once(
+                destination,
+                body=body,
+                headers=headers,
+                resolver=destination_resolver,
+                network_backend=network_backend,
+                timeout_seconds=endpoint.timeout_seconds,
             )
 
             # Remote bodies are untrusted and may echo request credentials.
@@ -209,7 +211,7 @@ def deliver_event_to_endpoint(
 
             if (
                 200
-                <= response.status_code
+                <= response_status
                 < 300
             ):
                 delivery_status = (
@@ -222,11 +224,20 @@ def deliver_event_to_endpoint(
 
             error_message = (
                 "Webhook returned HTTP "
-                f"{response.status_code}."
+                f"{response_status}."
             )
 
-        except Exception as exc:
-            error_message = f"Webhook transport failed ({type(exc).__name__})."
+            if 300 <= response_status < 400:
+                break
+
+        except EgressPolicyError as exc:
+            error_message = f"Webhook transport failed ({exc.code.value})."
+        except httpx.TimeoutException:
+            error_message = "Webhook transport failed (timeout)."
+        except httpx.RequestError:
+            error_message = "Webhook transport failed (upstream_unavailable)."
+        except Exception:
+            error_message = "Webhook transport failed (upstream_unavailable)."
 
         if attempt < endpoint.max_attempts:
             time.sleep(
@@ -287,6 +298,8 @@ def publish_event(
     *,
     tenant_id: DomainTenant,
     secret_store: SecretStore | None = None,
+    resolver: Resolver | None = None,
+    network_backend: httpcore.NetworkBackend | None = None,
 ) -> list[WebhookDeliveryView]:
     deliveries: list[
         WebhookDeliveryView
@@ -326,6 +339,8 @@ def publish_event(
             event=event,
             tenant_id=tenant_id,
             secret_store=secret_store,
+            resolver=resolver,
+            network_backend=network_backend,
         )
 
         deliveries.append(delivery)
@@ -339,6 +354,8 @@ def publish_event_safely(
     *,
     tenant_id: DomainTenant,
     secret_store: SecretStore | None = None,
+    resolver: Resolver | None = None,
+    network_backend: httpcore.NetworkBackend | None = None,
 ) -> list[str]:
     try:
         deliveries = publish_event(
@@ -346,6 +363,8 @@ def publish_event_safely(
             event=event,
             tenant_id=tenant_id,
             secret_store=secret_store,
+            resolver=resolver,
+            network_backend=network_backend,
         )
 
         return [

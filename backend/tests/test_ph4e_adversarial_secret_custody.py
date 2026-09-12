@@ -771,25 +771,21 @@ def test_webhook_signing_headers_replacement_clear_and_redirect_are_bounded(
     new_signing = _marker("WEBHOOK_A_REPLACEMENT")
     intended_requests = []
 
-    class Response:
-        status_code = 302
-        text = _marker("REMOTE_ECHO") + old_signing + markers.webhook_header_b
+    def deliver_once(
+        destination,
+        *,
+        body,
+        headers,
+        resolver,
+        network_backend=None,
+        timeout_seconds=30.0,
+    ):
+        intended_requests.append((destination.destination.url, dict(headers), body))
+        return 302
 
-    class Client:
-        def __init__(self, **kwargs):
-            assert kwargs["follow_redirects"] is False
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_args):
-            return None
-
-        def post(self, url, *, content, headers):
-            intended_requests.append((url, dict(headers), content))
-            return Response()
-
-    monkeypatch.setattr("app.services.webhook_delivery.httpx.Client", Client)
+    monkeypatch.setattr(
+        "app.services.webhook_delivery.deliver_webhook_once", deliver_once
+    )
     monkeypatch.setattr("app.services.webhook_delivery.time.sleep", lambda *_args: None)
     with Session(engine) as session:
         view = create_webhook_endpoint_secure(

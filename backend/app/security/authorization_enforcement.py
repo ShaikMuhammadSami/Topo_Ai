@@ -291,6 +291,23 @@ def _require_permissions(
         )
 
 
+def require_authorization_permissions(
+    required_permissions: frozenset[Permission],
+    *,
+    authorization_context: AuthorizationContext | None = None,
+) -> AuthorizationContext:
+    """Require a data-dependent permission conjunction from proven context."""
+    context = authorization_context or current_authorization_context()
+    if not isinstance(context, AuthorizationContext):
+        raise AuthorizationFailure("AUTHORIZATION_CONTEXT_REQUIRED")
+    _require_permissions(
+        context.effective_permissions,
+        required_permissions,
+        authorization_context=context,
+    )
+    return context
+
+
 def authorize_tenant(
     session: Session,
     *,
