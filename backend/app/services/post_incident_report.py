@@ -41,9 +41,16 @@ from app.services.incident_explanation import (
 )
 from app.services.llm_client import (
     configured_openai_model,
-    create_groq_client,
+    generate_groq_structured,
     generate_openai_structured,
     resolve_configured_provider,
+)
+from app.security.llm_data_boundary import (
+    LLMPostIncidentReportEnvelope,
+    build_safe_llm_request,
+    evidence_ids,
+    responder_notes_from_evidence,
+    safe_evidence_references,
 )
 
 REPORT_PROMPT_VERSION = (
@@ -1056,89 +1063,39 @@ def _deterministic_report(
 
 def _groq_report(
     *,
+    incident_id: str,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> GeneratedPostIncidentReport:
-    client = create_groq_client()
-
-    payload = {
-        "prompt_version":
-            REPORT_PROMPT_VERSION,
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(
-                mode="json"
-            )
-            for item in evidence
-        ],
-    }
+    safe_evidence = safe_evidence_references(evidence, tenant_id=tenant_id)
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMPostIncidentReportEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=REPORT_PROMPT_VERSION,
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
+            responder_notes=responder_notes_from_evidence(
+                evidence, tenant_id=tenant_id
+            ),
+        ),
+    )
 
     try:
-        response = (
-            client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content":
-                            REPORT_SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            payload,
-                            sort_keys=True,
-                        ),
-                    },
-                ],
-                temperature=0,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": (
-                            "topo_post_incident_report"
-                        ),
-                        "strict": True,
-                        "schema": (
-                            GeneratedPostIncidentReport
-                            .model_json_schema()
-                        ),
-                    },
-                },
-            )
+        generated = generate_groq_structured(
+            system_prompt=REPORT_SYSTEM_PROMPT,
+            request=request,
+            response_model=GeneratedPostIncidentReport,
+            schema_name="topo_post_incident_report",
+            model_name=model_name,
         )
 
     except Exception as exc:
         raise PostIncidentReportGenerationError(
             "Groq post-incident report "
             f"request failed ({type(exc).__name__})."
-        ) from None
-
-    content = (
-        response
-        .choices[0]
-        .message
-        .content
-    )
-
-    if not content:
-        raise PostIncidentReportGenerationError(
-            "Groq returned an empty "
-            "post-incident report."
-        )
-
-    try:
-        generated = (
-            GeneratedPostIncidentReport
-            .model_validate_json(content)
-        )
-
-    except Exception:
-        raise PostIncidentReportGenerationError(
-            "Groq returned an invalid structured report."
         ) from None
 
     return _validate_report(
@@ -1149,29 +1106,32 @@ def _groq_report(
 
 def _openai_report(
     *,
+    incident_id: str,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> GeneratedPostIncidentReport:
-    payload = {
-        "prompt_version": (
-            REPORT_PROMPT_VERSION
+    safe_evidence = safe_evidence_references(evidence, tenant_id=tenant_id)
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMPostIncidentReportEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=REPORT_PROMPT_VERSION,
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
+            responder_notes=responder_notes_from_evidence(
+                evidence, tenant_id=tenant_id
+            ),
         ),
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(mode="json")
-            for item in evidence
-        ],
-    }
+    )
 
     try:
         generated = generate_openai_structured(
             system_prompt=(
                 REPORT_SYSTEM_PROMPT
             ),
-            evidence_payload=payload,
+            request=request,
             response_model=(
                 GeneratedPostIncidentReport
             ),
@@ -1297,8 +1257,10 @@ def generate_post_incident_report(
     ):
         try:
             generated = _openai_report(
+                incident_id=incident_id,
                 evidence=evidence,
                 model_name=configured_model,
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:
@@ -1336,8 +1298,10 @@ def generate_post_incident_report(
     ):
         try:
             generated = _groq_report(
+                incident_id=incident_id,
                 evidence=evidence,
                 model_name=configured_model,
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:

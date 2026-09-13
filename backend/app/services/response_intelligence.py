@@ -45,6 +45,12 @@ from app.services.llm_client import (
     generate_openai_text,
     openai_is_configured,
 )
+from app.security.llm_data_boundary import (
+    LLMActionFact,
+    LLMResponseIntelligenceSummaryEnvelope,
+    LLMRootCauseFact,
+    build_safe_llm_request,
+)
 from app.services.response_plan import (
     build_incident_response_plan,
 )
@@ -914,59 +920,53 @@ def _deterministic_summary(
     )
 
 
-def _ai_payload(
+def _ai_request(
     response: IncidentResponseIntelligence,
-) -> dict[str, Any]:
+    *,
+    tenant_id: DomainTenant,
+):
     plan = response.baseline_response_plan
-
-    return {
-        "incident_id": response.incident_id,
-        "response_priority": (
-            response.response_priority.value
-        ),
-        "root_cause": {
-            "event_title": (
-                plan.root_cause.event_title
+    root = plan.root_cause
+    target_id = root.target_event_id or root.event_id
+    return build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMResponseIntelligenceSummaryEnvelope(
+            tenant_id=tenant_id,
+            incident_id=response.incident_id,
+            response_priority=response.response_priority,
+            root_cause=LLMRootCauseFact(
+                causal_analysis_id=response.causal_analysis_id,
+                root_event_id=root.event_id,
+                root_event_title=root.event_title,
+                root_event_source=root.event_source,
+                root_entity_id=root.entity_id,
+                causal_confidence=root.causal_confidence,
+                causal_change_event_id=target_id,
+                causal_change_title=root.target_event_title or root.event_title,
+                causal_change_source=root.target_event_source,
+                causal_change_type=root.target_event_kind,
+                summary=response.response_priority_reason,
+                evidence_references=tuple(root.evidence_ids[:100]),
             ),
-            "target_event_title": (
-                plan.root_cause.target_event_title
+            overall_historical_support=response.overall_historical_support,
+            deterministic_summary=response.deterministic_summary,
+            actions=tuple(
+                LLMActionFact(
+                    action_id=action.action_id,
+                    rank=action.baseline_rank,
+                    title=action.title,
+                    category=action.category,
+                    family=action.action_family,
+                    risk=action.risk,
+                    requires_human_approval=action.requires_human_approval,
+                    current_evidence_strength=action.current_evidence_strength,
+                    historical_support=action.historical_support.level,
+                )
+                for action in response.actions[:20]
             ),
-            "causal_confidence": (
-                plan.root_cause.causal_confidence
-            ),
-        },
-        "overall_historical_support": (
-            response.overall_historical_support
-            .value
+            warnings=tuple(response.warnings[:50]),
         ),
-        "deterministic_summary": (
-            response.deterministic_summary
-        ),
-        "actions": [
-            {
-                "action_id": action.action_id,
-                "baseline_rank": (
-                    action.baseline_rank
-                ),
-                "title": action.title,
-                "category": action.category.value,
-                "risk": action.risk.value,
-                "requires_human_approval": (
-                    action.requires_human_approval
-                ),
-                "current_evidence_strength": (
-                    action.current_evidence_strength
-                    .value
-                ),
-                "historical_support": (
-                    action.historical_support
-                    .model_dump(mode="json")
-                ),
-            }
-            for action in response.actions[:20]
-        ],
-        "warnings": response.warnings[:10],
-    }
+    )
 
 
 def _unavailable_rollback_support(
@@ -1224,8 +1224,9 @@ def build_incident_response_intelligence(
             system_prompt=(
                 RESPONSE_INTELLIGENCE_SYSTEM_PROMPT
             ),
-            evidence_payload=_ai_payload(
-                response
+            request=_ai_request(
+                response,
+                tenant_id=tenant_id,
             ),
             model_name=model_name,
             max_output_tokens=500,

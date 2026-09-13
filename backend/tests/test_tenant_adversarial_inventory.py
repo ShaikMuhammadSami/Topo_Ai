@@ -92,7 +92,10 @@ def test_repository_entrypoints_and_raw_sql_have_explicit_accounting():
                 llm.append((path.stem, node.lineno, name))
     assert [path for path, _ in raw] == ["db/schema_management.py"]
     assert [path for path, _ in legacy_queries] == ["repositories/topology_snapshot_repository.py"]
-    assert len(llm) == 12  # eight central callers + four legacy Groq branches
+    # Eight purpose-owned callers plus the one centralized Groq dispatch.
+    assert len(llm) == 9
+    assert sum(name == "generate_groq_structured" for _, _, name in llm) == 0
+    assert sum(name.endswith(".chat.completions.create") for _, _, name in llm) == 1
     assert len(models.Base.metadata.tables) == 50
     owned = [t for t in models.Base.metadata.tables.values() if "tenant_id" in t.c and t.name not in {
         "tenants", "tenant_memberships", "service_api_tenant_bindings",

@@ -45,6 +45,8 @@ from app.services.incident_lifecycle import (
     upsert_incident_from_orchestration,
 )
 from app.models.webhooks import (
+    IncidentCreatedWebhookPayload,
+    RecommendationGeneratedWebhookPayload,
     WebhookEventType,
 )
 from app.repositories.incident_record_repository import (
@@ -388,36 +390,16 @@ def orchestrate_signal(
                 dedupe_key=(
                     incident_record.incident_id
                 ),
-                payload={
-                    "incident_id": (
-                        incident_record
-                        .incident_id
-                    ),
-                    "status": (
-                        incident_record.status
-                    ),
-                    "severity": (
-                        incident_record.severity
-                    ),
-                    "cluster_name": (
-                        incident_record
-                        .cluster_name
-                    ),
-                    "namespace": (
-                        incident_record.namespace
-                    ),
-                    "affected_object_kind": (
-                        incident_record
-                        .affected_object_kind
-                    ),
-                    "affected_object_name": (
-                        incident_record
-                        .affected_object_name
-                    ),
-                    "analysis_id": (
-                        analysis.analysis_id
-                    ),
-                },
+                payload=IncidentCreatedWebhookPayload(
+                    incident_id=incident_record.incident_id,
+                    status=incident_record.status,
+                    severity=incident_record.severity,
+                    cluster_name=incident_record.cluster_name,
+                    namespace=incident_record.namespace,
+                    affected_object_kind=incident_record.affected_object_kind,
+                    affected_object_name=incident_record.affected_object_name,
+                    analysis_id=analysis.analysis_id,
+                ),
             )
         )
 
@@ -450,40 +432,16 @@ def orchestrate_signal(
                 recommendation
                 .recommendation_id
             ),
-            payload={
-                "recommendation_id": (
-                    recommendation
-                    .recommendation_id
-                ),
-                "analysis_id": (
-                    recommendation
-                    .analysis_id
-                ),
-                "signal_id": (
-                    recommendation
-                    .signal_id
-                ),
-                "action_type": (
-                    recommendation
-                    .action_type.value
-                ),
-                "status": (
-                    recommendation
-                    .status.value
-                ),
-                "confidence": (
-                    recommendation
-                    .confidence
-                ),
-                "risk": (
-                    recommendation
-                    .risk.value
-                ),
-                "target_entity_name": (
-                    recommendation
-                    .target_entity_name
-                ),
-            },
+            payload=RecommendationGeneratedWebhookPayload(
+                recommendation_id=recommendation.recommendation_id,
+                analysis_id=recommendation.analysis_id,
+                signal_id=recommendation.signal_id,
+                action_type=recommendation.action_type.value,
+                status=recommendation.status.value,
+                confidence=recommendation.confidence,
+                risk=recommendation.risk.value,
+                target_entity_name=recommendation.target_entity_name,
+            ),
         )
 
         publish_event_safely(

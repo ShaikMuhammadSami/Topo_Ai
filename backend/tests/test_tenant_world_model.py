@@ -119,8 +119,9 @@ def test_same_ids_real_lineage_rca_briefing_ownership_and_llm_are_isolated(two_t
         result = incident_briefing.build_incident_briefing(session, incident_id="incident:same", include_ai=True, tenant_id=a)
         assert result.incident.incident_id == "incident:same"
         assert len(captured) == 1
-        assert "A-only-evidence" in json.dumps(captured)
-        assert "B-private-evidence" not in json.dumps(captured)
+        safe_context = captured[0]["request"].customer_context_json
+        assert "A-only-evidence" in safe_context
+        assert "B-private-evidence" not in safe_context
         assert "B-private-evidence" not in result.model_dump_json()
         assert "_topo_world_ownership" not in result.model_dump_json()
         assert a not in result.model_dump_json() and b not in result.model_dump_json()

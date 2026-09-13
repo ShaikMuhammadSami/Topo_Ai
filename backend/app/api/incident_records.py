@@ -27,6 +27,7 @@ from app.repositories.signal_repository import (
     list_signals_by_incident_fingerprint,
 )
 from app.models.webhooks import (
+    IncidentStatusChangedWebhookPayload,
     WebhookEventType,
 )
 from app.services.webhook_delivery import (
@@ -193,21 +194,12 @@ def patch_incident_status(
          f"{incident.status.value}:"
          f"{incident.updated_at.isoformat()}"
         ),
-     payload={
-         "incident_id": (
-             incident.incident_id
-           ),
-         "status": (
-             incident.status.value
-            ),
-         "status_note": (
-             incident.status_note
-           ),
-         "updated_at": (
-             incident.updated_at
-             .isoformat()
-            ),
-        },
+     payload=IncidentStatusChangedWebhookPayload(
+         incident_id=incident.incident_id,
+         status=incident.status.value,
+         status_note=incident.status_note,
+         updated_at=incident.updated_at.isoformat(),
+        ),
     )
 
     publish_event_safely(

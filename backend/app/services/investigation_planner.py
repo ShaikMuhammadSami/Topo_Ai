@@ -34,9 +34,15 @@ from app.services.incident_explanation import (
 )
 from app.services.llm_client import (
     configured_openai_model,
-    create_groq_client,
+    generate_groq_structured,
     generate_openai_structured,
     resolve_configured_provider,
+)
+from app.security.llm_data_boundary import (
+    LLMInvestigationPlannerEnvelope,
+    build_safe_llm_request,
+    evidence_ids,
+    safe_evidence_references,
 )
 
 INVESTIGATION_PROMPT_VERSION = (
@@ -1058,89 +1064,36 @@ def _deterministic_plan(
 
 def _groq_plan(
     *,
+    incident_id: str,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> GeneratedInvestigationPlan:
-    client = create_groq_client()
-
-    payload = {
-        "prompt_version":
-            INVESTIGATION_PROMPT_VERSION,
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(
-                mode="json"
-            )
-            for item in evidence
-        ],
-    }
+    safe_evidence = safe_evidence_references(evidence, tenant_id=tenant_id)
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMInvestigationPlannerEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=INVESTIGATION_PROMPT_VERSION,
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
+        ),
+    )
 
     try:
-        response = (
-            client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content":
-                            INVESTIGATION_SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            payload,
-                            sort_keys=True,
-                        ),
-                    },
-                ],
-                temperature=0,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": (
-                            "topo_investigation_plan"
-                        ),
-                        "strict": True,
-                        "schema": (
-                            GeneratedInvestigationPlan
-                            .model_json_schema()
-                        ),
-                    },
-                },
-            )
+        generated = generate_groq_structured(
+            system_prompt=INVESTIGATION_SYSTEM_PROMPT,
+            request=request,
+            response_model=GeneratedInvestigationPlan,
+            schema_name="topo_investigation_plan",
+            model_name=model_name,
         )
 
     except Exception as exc:
         raise InvestigationPlanGenerationError(
             "Groq investigation planner "
             f"request failed ({type(exc).__name__})."
-        ) from None
-
-    content = (
-        response
-        .choices[0]
-        .message
-        .content
-    )
-
-    if not content:
-        raise InvestigationPlanGenerationError(
-            "Groq returned an empty "
-            "investigation plan."
-        )
-
-    try:
-        generated = (
-            GeneratedInvestigationPlan
-            .model_validate_json(content)
-        )
-
-    except Exception:
-        raise InvestigationPlanGenerationError(
-            "Groq returned an invalid structured investigation plan."
         ) from None
 
     return _validate_plan(
@@ -1151,29 +1104,29 @@ def _groq_plan(
 
 def _openai_plan(
     *,
+    incident_id: str,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> GeneratedInvestigationPlan:
-    payload = {
-        "prompt_version": (
-            INVESTIGATION_PROMPT_VERSION
+    safe_evidence = safe_evidence_references(evidence, tenant_id=tenant_id)
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMInvestigationPlannerEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=INVESTIGATION_PROMPT_VERSION,
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
         ),
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(mode="json")
-            for item in evidence
-        ],
-    }
+    )
 
     try:
         generated = generate_openai_structured(
             system_prompt=(
                 INVESTIGATION_SYSTEM_PROMPT
             ),
-            evidence_payload=payload,
+            request=request,
             response_model=(
                 GeneratedInvestigationPlan
             ),
@@ -1319,8 +1272,10 @@ def generate_investigation_plan(
     ):
         try:
             generated = _openai_plan(
+                incident_id=incident_id,
                 evidence=evidence,
                 model_name=configured_model,
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:
@@ -1370,8 +1325,10 @@ def generate_investigation_plan(
     ):
         try:
             generated = _groq_plan(
+                incident_id=incident_id,
                 evidence=evidence,
                 model_name=configured_model,
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:

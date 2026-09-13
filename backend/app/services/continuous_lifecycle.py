@@ -40,7 +40,7 @@ from app.models.temporal import (
     TimeOrigin,
     TimeQuality,
 )
-from app.models.webhooks import WebhookEventType
+from app.models.webhooks import IncidentCreatedWebhookPayload, WebhookEventType
 from app.repositories.causal_analysis_repository import (
     latest_causal_analysis,
 )
@@ -481,17 +481,15 @@ def _publish_incident_created(
         ),
         severity=incident.severity,
         dedupe_key=incident.incident_id,
-        payload={
-            "incident_id": incident.incident_id,
-            "status": incident.status,
-            "severity": incident.severity,
-            "cluster_name": incident.cluster_name,
-            "namespace": incident.namespace,
-            "topology_snapshot_id": (
-                incident.topology_snapshot_id
-            ),
-            "automatic": True,
-        },
+        payload=IncidentCreatedWebhookPayload(
+            incident_id=incident.incident_id,
+            status=incident.status,
+            severity=incident.severity,
+            cluster_name=incident.cluster_name,
+            namespace=incident.namespace,
+            topology_snapshot_id=incident.topology_snapshot_id,
+            automatic=True,
+        ),
     )
 
     publish_event_safely(

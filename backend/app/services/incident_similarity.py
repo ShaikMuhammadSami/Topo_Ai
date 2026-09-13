@@ -36,6 +36,13 @@ from app.services.llm_client import (
     generate_openai_text,
     openai_is_configured,
 )
+from app.security.llm_data_boundary import (
+    LLMHistoricalIncidentFact,
+    LLMResolutionPatternFact,
+    LLMScalarFact,
+    LLMSimilaritySummaryEnvelope,
+    build_safe_llm_request,
+)
 
 SIMILARITY_WEIGHTS: dict[str, float] = {
     "root_service": 0.24,
@@ -737,50 +744,79 @@ def _analysis_context(
     )
 
 
-def _ai_payload(
+def _ai_request(
     *,
     response: IncidentHistoricalIntelligence,
-) -> dict[str, Any]:
-    return {
-        "current_incident": {
-            "incident_id": response.incident_id,
-            "analysis_context": (
-                response.analysis_context
-                .model_dump(mode="json")
-            ),
-        },
-        "historical_support_level": (
-            response.historical_support_level
-            .value
-        ),
-        "deterministic_summary": response.summary,
-        "top_matches": [
-            {
-                "incident_id": match.incident_id,
-                "similarity_score": (
-                    match.similarity_score
-                ),
-                "matched_factors": (
-                    match.matched_factors[:8]
-                ),
-                "differing_factors": (
-                    match.differing_factors[:8]
-                ),
-                "resolution": (
-                    match.resolution
-                    .model_dump(mode="json")
-                ),
-            }
-            for match in response.matches[:3]
-        ],
-        "resolution_patterns": [
-            pattern.model_dump(mode="json")
-            for pattern in (
-                response.resolution_patterns[:5]
-            )
-        ],
-        "warnings": response.warnings[:10],
+    tenant_id: DomainTenant,
+):
+    context = response.analysis_context
+    context_values = {
+        "causal_analysis_id": context.causal_analysis_id,
+        "topology_snapshot_id": context.topology_snapshot_id,
+        "root_event_id": context.root_event_id,
+        "root_event_title": context.root_event_title,
+        "root_event_source": context.root_event_source,
+        "root_entity_id": context.root_entity_id,
+        "root_entity_kind": context.root_entity_kind,
+        "root_service_name": context.root_service_name,
+        "causal_change_kind": context.causal_change_kind,
+        "causal_change_source": context.causal_change_source,
+        "business_capability": context.business_capability,
+        "owner_team": context.owner_team,
+        "severity": context.severity,
     }
+    return build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMSimilaritySummaryEnvelope(
+            tenant_id=tenant_id,
+            incident_id=response.incident_id,
+            historical_support_level=response.historical_support_level,
+            deterministic_summary=response.summary,
+            current_analysis=tuple(
+                LLMScalarFact(code=key, value=value)
+                for key, value in context_values.items()
+                if value is not None
+            ),
+            top_matches=tuple(
+                LLMHistoricalIncidentFact(
+                    incident_id=match.incident_id,
+                    title=match.incident_title,
+                    similarity=match.similarity_score,
+                    rca_verdict=match.resolution.rca_verdict,
+                    resolution_summary=match.resolution.resolution_summary,
+                    primary_resolution_action=(
+                        match.resolution.primary_resolution_action.title
+                        if match.resolution.primary_resolution_action
+                        else None
+                    ),
+                    time_to_mitigation_seconds=(
+                        match.resolution.time_to_mitigation_seconds
+                    ),
+                    time_to_resolution_seconds=(
+                        match.resolution.time_to_resolution_seconds
+                    ),
+                    matched_factors=tuple(match.matched_factors[:8]),
+                    differing_factors=tuple(match.differing_factors[:8]),
+                )
+                for match in response.matches[:3]
+            ),
+            resolution_patterns=tuple(
+                LLMResolutionPatternFact(
+                    action_type=pattern.action_type,
+                    action_title=pattern.action_title,
+                    observed_cases=pattern.observed_cases,
+                    effective_cases=pattern.effective_cases,
+                    ineffective_cases=pattern.ineffective_cases,
+                    unknown_effectiveness_cases=pattern.unknown_effectiveness_cases,
+                    supporting_incident_ids=tuple(
+                        pattern.supporting_incident_ids[:20]
+                    ),
+                )
+                for pattern in response.resolution_patterns[:5]
+            ),
+            warnings=tuple(response.warnings[:50]),
+        ),
+    )
 
 
 @tenant_world(prefetched=('current_profile',))
@@ -957,8 +993,9 @@ def build_historical_incident_intelligence(
             system_prompt=(
                 HISTORICAL_AI_SYSTEM_PROMPT
             ),
-            evidence_payload=_ai_payload(
-                response=response
+            request=_ai_request(
+                response=response,
+                tenant_id=tenant_id,
             ),
             model_name=model_name,
             max_output_tokens=500,

@@ -28,7 +28,10 @@ from app.models.webhooks import (
     WebhookDeliveryStatus,
     WebhookDeliveryView,
     WebhookEvent,
+    WebhookEventPayload,
     WebhookEventType,
+    WebhookTestPayload,
+    WEBHOOK_PAYLOAD_TYPE_BY_EVENT,
 )
 from app.repositories.webhook_repository import (
     find_delivery_record,
@@ -47,6 +50,20 @@ from app.security.egress_policy import (
     prepare_destination,
 )
 from app.services.egress_http import deliver_webhook_once
+from app.security.customer_data_policy import (
+    CONTROL,
+    STRUCTURED,
+    TENANT_META,
+    USER_TEXT,
+    ExternalDataSink,
+    require_content_classes,
+)
+
+
+MAX_WEBHOOK_BODY_BYTES = 131_072
+_WEBHOOK_CONTENT_CLASSES = frozenset(
+    {CONTROL, TENANT_META, STRUCTURED, USER_TEXT}
+)
 
 
 def build_webhook_event(
@@ -54,10 +71,13 @@ def build_webhook_event(
     resource_type: str,
     resource_id: str,
     summary: str,
-    payload: dict,
+    payload: WebhookEventPayload,
     severity: str | None = None,
     dedupe_key: str | None = None,
 ) -> WebhookEvent:
+    expected_payload = WEBHOOK_PAYLOAD_TYPE_BY_EVENT[event_type]
+    if not isinstance(payload, expected_payload):
+        raise ValueError("webhook_payload_type_invalid")
     effective_key = (
         dedupe_key
         or resource_id
@@ -91,13 +111,20 @@ def build_webhook_event(
 def _event_body(
     event: WebhookEvent,
 ) -> str:
-    return json.dumps(
+    require_content_classes(
+        ExternalDataSink.TENANT_WEBHOOK,
+        _WEBHOOK_CONTENT_CLASSES,
+    )
+    body = json.dumps(
         event.model_dump(
             mode="json"
         ),
         sort_keys=True,
         separators=(",", ":"),
     )
+    if len(body.encode("utf-8")) > MAX_WEBHOOK_BODY_BYTES:
+        raise ValueError("webhook_body_too_large")
+    return body
 
 
 def _subscribed(
@@ -394,10 +421,7 @@ def create_test_event(
         resource_type="webhook",
         resource_id=webhook_id,
         summary=summary,
-        payload={
-            "webhook_id": webhook_id,
-            "test": True,
-        },
+        payload=WebhookTestPayload(webhook_id=webhook_id),
         severity="info",
         dedupe_key=(
             f"{webhook_id}:"

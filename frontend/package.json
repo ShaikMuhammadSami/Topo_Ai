@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit --incremental false",
-    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/incident-briefing.test.mjs test/incident-cockpit-ux.test.mjs test/auth-session.test.mjs test/secret-consumer-ui.test.mjs test/secret-custody-adversarial.test.mjs"
+    "test": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --test test/incident-briefing.test.mjs test/incident-cockpit-ux.test.mjs test/auth-session.test.mjs test/secret-consumer-ui.test.mjs test/secret-custody-adversarial.test.mjs test/customer-data-egress.test.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

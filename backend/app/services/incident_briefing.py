@@ -99,6 +99,18 @@ from app.services.llm_client import (
     generate_openai_text,
     openai_is_configured,
 )
+from app.security.llm_data_boundary import (
+    LLMActionFact,
+    LLMBlastRadiusFact,
+    LLMChangeFact,
+    LLMHistoricalIncidentFact,
+    LLMOutcomeFact,
+    LLMOwnershipImpactFact,
+    LLMRelationshipFact,
+    LLMRootCauseFact,
+    LLMUnifiedBriefingSummaryEnvelope,
+    build_safe_llm_request,
+)
 from app.services.response_intelligence import (
     build_incident_response_intelligence,
 )
@@ -1388,64 +1400,146 @@ def _briefing_outcome(
     )
 
 
-def _ai_payload(
+def _ai_request(
     briefing: IncidentBriefing,
-) -> dict[str, Any]:
-    return {
-        "incident": briefing.incident.model_dump(
-            mode="json"
+    *,
+    tenant_id: DomainTenant,
+):
+    root = briefing.root_cause
+    blast = briefing.blast_radius
+    context = briefing.operational_context
+    ownership_impact = None
+    if context is not None:
+        ownership = context.ownership
+        impact = context.business_impact
+        ownership_impact = LLMOwnershipImpactFact(
+            resolved=ownership.resolved,
+            owner_team=ownership.owner_team,
+            oncall_contact=ownership.oncall_contact,
+            service_name=ownership.service_name,
+            repository_url=ownership.repository_url,
+            business_capability=ownership.business_capability,
+            criticality=ownership.criticality,
+            business_impact_level=impact.business_impact_level,
+            routing_recommendation=impact.routing_recommendation,
+        )
+    return build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMUnifiedBriefingSummaryEnvelope(
+            tenant_id=tenant_id,
+            incident_id=briefing.incident.incident_id,
+            incident_title=briefing.incident.title,
+            incident_status=briefing.incident.status,
+            incident_severity=briefing.incident.severity,
+            summary=briefing.summary.text,
+            root_cause=LLMRootCauseFact(
+                causal_analysis_id=root.causal_analysis_id,
+                root_event_id=root.root_event_id,
+                root_event_title=root.root_event_title,
+                root_event_source=root.root_event_source,
+                root_entity_id=root.root_entity_id,
+                causal_confidence=root.causal_confidence,
+                causal_change_event_id=root.causal_change_event_id,
+                causal_change_title=root.causal_change_title,
+                causal_change_source=root.causal_change_source,
+                causal_change_type=root.causal_change_type,
+                summary=root.summary,
+                evidence_references=tuple(root.evidence_references[:100]),
+            ),
+            recent_changes=tuple(
+                LLMChangeFact(
+                    event_id=item.event_id,
+                    title=item.title,
+                    role=item.role,
+                    source=item.source,
+                    change_type=item.change_type,
+                    occurred_at=item.occurred_at,
+                    repository=item.repository,
+                    commit_sha=item.commit_sha,
+                )
+                for item in briefing.recent_relevant_changes[:50]
+            ),
+            dependency_path=tuple(
+                LLMRelationshipFact(
+                    node_id=item.node_id,
+                    node_type=item.node_type,
+                    label=item.label,
+                    relation=item.relation_from_previous,
+                    entity_id=item.entity_id,
+                )
+                for item in briefing.dependency_path[:100]
+            ),
+            blast_radius=(
+                LLMBlastRadiusFact(
+                    root_entity_id=blast.root_entity_id,
+                    affected_entity_count=blast.affected_entity_count,
+                    direct_impact_count=blast.direct_impact_count,
+                    indirect_impact_count=blast.indirect_impact_count,
+                    potential_impact_count=blast.potential_impact_count,
+                    affected_services=tuple(blast.affected_services[:50]),
+                    affected_teams=tuple(blast.affected_teams[:50]),
+                    business_capabilities=tuple(blast.business_capabilities[:50]),
+                )
+                if blast is not None
+                else None
+            ),
+            ownership_impact=ownership_impact,
+            remediation_actions=tuple(
+                LLMActionFact(
+                    action_id=item.action_id,
+                    rank=item.rank,
+                    title=item.title,
+                    category=item.category,
+                    family=item.family,
+                    risk=item.risk,
+                    requires_human_approval=item.requires_human_approval,
+                    current_evidence_strength=item.current_evidence_strength,
+                    historical_support=item.historical_support.level,
+                )
+                for item in (
+                    briefing.remediation.actions[:50]
+                    if briefing.remediation is not None
+                    else []
+                )
+            ),
+            historical_incidents=tuple(
+                LLMHistoricalIncidentFact(
+                    incident_id=item.incident_id,
+                    title=item.incident_title,
+                    similarity=item.similarity,
+                    rca_verdict=item.rca_verdict,
+                    resolution_summary=item.resolution_summary,
+                    primary_resolution_action=item.primary_resolution_action,
+                    time_to_mitigation_seconds=item.time_to_mitigation_seconds,
+                    time_to_resolution_seconds=item.time_to_resolution_seconds,
+                    matched_factors=tuple(item.why_it_matches[:10]),
+                    differing_factors=tuple(item.important_differences[:10]),
+                )
+                for item in briefing.historical_context.similar_incidents[:20]
+            ),
+            outcome=(
+                LLMOutcomeFact(
+                    status=briefing.outcome.status,
+                    final_rca_verdict=briefing.outcome.final_rca_verdict,
+                    rca_confidence=briefing.outcome.rca_confidence,
+                    final_root_cause=briefing.outcome.final_root_cause,
+                    primary_resolution_action=(
+                        briefing.outcome.primary_resolution_action
+                    ),
+                    resolution_summary=briefing.outcome.resolution_summary,
+                    time_to_mitigation_seconds=(
+                        briefing.outcome.time_to_mitigation_seconds
+                    ),
+                    time_to_resolution_seconds=(
+                        briefing.outcome.time_to_resolution_seconds
+                    ),
+                )
+                if briefing.outcome is not None
+                else None
+            ),
+            warnings=tuple(briefing.warnings[:50]),
         ),
-        "summary": briefing.summary.model_dump(
-            mode="json"
-        ),
-        "root_cause": (
-            briefing.root_cause.model_dump(
-                mode="json"
-            )
-        ),
-        "recent_relevant_changes": [
-            item.model_dump(mode="json")
-            for item in (
-                briefing.recent_relevant_changes
-            )[:5]
-        ],
-        "dependency_path": [
-            item.model_dump(mode="json")
-            for item in briefing.dependency_path[:15]
-        ],
-        "blast_radius": (
-            briefing.blast_radius.model_dump(
-                mode="json"
-            )
-            if briefing.blast_radius
-            else None
-        ),
-        "operational_context": (
-            briefing.operational_context.model_dump(
-                mode="json"
-            )
-            if briefing.operational_context
-            else None
-        ),
-        "remediation": (
-            briefing.remediation.model_dump(
-                mode="json"
-            )
-            if briefing.remediation
-            else None
-        ),
-        "historical_context": (
-            briefing.historical_context.model_dump(
-                mode="json"
-            )
-        ),
-        "outcome": (
-            briefing.outcome.model_dump(mode="json")
-            if briefing.outcome
-            else None
-        ),
-        "warnings": briefing.warnings[:15],
-    }
+    )
 
 
 def build_incident_briefing(
@@ -1943,8 +2037,9 @@ def build_incident_briefing(
             system_prompt=(
                 BRIEFING_AI_SYSTEM_PROMPT
             ),
-            evidence_payload=_ai_payload(
-                briefing
+            request=_ai_request(
+                briefing,
+                tenant_id=tenant_id,
             ),
             model_name=model_name,
             max_output_tokens=600,

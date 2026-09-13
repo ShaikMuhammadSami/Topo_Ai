@@ -49,6 +49,11 @@ from app.services.llm_client import (
     generate_openai_text,
     openai_is_configured,
 )
+from app.security.llm_data_boundary import (
+    LLMActionFact,
+    LLMExecutionReadinessSummaryEnvelope,
+    build_safe_llm_request,
+)
 from app.services.response_intelligence import (
     build_incident_response_intelligence,
 )
@@ -829,47 +834,39 @@ def _deterministic_summary(
     )
 
 
-def _ai_payload(
+def _ai_request(
     response: IncidentExecutionReadiness,
-) -> dict[str, object]:
-    return {
-        "incident_id": response.incident_id,
-        "policy_version": response.policy_version,
-        "overall_execution_posture": (
-            response.overall_execution_posture
+    *,
+    tenant_id: DomainTenant,
+):
+    return build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMExecutionReadinessSummaryEnvelope(
+            tenant_id=tenant_id,
+            incident_id=response.incident_id,
+            policy_version=response.policy_version,
+            overall_execution_posture=response.overall_execution_posture,
+            deterministic_summary=response.deterministic_summary,
+            actions=tuple(
+                LLMActionFact(
+                    action_id=action.action_id,
+                    title=action.title,
+                    family=action.action_family,
+                    risk=action.risk,
+                    mutation=action.mutation,
+                    status=action.readiness_status,
+                    current_evidence_strength=action.current_evidence_strength,
+                    historical_support=action.historical_support.level,
+                    missing_preconditions=tuple(action.missing_preconditions[:50]),
+                    blockers=tuple(action.blockers[:50]),
+                    cautions=tuple(action.cautions[:50]),
+                    requires_human_approval=action.approval_context.required,
+                )
+                for action in response.actions[:20]
+            ),
+            warnings=tuple(response.warnings[:50]),
         ),
-        "deterministic_summary": (
-            response.deterministic_summary
-        ),
-        "actions": [
-            {
-                "action_id": action.action_id,
-                "title": action.title,
-                "family": action.action_family,
-                "risk": action.risk,
-                "mutation": action.mutation,
-                "readiness_status": (
-                    action.readiness_status
-                ),
-                "current_evidence_strength": (
-                    action.current_evidence_strength
-                ),
-                "historical_support": (
-                    action.historical_support.level
-                ),
-                "missing_preconditions": (
-                    action.missing_preconditions
-                ),
-                "blockers": action.blockers,
-                "cautions": action.cautions,
-                "human_approval_required": (
-                    action.approval_context.required
-                ),
-            }
-            for action in response.actions[:20]
-        ],
-        "warnings": response.warnings[:10],
-    }
+    )
 
 
 def build_incident_execution_readiness(
@@ -990,8 +987,9 @@ def build_incident_execution_readiness(
             system_prompt=(
                 EXECUTION_READINESS_SYSTEM_PROMPT
             ),
-            evidence_payload=_ai_payload(
-                response
+            request=_ai_request(
+                response,
+                tenant_id=tenant_id,
             ),
             model_name=model_name,
             max_output_tokens=450,

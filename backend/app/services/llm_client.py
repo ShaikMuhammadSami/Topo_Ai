@@ -1,19 +1,19 @@
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from enum import Enum
-from typing import (
-    Any,
-    TypeVar,
-)
+from typing import TypeVar
 
 from openai import OpenAI
 from groq import Groq
 from pydantic import BaseModel
 
-from app.security.secret_redaction import sanitize_structured
+from app.security.customer_data_policy import ExternalDataSink
+from app.security.llm_data_boundary import (
+    SafeLLMRequest,
+    require_provider_safe_request,
+)
 from app.services.installation_secrets import (
     installation_secret_is_configured,
     installation_secret_text,
@@ -87,14 +87,6 @@ def resolve_configured_provider(
     return "deterministic"
 
 
-def sanitize_untrusted_data(
-    value: Any,
-    *,
-    depth: int = 0,
-) -> Any:
-    return sanitize_structured(value, depth=depth)
-
-
 def _openai_client(
     *,
     resolver: Resolver | None = None,
@@ -134,7 +126,7 @@ def create_groq_client(
 def generate_openai_text(
     *,
     system_prompt: str,
-    evidence_payload: Any,
+    request: SafeLLMRequest,
     model_name: str | None = None,
     max_output_tokens: int = 800,
 ) -> OpenAITextResult:
@@ -142,8 +134,9 @@ def generate_openai_text(
         model_name
         or configured_openai_model()
     )
-    payload = sanitize_untrusted_data(
-        evidence_payload
+    require_provider_safe_request(
+        request,
+        sink=ExternalDataSink.OPENAI,
     )
 
     try:
@@ -152,15 +145,7 @@ def generate_openai_text(
             .responses.create(
                 model=selected_model,
                 instructions=system_prompt,
-                input=json.dumps(
-                    {
-                        "untrusted_evidence_data": (
-                            payload
-                        )
-                    },
-                    sort_keys=True,
-                    default=str,
-                ),
+                input=request.customer_context_json,
                 max_output_tokens=(
                     max_output_tokens
                 ),
@@ -196,7 +181,7 @@ def generate_openai_text(
 def generate_openai_structured(
     *,
     system_prompt: str,
-    evidence_payload: Any,
+    request: SafeLLMRequest,
     response_model: type[ModelT],
     model_name: str | None = None,
     max_output_tokens: int = 3000,
@@ -205,8 +190,9 @@ def generate_openai_structured(
         model_name
         or configured_openai_model()
     )
-    payload = sanitize_untrusted_data(
-        evidence_payload
+    require_provider_safe_request(
+        request,
+        sink=ExternalDataSink.OPENAI,
     )
 
     try:
@@ -215,15 +201,7 @@ def generate_openai_structured(
             .responses.parse(
                 model=selected_model,
                 instructions=system_prompt,
-                input=json.dumps(
-                    {
-                        "untrusted_evidence_data": (
-                            payload
-                        )
-                    },
-                    sort_keys=True,
-                    default=str,
-                ),
+                input=request.customer_context_json,
                 text_format=response_model,
                 max_output_tokens=(
                     max_output_tokens
@@ -263,4 +241,53 @@ def generate_openai_structured(
     except Exception:
         raise OpenAIProviderError(
             "OpenAI returned invalid structured output."
+        ) from None
+
+
+def generate_groq_structured(
+    *,
+    system_prompt: str,
+    request: SafeLLMRequest,
+    response_model: type[ModelT],
+    schema_name: str,
+    model_name: str,
+    max_output_tokens: int = 3000,
+) -> ModelT:
+    require_provider_safe_request(
+        request,
+        sink=ExternalDataSink.GROQ,
+    )
+    try:
+        response = create_groq_client().chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": request.customer_context_json},
+            ],
+            temperature=0,
+            max_tokens=max_output_tokens,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": schema_name,
+                    "strict": True,
+                    "schema": response_model.model_json_schema(),
+                },
+            },
+        )
+    except OpenAIProviderError:
+        raise
+    except Exception as exc:
+        raise OpenAIProviderError(
+            f"Groq structured request failed ({type(exc).__name__})."
+        ) from None
+
+    content = response.choices[0].message.content
+    if not content:
+        raise OpenAIProviderError("Groq returned an empty response.")
+    try:
+        return response_model.model_validate_json(content)
+    except Exception:
+        raise OpenAIProviderError(
+            "Groq returned invalid structured output."
         ) from None
