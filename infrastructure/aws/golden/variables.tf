@@ -195,3 +195,31 @@ variable "additional_tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "github_repository" {
+  description = "Exact GitHub owner/repository allowed to publish the golden backend artifact."
+  type        = string
+
+  validation {
+    condition = (
+      can(regex("^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$", var.github_repository)) &&
+      !strcontains(var.github_repository, "*")
+    )
+    error_message = "github_repository must be one exact owner/repository without wildcards."
+  }
+}
+
+variable "github_oidc_provider_arn" {
+  description = "Optional existing same-account GitHub OIDC provider ARN. Null creates the provider in this Terraform root."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = (
+      var.github_oidc_provider_arn == null ||
+      can(regex("^arn:aws(-[a-z]+)?:iam::[0-9]{12}:oidc-provider/token\\.actions\\.githubusercontent\\.com$", var.github_oidc_provider_arn))
+    )
+    error_message = "github_oidc_provider_arn must be an AWS IAM provider ARN for token.actions.githubusercontent.com."
+  }
+}

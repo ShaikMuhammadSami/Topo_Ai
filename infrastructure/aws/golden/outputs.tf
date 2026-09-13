@@ -93,3 +93,15 @@ output "iam_roles" {
     eks_nodes   = aws_iam_role.eks_nodes.arn
   }
 }
+
+output "github_artifact_publisher" {
+  description = "OIDC and least-privilege ECR publisher configuration for repository CI variables."
+  value = {
+    role_arn          = aws_iam_role.github_artifact_publisher.arn
+    oidc_provider_arn = local.github_oidc_provider_arn
+    repository        = var.github_repository
+    branch            = "main"
+    audience          = local.github_oidc_audience
+    subject           = local.github_oidc_subject
+  }
+}

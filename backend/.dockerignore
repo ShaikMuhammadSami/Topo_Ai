@@ -1,0 +1,19 @@
+**
+!Dockerfile
+!.dockerignore
+!requirements.lock
+!alembic.ini
+!alembic/**
+!app/**
+
+# Re-exclude local interpreter/test artifacts that may exist below explicitly
+# included source directories. Later rules take precedence in Docker ignores.
+app/**/__pycache__/
+app/**/*.py[cod]
+app/**/.pytest_cache/
+alembic/**/__pycache__/
+alembic/**/*.py[cod]
+
+# Defense-in-depth documentation: the whitelist above excludes all local
+# credentials, environment files, Git data, databases, tests, reports, caches,
+# Terraform material, and distribution artifacts from the build context.
