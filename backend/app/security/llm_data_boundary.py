@@ -13,6 +13,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    model_validator,
 )
 
 from app.models.incident_copilot import CopilotMessageView
@@ -143,6 +144,16 @@ class LLMEvidenceEnvelope(_EnvelopeModel):
     evidence_catalog: tuple[LLMEvidenceReference, ...] = Field(
         default=(), max_length=MAX_EVIDENCE_REFS
     )
+
+    @model_validator(mode="after")
+    def validate_allowed_evidence(self) -> "LLMEvidenceEnvelope":
+        catalog_ids = {item.evidence_id for item in self.evidence_catalog}
+        if any(
+            evidence_id not in catalog_ids
+            for evidence_id in self.allowed_evidence_ids
+        ):
+            raise ValueError("llm_evidence_reference_invalid")
+        return self
 
 
 class LLMIncidentExplanationEnvelope(LLMEvidenceEnvelope):

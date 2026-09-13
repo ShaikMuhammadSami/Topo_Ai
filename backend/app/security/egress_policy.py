@@ -280,6 +280,17 @@ def canonicalize_destination(
 
 
 def _address_kind(value: ipaddress.IPv4Address | ipaddress.IPv6Address) -> str:
+    # ``is_global`` is not a sufficient egress allow decision: Python treats
+    # multicast address space as globally scoped.  Special-purpose addresses
+    # are never valid external HTTP socket targets even when globally scoped.
+    if (
+        value.is_loopback
+        or value.is_link_local
+        or value.is_multicast
+        or value.is_unspecified
+        or value.is_reserved
+    ):
+        return "forbidden"
     if value.is_global:
         return "global"
     if isinstance(value, ipaddress.IPv4Address) and any(value in network for network in _RFC1918):
