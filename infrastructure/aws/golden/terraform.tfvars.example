@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (ignored by Git) and replace this documentation CIDR
+# with the narrow public IPv4 address used by your office or VPN.
+eks_public_access_cidrs = ["198.51.100.10/32"]
+
+# Optional cost/capacity overrides for the internal golden:
+# aws_region             = "us-east-1"
+# node_instance_types    = ["t3.small"]
+# nat_gateway_per_az     = false
+# rds_instance_class     = "db.t4g.micro"
+# ecr_force_delete       = false
+
+additional_tags = {
+  Owner      = "topo-platform"
+  CostCenter = "internal-golden"
+}
