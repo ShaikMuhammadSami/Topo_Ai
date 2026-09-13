@@ -11,6 +11,19 @@ mock_provider "aws" {
       latest_version = 1
     }
   }
+
+  mock_resource "aws_iam_openid_connect_provider" {
+    defaults = {
+      arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"
+    }
+  }
+
+  mock_resource "aws_ecr_repository" {
+    defaults = {
+      arn            = "arn:aws:ecr:us-east-1:123456789012:repository/topo-golden/topo"
+      repository_url = "123456789012.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo"
+    }
+  }
 }
 
 override_data {
@@ -27,6 +40,7 @@ run "golden_foundation_contract" {
 
   variables {
     eks_public_access_cidrs = ["198.51.100.10/32"]
+    github_repository       = "example/topo-ai"
   }
 
   assert {
@@ -96,6 +110,7 @@ run "nat_per_az_option" {
   variables {
     eks_public_access_cidrs = ["198.51.100.10/32"]
     nat_gateway_per_az      = true
+    github_repository       = "example/topo-ai"
   }
 
   assert {
@@ -109,7 +124,64 @@ run "reject_world_open_eks_api" {
 
   variables {
     eks_public_access_cidrs = ["0.0.0.0/0"]
+    github_repository       = "example/topo-ai"
   }
 
   expect_failures = [var.eks_public_access_cidrs]
+}
+
+run "github_artifact_publisher_contract" {
+  command = apply
+
+  variables {
+    eks_public_access_cidrs = ["198.51.100.10/32"]
+    github_repository       = "example/topo-ai"
+  }
+
+  assert {
+    condition     = local.github_oidc_subject == "repo:example/topo-ai:ref:refs/heads/main"
+    error_message = "OIDC subject must bind the exact repository and main branch."
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role.github_artifact_publisher.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:aud"] == "sts.amazonaws.com"
+    error_message = "OIDC trust must require the AWS STS audience."
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role.github_artifact_publisher.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == local.github_oidc_subject
+    error_message = "OIDC trust must use the exact configured repository/ref subject."
+  }
+
+  assert {
+    condition     = toset(jsondecode(aws_iam_role_policy.github_artifact_publisher.policy).Statement[0].Action) == toset(["ecr:GetAuthorizationToken"])
+    error_message = "The account-wide statement must contain only ECR authorization-token retrieval."
+  }
+
+  assert {
+    condition = toset(jsondecode(aws_iam_role_policy.github_artifact_publisher.policy).Statement[1].Action) == toset([
+      "ecr:BatchCheckLayerAvailability",
+      "ecr:CompleteLayerUpload",
+      "ecr:InitiateLayerUpload",
+      "ecr:PutImage",
+      "ecr:UploadLayerPart",
+    ])
+    error_message = "The repository statement must contain only image publication operations."
+  }
+
+  assert {
+    condition     = jsondecode(aws_iam_role_policy.github_artifact_publisher.policy).Statement[1].Resource == aws_ecr_repository.topo.arn
+    error_message = "Image publication must be scoped to the exact golden ECR repository ARN."
+  }
+}
+
+run "reject_wildcard_github_repository" {
+  command = plan
+
+  variables {
+    eks_public_access_cidrs = ["198.51.100.10/32"]
+    github_repository       = "*/*"
+  }
+
+  expect_failures = [var.github_repository]
 }

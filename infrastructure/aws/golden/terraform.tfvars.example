@@ -2,6 +2,9 @@
 # with the narrow public IPv4 address used by your office or VPN.
 eks_public_access_cidrs = ["198.51.100.10/32"]
 
+# Exact repository trusted by the GitHub OIDC artifact-publisher role.
+github_repository = "owner/topo-ai"
+
 # Optional cost/capacity overrides for the internal golden:
 # aws_region             = "us-east-1"
 # node_instance_types    = ["t3.small"]
