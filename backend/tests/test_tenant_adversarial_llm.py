@@ -4,6 +4,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy import select
 
 from app.models.causal_rca import CausalAnalysisRequest
 from app.models.incident_explanation import IncidentExplanationGenerateRequest
@@ -13,7 +14,7 @@ from app.models.post_incident_report import PostIncidentReportGenerateRequest
 from app.services import (incident_briefing, incident_explanation, incident_copilot,
     investigation_planner, post_incident_report, incident_similarity, response_intelligence, execution_readiness, llm_client)
 from app.services.causal_rca import analyze_causal_rca
-from app.db.models import IncidentRecord
+from app.db.models import IncidentRecord, SignalRecord
 from app.repositories.tenant_scope import tenant_get, tenant_commit
 from test_tenant_adversarial_acceptance import hostile, worlds, save_outcome
 from test_domain_tenant_enforcement import two_tenants, tenant_app, sqlite_tenant_app
@@ -32,6 +33,26 @@ def history(session, tenant, marker):
 
 
 PATHS = ("briefing", "explanation", "copilot", "investigation", "report", "history", "response", "readiness")
+RAW_MARKER = "ph6c-opaque-raw-payload-marker"
+SECRET_MARKER = "ph6c-provider-secret-marker-1234567890"
+
+
+def poison_internal_signal_payload(session, tenant):
+    signal = session.scalar(
+        select(SignalRecord).where(
+            SignalRecord.tenant_id == tenant,
+            SignalRecord.signal_id == "signal:same",
+        )
+    )
+    assert signal is not None
+    payload = json.loads(signal.payload_json)
+    payload["raw_payload"] = {
+        "marker": RAW_MARKER,
+        "authorization": f"Bearer {SECRET_MARKER}",
+    }
+    signal.payload_json = json.dumps(payload, sort_keys=True)
+    tenant_commit(session, tenant_id=tenant)
+    assert RAW_MARKER in signal.payload_json
 
 
 def invoke(path, session, tenant, provider):
@@ -69,6 +90,7 @@ def test_outbound_context_is_tenant_owned_before_sdk_call(hostile, monkeypatch, 
     worlds(h)
     with h.factory() as session:
         for tenant, marker in ((h.a, "A_PRIVATE"), (h.b, "B_PRIVATE")):
+            poison_internal_signal_payload(session, tenant)
             history(session, tenant, marker)
     captured = []
 
@@ -100,4 +122,6 @@ def test_outbound_context_is_tenant_owned_before_sdk_call(hostile, monkeypatch, 
     assert actor + "_PRIVATE" in encoded
     foreign = ("B" if actor == "A" else "A") + "_PRIVATE"
     assert foreign not in encoded
+    assert RAW_MARKER not in encoded
+    assert SECRET_MARKER not in encoded
     assert foreign not in result.model_dump_json()

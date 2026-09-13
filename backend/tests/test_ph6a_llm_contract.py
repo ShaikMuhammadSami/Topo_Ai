@@ -13,7 +13,7 @@ from app.security.egress_inventory import (
     CustomerDataClass,
 )
 from app.services import incident_copilot, investigation_planner, post_incident_report
-from app.services.llm_client import sanitize_structured
+from app.security.secret_redaction import sanitize_structured
 
 
 REPOSITORY = Path(__file__).resolve().parents[2]

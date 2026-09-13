@@ -71,7 +71,7 @@ class CopilotQuestionRequest(BaseModel):
 
     question: str = Field(
         min_length=1,
-        max_length=4000,
+        max_length=4096,
     )
 
 

@@ -60,6 +60,10 @@ from app.services.llm_client import (
 from app.security.api_tokens import (
     ApiTokenAuthMiddleware,
 )
+from app.security.llm_data_boundary import (
+    LLMExecutionReadinessSummaryEnvelope,
+    build_safe_llm_request,
+)
 
 NOW = datetime(
     2026,
@@ -1007,10 +1011,16 @@ def test_central_client_uses_responses_api(
     )
     result = llm_client.generate_openai_text(
         system_prompt="Explain evidence.",
-        evidence_payload={
-            "authorization": "Bearer secretvalue123",
-            "incident_id": "incident:1",
-        },
+        request=build_safe_llm_request(
+            tenant_id=TEST_TENANT,
+            envelope=LLMExecutionReadinessSummaryEnvelope(
+                tenant_id=TEST_TENANT,
+                incident_id="incident:1",
+                policy_version="test-v1",
+                overall_execution_posture="read_only",
+                deterministic_summary="Bearer secretvalue123",
+            ),
+        ),
         model_name="gpt-5-mini",
     )
 

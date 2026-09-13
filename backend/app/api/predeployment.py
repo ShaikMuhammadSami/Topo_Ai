@@ -22,6 +22,7 @@ from app.models.predeployment import (
     ChangeRiskLevel,
 )
 from app.models.webhooks import (
+    ChangeRiskDetectedWebhookPayload,
     WebhookEventType,
 )
 from app.services.webhook_delivery import (
@@ -76,41 +77,18 @@ def analyze_planned_change(
             dedupe_key=(
                result.analysis_id
             ),
-            payload={
-               "analysis_id": (
-                 result.analysis_id
-                ),
-              "snapshot_id": (
-                 result.snapshot_id
-                ),
-              "root_entity_id": (
-                 result.root_entity_id
-                ),
-              "root_entity_name": (
-                 result.root_entity_name
-                ),
-               "change_type": (
-                 result.change_type.value
-                ),
-              "risk_score": (
-                 result.risk_score
-                ),
-              "risk_level": (
-                 result.risk_level.value
-                ),
-             "deployment_decision": (
-                 result
-                 .deployment_decision
-                 .value
-                ),
-             "affected_entity_count": (
-                 result
-                 .affected_entity_count
-                ),
-             "recommendation": (
-                 result.recommendation
-               ),
-            },
+            payload=ChangeRiskDetectedWebhookPayload(
+               analysis_id=result.analysis_id,
+               snapshot_id=result.snapshot_id,
+               root_entity_id=result.root_entity_id,
+               root_entity_name=result.root_entity_name,
+               change_type=result.change_type.value,
+               risk_score=result.risk_score,
+               risk_level=result.risk_level.value,
+               deployment_decision=result.deployment_decision.value,
+               affected_entity_count=result.affected_entity_count,
+               recommendation=result.recommendation,
+            ),
         )
 
         publish_event_safely(

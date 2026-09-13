@@ -38,9 +38,16 @@ from app.services.incident_explanation import (
 )
 from app.services.llm_client import (
     configured_openai_model,
-    create_groq_client,
+    generate_groq_structured,
     generate_openai_structured,
     resolve_configured_provider,
+)
+from app.security.llm_data_boundary import (
+    LLMCopilotEnvelope,
+    build_safe_llm_request,
+    evidence_ids,
+    safe_conversation_history,
+    safe_evidence_references,
 )
 
 COPILOT_PROMPT_VERSION = (
@@ -740,101 +747,41 @@ def _deterministic_answer(
 
 def _groq_answer(
     *,
+    incident_id: str,
     question: str,
     history: list,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> CopilotGeneratedAnswer:
-    client = create_groq_client()
-
-    history_payload = [
-        {
-            "role": item.role.value,
-            "content": item.content,
-        }
-        for item in history[-10:]
-    ]
-
-    request_payload = {
-        "prompt_version":
-            COPILOT_PROMPT_VERSION,
-        "question": question,
-        "conversation_history":
-            history_payload,
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(
-                mode="json"
-            )
-            for item in evidence
-        ],
-    }
+    safe_evidence = safe_evidence_references(evidence, tenant_id=tenant_id)
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMCopilotEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=COPILOT_PROMPT_VERSION,
+            question=question,
+            conversation_history=safe_conversation_history(
+                history, tenant_id=tenant_id
+            ),
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
+        ),
+    )
 
     try:
-        response = (
-            client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content":
-                            COPILOT_SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            request_payload,
-                            sort_keys=True,
-                        ),
-                    },
-                ],
-                temperature=0,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": (
-                            "topo_incident_copilot_answer"
-                        ),
-                        "strict": True,
-                        "schema": (
-                            CopilotGeneratedAnswer
-                            .model_json_schema()
-                        ),
-                    },
-                },
-            )
+        result = generate_groq_structured(
+            system_prompt=COPILOT_SYSTEM_PROMPT,
+            request=request,
+            response_model=CopilotGeneratedAnswer,
+            schema_name="topo_incident_copilot_answer",
+            model_name=model_name,
         )
 
     except Exception as exc:
         raise CopilotGenerationError(
             f"Groq copilot request failed ({type(exc).__name__})."
-        ) from None
-
-    content = (
-        response
-        .choices[0]
-        .message
-        .content
-    )
-
-    if not content:
-        raise CopilotGenerationError(
-            "Groq returned an empty copilot "
-            "response."
-        )
-
-    try:
-        result = (
-            CopilotGeneratedAnswer
-            .model_validate_json(content)
-        )
-
-    except Exception:
-        raise CopilotGenerationError(
-            "Groq returned an invalid structured copilot response."
         ) from None
 
     _validate_answer(
@@ -847,39 +794,35 @@ def _groq_answer(
 
 def _openai_answer(
     *,
+    incident_id: str,
     question: str,
     history: list,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> CopilotGeneratedAnswer:
-    request_payload = {
-        "prompt_version": (
-            COPILOT_PROMPT_VERSION
+    safe_evidence = safe_evidence_references(evidence, tenant_id=tenant_id)
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMCopilotEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=COPILOT_PROMPT_VERSION,
+            question=question,
+            conversation_history=safe_conversation_history(
+                history, tenant_id=tenant_id
+            ),
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
         ),
-        "question": question,
-        "conversation_history": [
-            {
-                "role": item.role.value,
-                "content": item.content,
-            }
-            for item in history[-10:]
-        ],
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(mode="json")
-            for item in evidence
-        ],
-    }
+    )
 
     try:
         result = generate_openai_structured(
             system_prompt=(
                 COPILOT_SYSTEM_PROMPT
             ),
-            evidence_payload=request_payload,
+            request=request,
             response_model=(
                 CopilotGeneratedAnswer
             ),
@@ -1078,6 +1021,7 @@ def answer_copilot_question(
     ):
         try:
             generated = _openai_answer(
+                incident_id=incident_id,
                 question=question,
                 history=previous_messages,
                 evidence=selected_evidence,
@@ -1085,6 +1029,7 @@ def answer_copilot_question(
                     session_record.model_name
                     or configured_openai_model()
                 ),
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:
@@ -1112,6 +1057,7 @@ def answer_copilot_question(
     ):
         try:
             generated = _groq_answer(
+                incident_id=incident_id,
                 question=question,
                 history=previous_messages,
                 evidence=selected_evidence,
@@ -1122,6 +1068,7 @@ def answer_copilot_question(
                         "openai/gpt-oss-120b",
                     )
                 ),
+                tenant_id=tenant_id,
             )
 
         except Exception as exc:

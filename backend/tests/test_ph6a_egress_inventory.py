@@ -111,9 +111,8 @@ def test_network_capable_imports_and_browser_fetch_are_reviewed() -> None:
             frontend_fetch.append(path.relative_to(REPOSITORY).as_posix())
     assert frontend_fetch == ["frontend/lib/topo-api.ts"]
     layout = (REPOSITORY / "frontend/app/layout.tsx").read_text(encoding="utf-8")
-    assert "import { Analytics } from '@vercel/analytics/next'" in layout
-    assert layout.count("<Analytics />") == 1
-    assert "process.env.NODE_ENV === 'production'" in layout
+    assert "@vercel/analytics" not in layout
+    assert "<Analytics" not in layout
 
 
 def test_direct_server_dispatch_sites_are_centralized_after_ph6b() -> None:
@@ -124,21 +123,22 @@ def test_direct_server_dispatch_sites_are_centralized_after_ph6b() -> None:
         "backend/app/services/llm_client.py": {
             ".responses.create(": 1,
             ".responses.parse(": 1,
+            ".chat.completions.create(": 1,
         },
         "backend/app/services/incident_copilot.py": {
-            "client.chat.completions.create(": 1,
+            "client.chat.completions.create(": 0,
             "Groq(": 0,
         },
         "backend/app/services/incident_explanation.py": {
-            "client.chat.completions.create(": 1,
+            "client.chat.completions.create(": 0,
             "Groq(": 0,
         },
         "backend/app/services/investigation_planner.py": {
-            "client.chat.completions.create(": 1,
+            "client.chat.completions.create(": 0,
             "Groq(": 0,
         },
         "backend/app/services/post_incident_report.py": {
-            "client.chat.completions.create(": 1,
+            "client.chat.completions.create(": 0,
             "Groq(": 0,
         },
         "agent/src/topo_agent/client.py": {

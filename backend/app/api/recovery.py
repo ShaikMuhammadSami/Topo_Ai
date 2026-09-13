@@ -41,6 +41,7 @@ from app.services.recovery_verification import (
     verify_recovery,
 )
 from app.models.webhooks import (
+    RecoveryWebhookPayload,
     WebhookEventType,
 )
 from app.services.webhook_delivery import (
@@ -284,34 +285,16 @@ def verify_applied_recommendation(
               verification
              .verification_id
             ),
-         payload={
-             "verification_id": (
-                 verification
-                 .verification_id
-                ),
-             "recommendation_id": (
-                 verification
-                 .recommendation_id
-                ),
-             "analysis_id": (
-                 verification.analysis_id
-                ),
-             "status": (
-                 verification.status.value
-                ),
-             "confidence": (
-                 verification.confidence
-                ),
-             "passed_count": (
-                 verification.passed_count
-                ),
-             "failed_count": (
-                 verification.failed_count
-               ),
-             "unknown_count": (
-                 verification.unknown_count
-             ),
-            },
+         payload=RecoveryWebhookPayload(
+             verification_id=verification.verification_id,
+             recommendation_id=verification.recommendation_id,
+             analysis_id=verification.analysis_id,
+             status=verification.status.value,
+             confidence=verification.confidence,
+             passed_count=verification.passed_count,
+             failed_count=verification.failed_count,
+             unknown_count=verification.unknown_count,
+            ),
         )
     )
 

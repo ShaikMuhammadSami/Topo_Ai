@@ -49,9 +49,16 @@ from app.services.network_dependency_analysis import (
 )
 from app.services.llm_client import (
     configured_openai_model,
-    create_groq_client,
+    generate_groq_structured,
     generate_openai_structured,
     resolve_configured_provider,
+)
+from app.security.llm_data_boundary import (
+    LLMIncidentExplanationEnvelope,
+    MAX_EVIDENCE_REFS,
+    build_safe_llm_request,
+    evidence_ids,
+    safe_evidence_references,
 )
 
 PROMPT_VERSION = (
@@ -1284,11 +1291,11 @@ def _deterministic_explanation(
 
 def _groq_explanation(
     *,
+    incident_id: str,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> GeneratedIncidentExplanation:
-    client = create_groq_client()
-
     maximum_items = int(
         os.getenv(
             "TOPO_AI_LLM_MAX_EVIDENCE_ITEMS",
@@ -1296,85 +1303,33 @@ def _groq_explanation(
         )
     )
 
-    selected_evidence = evidence[
-        :maximum_items
-    ]
-
-    payload = {
-        "prompt_version": PROMPT_VERSION,
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in selected_evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(
-                mode="json"
-            )
-            for item in selected_evidence
-        ],
-    }
+    selected_evidence = evidence[:min(maximum_items, MAX_EVIDENCE_REFS)]
+    safe_evidence = safe_evidence_references(
+        selected_evidence, tenant_id=tenant_id
+    )
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMIncidentExplanationEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=PROMPT_VERSION,
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
+        ),
+    )
 
     try:
-        response = (
-            client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {
-                        "role": "system",
-                        "content":
-                            SYSTEM_PROMPT,
-                    },
-                    {
-                        "role": "user",
-                        "content": json.dumps(
-                            payload,
-                            sort_keys=True,
-                        ),
-                    },
-                ],
-                temperature=0,
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": (
-                            "topo_incident_explanation"
-                        ),
-                        "strict": True,
-                        "schema": (
-                            GeneratedIncidentExplanation
-                            .model_json_schema()
-                        ),
-                    },
-                },
-            )
+        explanation = generate_groq_structured(
+            system_prompt=SYSTEM_PROMPT,
+            request=request,
+            response_model=GeneratedIncidentExplanation,
+            schema_name="topo_incident_explanation",
+            model_name=model_name,
         )
 
     except Exception as exc:
         raise ExplanationGenerationError(
             f"Groq request failed ({type(exc).__name__})."
-        ) from None
-
-    content = (
-        response
-        .choices[0]
-        .message
-        .content
-    )
-
-    if not content:
-        raise ExplanationGenerationError(
-            "Groq returned an empty response."
-        )
-
-    try:
-        explanation = (
-            GeneratedIncidentExplanation
-            .model_validate_json(content)
-        )
-
-    except Exception:
-        raise ExplanationGenerationError(
-            "Groq returned an invalid structured explanation."
         ) from None
 
     _validate_explanation(
@@ -1387,8 +1342,10 @@ def _groq_explanation(
 
 def _openai_explanation(
     *,
+    incident_id: str,
     evidence: list[GroundingEvidence],
     model_name: str,
+    tenant_id: DomainTenant,
 ) -> GeneratedIncidentExplanation:
     maximum_items = int(
         os.getenv(
@@ -1396,26 +1353,26 @@ def _openai_explanation(
             "50",
         )
     )
-    selected_evidence = evidence[
-        :maximum_items
-    ]
-    payload = {
-        "prompt_version": PROMPT_VERSION,
-        "allowed_evidence_ids": [
-            item.evidence_id
-            for item in selected_evidence
-        ],
-        "evidence_catalog": [
-            item.model_dump(mode="json")
-            for item in selected_evidence
-        ],
-    }
+    selected_evidence = evidence[:min(maximum_items, MAX_EVIDENCE_REFS)]
+    safe_evidence = safe_evidence_references(
+        selected_evidence, tenant_id=tenant_id
+    )
+    request = build_safe_llm_request(
+        tenant_id=tenant_id,
+        envelope=LLMIncidentExplanationEnvelope(
+            tenant_id=tenant_id,
+            incident_id=incident_id,
+            prompt_version=PROMPT_VERSION,
+            allowed_evidence_ids=evidence_ids(safe_evidence),
+            evidence_catalog=safe_evidence,
+        ),
+    )
 
     try:
         explanation = (
             generate_openai_structured(
                 system_prompt=SYSTEM_PROMPT,
-                evidence_payload=payload,
+                request=request,
                 response_model=(
                     GeneratedIncidentExplanation
                 ),
@@ -1507,10 +1464,12 @@ def generate_incident_explanation(
         try:
             explanation = (
                 _openai_explanation(
+                    incident_id=incident_id,
                     evidence=evidence,
                     model_name=(
                         configured_model
                     ),
+                    tenant_id=tenant_id,
                 )
             )
 
@@ -1554,10 +1513,12 @@ def generate_incident_explanation(
         try:
             explanation = (
                 _groq_explanation(
+                    incident_id=incident_id,
                     evidence=evidence,
                     model_name=(
                         configured_model
                     ),
+                    tenant_id=tenant_id,
                 )
             )
 
