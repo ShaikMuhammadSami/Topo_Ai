@@ -38,3 +38,20 @@ node_modules
 .DS_Store
 
 *.db
+
+# Terraform working data and local state. Shared/remote state is an explicit
+# operator decision; state and generated variable files must never be committed.
+**/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfstate.d/
+.terraform.tfstate.lock.info
+*.tfplan
+*.tfvars
+!*.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
