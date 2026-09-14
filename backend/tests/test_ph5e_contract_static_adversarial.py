@@ -85,7 +85,7 @@ def test_production_has_no_generic_authorization_bypass_identifier() -> None:
 
 
 def test_route_operation_permission_and_authenticator_contracts_are_frozen() -> None:
-    assert len(ROUTE_AUTHORIZATION_PLAN) == 143
+    assert len(ROUTE_AUTHORIZATION_PLAN) == 144
     assert len(CRITICAL_OPERATION_PLAN) == 98
     assert len(AUTHENTICATOR_CREDENTIAL_POLICY) == 8
     assert {

@@ -87,9 +87,10 @@ I = AuthorizationIntent
 # verb alone: e.g. validation/discovery POSTs only read, while approval GETs write.
 _ROUTE_ENTRIES = (
     *_routes(I.PUBLIC, "", """
+GET /startup
 GET /health
 GET /ready
-""", "Minimal liveness/readiness; no tenant or security metadata."),
+""", "Minimal startup/liveness/readiness; no tenant or security metadata."),
     *_routes(I.AUTHENTICATION_SELF_SERVICE, "", """
 POST /api/v1/auth/session
 GET /api/v1/auth/session

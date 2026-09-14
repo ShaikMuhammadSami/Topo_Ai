@@ -115,7 +115,7 @@ def test_route_accounting_and_real_dependency_graph(tenant_app):
         TenantRouteDomain.MACHINE_BOUND: 9,
         TenantRouteDomain.TENANT_CONTROL: 7,
         TenantRouteDomain.SECURITY_GLOBAL: 9,
-        TenantRouteDomain.PUBLIC: 2,
+        TenantRouteDomain.PUBLIC: 3,
     }
 
 

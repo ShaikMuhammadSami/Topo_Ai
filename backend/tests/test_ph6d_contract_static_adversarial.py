@@ -180,7 +180,7 @@ def test_authenticated_frontend_has_no_analytics_sink_or_identifier_events() -> 
 
 
 def test_route_operation_permission_audit_and_schema_custody() -> None:
-    assert len(ROUTE_AUTHORIZATION_PLAN) == 143
+    assert len(ROUTE_AUTHORIZATION_PLAN) == 144
     assert len(CRITICAL_OPERATION_PLAN) == 98
     assert len(Permission) == 18
     assert sum(item.value.startswith("execution.") for item in Permission) == 0

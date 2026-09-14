@@ -1,0 +1,72 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: topo-backend-migrate
+  namespace: topo-system
+  labels:
+    app.kubernetes.io/name: topo-backend
+    app.kubernetes.io/component: migration
+    app.kubernetes.io/part-of: topo-ai
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: topo-backend
+        app.kubernetes.io/component: migration
+        app.kubernetes.io/part-of: topo-ai
+    spec:
+      serviceAccountName: topo-backend
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: migrate
+          # Must be the same 1A.2 immutable_image_ref used by the Deployment.
+          image: example.invalid/topo-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - alembic
+            - -c
+            - /opt/topo/alembic.ini
+            - upgrade
+            - head
+          env:
+            - name: TOPO_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: topo-backend-runtime
+                  key: migration-database-url
+            - name: TMPDIR
+              value: /tmp
+          volumeMounts:
+            - name: temporary
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+      volumes:
+        - name: temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

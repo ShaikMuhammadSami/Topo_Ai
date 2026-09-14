@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from contextlib import asynccontextmanager
+from threading import Lock
 
 from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Request
@@ -12,6 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.action_approvals import router as action_approvals_router
 from app.api.agents import admin_router as agents_router
@@ -80,6 +82,7 @@ from app.security.secret_redaction import (
 )
 from app.services.secret_store import EncryptedDatabaseSecretStore
 from app.services.secret_runtime import configure_runtime_secret_store
+from app.services.runtime_health import build_database_readiness_checker
 
 LOGGER = logging.getLogger(__name__)
 
@@ -88,15 +91,15 @@ load_dotenv()
 install_logging_redaction()
 
 
-@asynccontextmanager
-async def lifespan(application: FastAPI):
-    application.state.ready = False
+def _complete_database_dependent_startup(application: FastAPI) -> None:
+    """Complete fail-closed startup work after database connectivity exists."""
     application.state.database_initializer()
-    store = EncryptedDatabaseSecretStore(load_secret_store_configuration())
+    store = application.state.pending_secret_store
+    if store is None:
+        store = EncryptedDatabaseSecretStore(load_secret_store_configuration())
+        application.state.pending_secret_store = store
     with application.state.session_factory() as session:
         store.validate_readiness(session)
-    application.state.secret_store = store
-    configure_runtime_secret_store(store, application.state.session_factory)
     configuration = application.state.auth_configuration
     if (
         configuration.mode is AuthMode.REQUIRED
@@ -111,11 +114,66 @@ async def lifespan(application: FastAPI):
                         "or an active durable human admin API credential."
                     ),
                 )
-    application.state.ready = True
+    application.state.secret_store = store
+    configure_runtime_secret_store(store, application.state.session_factory)
+    application.state.startup_complete = True
+
+
+def _database_ready(application: FastAPI) -> bool:
+    try:
+        return bool(application.state.database_readiness_checker())
+    except Exception:
+        # Probe responses and logs must not disclose driver exceptions or URLs.
+        return False
+
+
+def _retry_deferred_startup(application: FastAPI) -> bool:
+    if application.state.startup_complete:
+        return True
+    if not application.state.process_initialized:
+        return False
+    if application.state.startup_terminal_failure:
+        return False
+
+    with application.state.startup_lock:
+        if application.state.startup_complete:
+            return True
+        try:
+            _complete_database_dependent_startup(application)
+        except SQLAlchemyError:
+            return False
+        except Exception:
+            application.state.startup_terminal_failure = True
+            LOGGER.error(
+                "Deferred runtime initialization reached a non-transient "
+                "failure; readiness remains unavailable."
+            )
+            return False
+    return True
+
+
+@asynccontextmanager
+async def lifespan(application: FastAPI):
+    application.state.ready = False
+    application.state.process_initialized = True
+    try:
+        _complete_database_dependent_startup(application)
+    except SQLAlchemyError:
+        LOGGER.warning(
+            "Database unavailable during startup; liveness remains available "
+            "and readiness will retry without exposing connection details."
+        )
+    application.state.ready = (
+        application.state.startup_complete
+        and _database_ready(application)
+    )
     try:
         yield
     finally:
         application.state.ready = False
+        application.state.startup_complete = False
+        application.state.process_initialized = False
+        application.state.pending_secret_store = None
         configure_runtime_secret_store(None)
 
 
@@ -124,6 +182,7 @@ def create_app(
     auth_configuration: AuthConfiguration | None = None,
     session_factory: Callable[[], Session] = SessionLocal,
     database_initializer: Callable[[], None] | None = None,
+    database_readiness_checker: Callable[[], bool] | None = None,
 ) -> FastAPI:
     configuration = auth_configuration or load_auth_configuration(
         database_url=DATABASE_URL
@@ -146,6 +205,15 @@ def create_app(
     application.state.session_factory = session_factory
     application.state.database_initializer = database_initializer or init_db
     application.state.ready = False
+    application.state.startup_complete = False
+    application.state.process_initialized = False
+    application.state.startup_terminal_failure = False
+    application.state.startup_lock = Lock()
+    application.state.pending_secret_store = None
+    application.state.database_readiness_checker = (
+        database_readiness_checker
+        or build_database_readiness_checker(DATABASE_URL, session_factory)
+    )
 
     @application.exception_handler(TenantResourceNotFound)
     async def tenant_resource_not_found(request: Request, exc: TenantResourceNotFound):
@@ -239,6 +307,20 @@ def create_app(
     application.include_router(automation_router)
 
     @application.get(
+        "/startup",
+        tags=["system"],
+        include_in_schema=False,
+        response_model=None,
+    )
+    def startup(request: Request):
+        if request.app.state.process_initialized:
+            return {"status": "started"}
+        return JSONResponse(
+            status_code=503,
+            content={"status": "not_started"},
+        )
+
+    @application.get(
         "/health",
         tags=["system"],
         include_in_schema=False,
@@ -257,7 +339,11 @@ def create_app(
         response_model=None,
     )
     def ready(request: Request):
-        if bool(getattr(request.app.state, "ready", False)):
+        startup_complete = _retry_deferred_startup(request.app)
+        request.app.state.ready = (
+            startup_complete and _database_ready(request.app)
+        )
+        if request.app.state.ready:
             return {"status": "ready"}
         return JSONResponse(
             status_code=503,
