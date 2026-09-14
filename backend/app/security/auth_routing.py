@@ -28,6 +28,8 @@ def classify_route(
 
     if normalized_method == "OPTIONS":
         return RouteAuthDomain.PUBLIC_CORS_PREFLIGHT
+    if normalized_method == "GET" and path == "/startup":
+        return RouteAuthDomain.PUBLIC_LIVENESS
     if normalized_method == "GET" and path == "/health":
         return RouteAuthDomain.PUBLIC_LIVENESS
     if normalized_method == "GET" and path == "/ready":

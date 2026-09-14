@@ -229,7 +229,12 @@ _SERVER_BASE = (
         installation_controlled=True,
         tls="DBAPI/URL configuration; PostgreSQL production policy is installation-owned",
         proxy="database driver; HTTP proxy environment is not used",
-        timeout="pool_pre_ping enabled; no explicit network connect/read timeout",
+        timeout=(
+            "pool_pre_ping enabled; PostgreSQL connect timeout 3 seconds and "
+            "pool checkout timeout 2 seconds; isolated readiness connections "
+            "use connect and statement timeouts of 2 seconds each under an "
+            "8-second Kubernetes HTTP timeout; no global query timeout"
+        ),
         response_size="query-specific; ORM rows are not centrally bounded",
         data=(TENANT_META, STRUCTURED, RAW),
         secrets=(SECRET,),

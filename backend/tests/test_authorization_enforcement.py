@@ -328,7 +328,7 @@ def test_every_live_route_is_bound_to_the_single_global_runtime_guard(
     required_auth_app,
 ) -> None:
     routes = _registered_routes(required_auth_app)
-    assert len(routes) == 143
+    assert len(routes) == 144
     assert [item.dependency for item in required_auth_app.router.dependencies] == [
         require_route_authorization
     ]

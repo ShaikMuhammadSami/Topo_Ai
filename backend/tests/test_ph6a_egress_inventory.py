@@ -165,7 +165,7 @@ def test_direct_server_dispatch_sites_are_centralized_after_ph6b() -> None:
 
 
 def test_ph6a_does_not_change_frozen_security_or_schema_counts() -> None:
-    assert len(ROUTE_AUTHORIZATION_PLAN) == 143
+    assert len(ROUTE_AUTHORIZATION_PLAN) == 144
     assert len(CRITICAL_OPERATION_PLAN) == 98
     assert len(Permission) == 18
     assert len(SecurityAuditAction) == 33

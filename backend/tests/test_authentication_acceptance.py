@@ -209,14 +209,14 @@ def test_route_domain_inventory_is_complete_and_production_docs_are_absent(
         for method in route.methods
     ]
 
-    assert len(production_routes) == 143
-    assert len(production_pairs) == 143
+    assert len(production_routes) == 144
+    assert len(production_pairs) == 144
     assert sum(path.startswith("/api/") for _, path, _ in production_pairs) == 141
     assert Counter(
         domain for _, _, domain in production_pairs
     ) == Counter(
         {
-            RouteAuthDomain.PUBLIC_LIVENESS: 1,
+            RouteAuthDomain.PUBLIC_LIVENESS: 2,
             RouteAuthDomain.PUBLIC_READINESS_MINIMAL: 1,
             RouteAuthDomain.USER_AUTHENTICATED: 132,
             RouteAuthDomain.AGENT_AUTHENTICATED: 8,
@@ -246,8 +246,8 @@ def test_route_domain_inventory_is_complete_and_production_docs_are_absent(
         for route in _registered_routes(development)
         for method in route.methods
     ]
-    assert len(_registered_routes(development)) == 147
-    assert len(development_pairs) == 151
+    assert len(_registered_routes(development)) == 148
+    assert len(development_pairs) == 152
     assert sum(
         domain is RouteAuthDomain.DISABLED_PRODUCTION
         for _, _, domain in development_pairs
@@ -306,6 +306,7 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
 
         # A. Anonymous.
         observed["anonymous_public"] = client.get("/health").status_code
+        observed["anonymous_startup"] = client.get("/startup").status_code
         observed["anonymous_human"] = client.get(
             "/api/v1/system/whoami"
         ).status_code
@@ -434,6 +435,7 @@ def test_all_current_caller_classes_are_bounded_to_their_trust_domain(
 
     assert observed == {
         "anonymous_public": 200,
+        "anonymous_startup": 200,
         "anonymous_human": 401,
         "anonymous_agent": 401,
         "anonymous_provider": 401,

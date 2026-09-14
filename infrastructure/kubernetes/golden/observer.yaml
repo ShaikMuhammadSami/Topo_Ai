@@ -1,0 +1,178 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: topo-observer
+  namespace: topo-system
+  labels:
+    app.kubernetes.io/name: topo-observer
+    app.kubernetes.io/part-of: topo-ai
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: topo-observer-readonly
+  labels:
+    app.kubernetes.io/name: topo-observer
+    app.kubernetes.io/part-of: topo-ai
+rules:
+  - apiGroups:
+      - ""
+    resources:
+      - namespaces
+      - nodes
+      - pods
+      - services
+      - events
+    verbs:
+      - list
+  - apiGroups:
+      - apps
+    resources:
+      - deployments
+      - replicasets
+    verbs:
+      - list
+  - apiGroups:
+      - networking.k8s.io
+    resources:
+      - ingresses
+    verbs:
+      - list
+  - apiGroups:
+      - discovery.k8s.io
+    resources:
+      - endpointslices
+    verbs:
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: topo-observer-readonly
+  labels:
+    app.kubernetes.io/name: topo-observer
+    app.kubernetes.io/part-of: topo-ai
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: topo-observer-readonly
+subjects:
+  - kind: ServiceAccount
+    name: topo-observer
+    namespace: topo-system
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: topo-observer
+  namespace: topo-system
+  labels:
+    app.kubernetes.io/name: topo-observer
+    app.kubernetes.io/component: cluster-observer
+    app.kubernetes.io/part-of: topo-ai
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: topo-observer
+      app.kubernetes.io/component: cluster-observer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: topo-observer
+        app.kubernetes.io/component: cluster-observer
+        app.kubernetes.io/part-of: topo-ai
+    spec:
+      serviceAccountName: topo-observer
+      automountServiceAccountToken: true
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: observer
+          # Replace with a separately published immutable Topo Agent digest.
+          image: example.invalid/topo-agent@sha256:1111111111111111111111111111111111111111111111111111111111111111
+          imagePullPolicy: IfNotPresent
+          args:
+            - run
+          env:
+            - name: TOPO_BACKEND_URL
+              value: http://topo-backend.topo-system.svc.cluster.local
+            - name: TOPO_AGENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: topo-observer-runtime
+                  key: agent-id
+            - name: TOPO_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: topo-observer-runtime
+                  key: agent-token
+            - name: TOPO_AGENT_NAME
+              value: topo-golden-cluster-observer
+            - name: TOPO_CLUSTER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-runtime-config
+                  key: cluster-name
+            - name: TOPO_ENVIRONMENT
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-runtime-config
+                  key: environment
+            - name: TOPO_ENABLED_PLUGINS
+              value: kubernetes
+            - name: TOPO_CHANGE_WATCH_KUBERNETES
+              value: "true"
+            - name: TOPO_CHANGE_WATCH_AWS
+              value: "false"
+            - name: TOPO_CHANGE_WATCH_AZURE
+              value: "false"
+            - name: TOPO_CHANGE_WATCH_GCP
+              value: "false"
+            - name: TOPO_COLLECTION_INTERVAL
+              value: "300"
+            - name: TOPO_CHANGE_WATCH_INTERVAL
+              value: "30"
+            - name: TOPO_HEARTBEAT_INTERVAL
+              value: "30"
+            - name: TOPO_AGENT_HOME
+              value: /var/lib/topo-agent
+            - name: TMPDIR
+              value: /tmp
+          volumeMounts:
+            - name: state
+              mountPath: /var/lib/topo-agent
+            - name: temporary
+              mountPath: /tmp
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+      volumes:
+        - name: state
+          emptyDir:
+            sizeLimit: 256Mi
+        - name: temporary
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

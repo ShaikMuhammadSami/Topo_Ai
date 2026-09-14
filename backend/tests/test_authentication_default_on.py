@@ -405,13 +405,16 @@ def test_provider_callback_uses_only_provider_authentication(monkeypatch) -> Non
     assert invalid_with_human.status_code == 401
 
 
-def test_health_and_readiness_are_public_and_minimal(monkeypatch) -> None:
+def test_startup_health_and_readiness_are_public_and_minimal(monkeypatch) -> None:
     application, _ = _required_app(monkeypatch, with_schema=True)
     client = TestClient(application)
 
+    not_started = client.get("/startup")
     health = client.get("/health")
     not_ready = client.get("/ready")
 
+    assert not_started.status_code == 503
+    assert not_started.json() == {"status": "not_started"}
     assert health.status_code == 200
     assert health.json() == {
         "status": "available",
@@ -422,7 +425,10 @@ def test_health_and_readiness_are_public_and_minimal(monkeypatch) -> None:
     assert not_ready.json() == {"status": "not_ready"}
 
     with TestClient(application) as started_client:
+        started = started_client.get("/startup")
         ready = started_client.get("/ready")
+    assert started.status_code == 200
+    assert started.json() == {"status": "started"}
     assert ready.status_code == 200
     assert ready.json() == {"status": "ready"}
 
@@ -478,6 +484,7 @@ def test_route_domain_coverage_has_no_unknown_api_routes(monkeypatch) -> None:
             assert domain is RouteAuthDomain.USER_AUTHENTICATED
 
     assert classify_route("GET", "/health") is RouteAuthDomain.PUBLIC_LIVENESS
+    assert classify_route("GET", "/startup") is RouteAuthDomain.PUBLIC_LIVENESS
     assert (
         classify_route("GET", "/ready")
         is RouteAuthDomain.PUBLIC_READINESS_MINIMAL

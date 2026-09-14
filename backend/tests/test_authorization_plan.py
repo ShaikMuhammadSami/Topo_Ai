@@ -29,7 +29,7 @@ from test_authentication_acceptance import _registered_routes
 APP = Path(__file__).resolve().parents[1] / "app"
 
 EXPECTED_ROUTE_COUNTS = {
-    I.PUBLIC: 2,
+    I.PUBLIC: 3,
     I.AUTHENTICATION_SELF_SERVICE: 7,
     I.TENANT_PERMISSION: 109,
     I.INSTALLATION_PERMISSION: 2,
@@ -78,7 +78,7 @@ def test_every_live_production_route_has_one_explicit_plan(required_auth_app):
         for route in _registered_routes(required_auth_app)
         for method in route.methods
     ]
-    assert len(live) == len(set(live)) == 143
+    assert len(live) == len(set(live)) == 144
     assert set(live) == set(ROUTE_AUTHORIZATION_PLAN)
     assert Counter(plan.authority.intent for plan in ROUTE_AUTHORIZATION_PLAN.values()) == EXPECTED_ROUTE_COUNTS
     assert Counter(classify_tenant_route(*key).value for key in live) == {
@@ -86,7 +86,7 @@ def test_every_live_production_route_has_one_explicit_plan(required_auth_app):
         "MACHINE_BOUND": 9,
         "TENANT_CONTROL": 7,
         "SECURITY_GLOBAL": 9,
-        "PUBLIC": 2,
+        "PUBLIC": 3,
     }
 
 
@@ -132,7 +132,11 @@ def test_machine_and_public_classifications_are_exactly_frozen():
     assert {
         key for key, plan in ROUTE_AUTHORIZATION_PLAN.items()
         if plan.authority.intent is I.PUBLIC
-    } == {("GET", "/health"), ("GET", "/ready")}
+    } == {
+        ("GET", "/startup"),
+        ("GET", "/health"),
+        ("GET", "/ready"),
+    }
     assert route_authorization_plan("GET", "/api/v1/topology/sample").authority.intent is I.AUTHENTICATION_SELF_SERVICE
 
 

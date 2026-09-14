@@ -30,9 +30,9 @@ def test_current_route_catalog_has_no_deferred_or_unknown_authority(tenant_app):
             catalog.append((method, route.path, domain.value))
     assert Counter(row[2] for row in catalog) == {
         "PH3D_TENANT_REQUIRED": 116, "MACHINE_BOUND": 9,
-        "TENANT_CONTROL": 7, "SECURITY_GLOBAL": 9, "PUBLIC": 2,
+        "TENANT_CONTROL": 7, "SECURITY_GLOBAL": 9, "PUBLIC": 3,
     }
-    assert len(set(catalog)) == len(catalog) == 143
+    assert len(set(catalog)) == len(catalog) == 144
     print("PH3G_ROUTE_CATALOG " + json.dumps(sorted(catalog)))
 
 

@@ -7,6 +7,10 @@ from sqlalchemy import create_engine
 from sqlalchemy.engine import Engine, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
+
+POSTGRES_CONNECT_TIMEOUT_SECONDS = 3
+POSTGRES_POOL_TIMEOUT_SECONDS = 2
+
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 DATA_DIR = BACKEND_DIR / "data"
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,16 +38,31 @@ def _synchronous_database_url(database_url: str) -> str:
 
 DATABASE_URL = _synchronous_database_url(RAW_DATABASE_URL)
 
-connect_args: dict[str, object] = {}
 
-if make_url(DATABASE_URL).get_backend_name() == "sqlite":
-    connect_args["check_same_thread"] = False
+def _engine_options(database_url: str) -> dict[str, object]:
+    """Build bounded connection options without embedding credentials."""
+    backend_name = make_url(database_url).get_backend_name()
+    connect_args: dict[str, object] = {}
+    options: dict[str, object] = {
+        "connect_args": connect_args,
+        "hide_parameters": True,
+        "pool_pre_ping": True,
+    }
+
+    if backend_name == "sqlite":
+        connect_args["check_same_thread"] = False
+    elif backend_name == "postgresql":
+        connect_args["connect_timeout"] = (
+            POSTGRES_CONNECT_TIMEOUT_SECONDS
+        )
+        options["pool_timeout"] = POSTGRES_POOL_TIMEOUT_SECONDS
+
+    return options
 
 
 engine = create_engine(
     DATABASE_URL,
-    connect_args=connect_args,
-    hide_parameters=True,
+    **_engine_options(DATABASE_URL),
 )
 
 

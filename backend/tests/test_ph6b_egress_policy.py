@@ -800,7 +800,7 @@ def test_server_http_dispatch_is_complete_and_has_no_bypass_flags() -> None:
 
 
 def test_ph6b_preserves_route_operation_permission_audit_and_schema_counts() -> None:
-    assert len(ROUTE_AUTHORIZATION_PLAN) == 143
+    assert len(ROUTE_AUTHORIZATION_PLAN) == 144
     assert len(CRITICAL_OPERATION_PLAN) == 98
     assert len(Permission) == 18
     assert len(SecurityAuditAction) == 33
