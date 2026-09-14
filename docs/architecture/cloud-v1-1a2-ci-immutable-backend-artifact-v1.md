@@ -64,14 +64,16 @@ The artifact publisher has exactly:
 ecr:GetAuthorizationToken                Resource "*"
 
 ecr:BatchCheckLayerAvailability          exact golden ECR repository ARN
+ecr:BatchGetImage                        exact golden ECR repository ARN
 ecr:CompleteLayerUpload                  exact golden ECR repository ARN
 ecr:InitiateLayerUpload                  exact golden ECR repository ARN
 ecr:PutImage                             exact golden ECR repository ARN
 ecr:UploadLayerPart                      exact golden ECR repository ARN
 ```
 
-`GetAuthorizationToken` does not support repository-level resource scoping;
-all actual layer/image writes are restricted to the one golden repository.
+`GetAuthorizationToken` does not support repository-level resource scoping.
+All image publication operations, including the `BatchGetImage` read required
+by the private-ECR push protocol, are restricted to the one golden repository.
 The role has no EKS, EC2, RDS, IAM mutation, discovery, runtime, or deployment
 permission and no wildcard action.
 

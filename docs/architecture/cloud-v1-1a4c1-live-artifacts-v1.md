@@ -91,9 +91,9 @@ an identity guarantee.
 The workflow reuses `TOPO_GOLDEN_AWS_ROLE_ARN`, which resolves to the existing
 `topo-golden-github-artifact-publisher` role created as
 `aws_iam_role.github_artifact_publisher`. Its only permissions are ECR
-authentication plus layer/image upload actions scoped to the exact golden ECR
-repository ARN. It has no EKS, EC2, RDS, IAM mutation, discovery, runtime, or
-deployment permission. No Terraform or IAM policy changes are required.
+authentication plus the private-ECR publication operations—including
+`ecr:BatchGetImage`—scoped to the exact golden ECR repository ARN. It has no
+EKS, EC2, RDS, IAM mutation, discovery, runtime, or deployment permission.
 
 ## Tag, digest, and provenance
 
