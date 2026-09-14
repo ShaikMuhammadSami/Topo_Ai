@@ -139,6 +139,16 @@ run "github_artifact_publisher_contract" {
   }
 
   assert {
+    condition     = aws_iam_openid_connect_provider.github[0].url == "https://token.actions.githubusercontent.com"
+    error_message = "The GitHub OIDC provider must use the exact GitHub Actions issuer."
+  }
+
+  assert {
+    condition     = toset(aws_iam_openid_connect_provider.github[0].client_id_list) == toset(["sts.amazonaws.com"])
+    error_message = "The GitHub OIDC provider must expose only the AWS STS audience."
+  }
+
+  assert {
     condition     = local.github_oidc_subject == "repo:example/topo-ai:ref:refs/heads/main"
     error_message = "OIDC subject must bind the exact repository and main branch."
   }

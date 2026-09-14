@@ -86,9 +86,14 @@ class CloudV1ArtifactContractTests(unittest.TestCase):
 
     def test_oidc_trust_and_ecr_permissions_are_exact(self) -> None:
         terraform = TERRAFORM_PATH.read_text(encoding="utf-8")
+        self.assertIn('github_oidc_issuer   = "https://token.actions.githubusercontent.com"', terraform)
+        self.assertIn('github_oidc_audience = "sts.amazonaws.com"', terraform)
         self.assertIn('"token.actions.githubusercontent.com:aud" = local.github_oidc_audience', terraform)
         self.assertIn('"token.actions.githubusercontent.com:sub" = local.github_oidc_subject', terraform)
         self.assertIn('"repo:${var.github_repository}:ref:refs/heads/main"', terraform)
+        self.assertNotIn("thumbprint_list", terraform)
+        self.assertNotIn("ignore_changes", terraform)
+        self.assertNotRegex(terraform, r"(?i)\b[0-9a-f]{40}\b")
         self.assertNotIn('Action = "*"', terraform)
         self.assertIn("Resource = aws_ecr_repository.topo.arn", terraform)
 

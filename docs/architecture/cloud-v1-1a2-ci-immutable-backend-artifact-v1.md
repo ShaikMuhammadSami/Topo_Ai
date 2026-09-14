@@ -56,6 +56,12 @@ An AWS account can have an existing GitHub OIDC provider. In that case supply
 `github_oidc_provider_arn`; otherwise Terraform creates it. Import or reuse the
 existing provider instead of attempting to create a duplicate.
 
+The GitHub provider intentionally omits Terraform's optional
+`thumbprint_list`. AWS validates GitHub's OIDC certificate through its trusted
+CA library, and any AWS-populated stored thumbprint is not configuration owned
+by this Terraform root. Do not hard-code or calculate a GitHub certificate
+thumbprint, and do not hide provider drift with `lifecycle.ignore_changes`.
+
 ## IAM permission boundary
 
 The artifact publisher has exactly:
