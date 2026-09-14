@@ -1,0 +1,245 @@
+name: Topo Golden Observer Image
+
+on:
+  pull_request:
+    paths:
+      - "agent/src/**"
+      - "agent/Dockerfile"
+      - "agent/.dockerignore"
+      - "agent/requirements.lock"
+      - ".github/workflows/topo-golden-observer-image.yml"
+
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type PUBLISH_GOLDEN_OBSERVER to publish from main.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  validate-container:
+    name: Build observer without AWS credentials
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build production observer container
+        uses: docker/build-push-action@v7
+        with:
+          context: agent
+          file: agent/Dockerfile
+          platforms: linux/amd64
+          push: false
+          tags: topo-observer:observer-sha-${{ github.sha }}
+          build-args: |
+            OCI_SOURCE=${{ github.server_url }}/${{ github.repository }}
+            OCI_REVISION=${{ github.sha }}
+            OCI_VERSION=observer-sha-${{ github.sha }}
+
+  publish:
+    name: Publish immutable observer artifact
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' &&
+          github.ref == 'refs/heads/main' &&
+          inputs.confirm == 'PUBLISH_GOLDEN_OBSERVER' }}
+    needs:
+      - validate-container
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      image_digest: ${{ steps.receipt.outputs.image_digest }}
+      immutable_image_ref: ${{ steps.receipt.outputs.immutable_image_ref }}
+      provenance_artifact: ${{ steps.receipt.outputs.provenance_artifact }}
+
+    steps:
+      - name: Checkout exact commit
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Validate publisher configuration
+        shell: bash
+        env:
+          ROLE_ARN: ${{ vars.TOPO_GOLDEN_AWS_ROLE_ARN }}
+          AWS_REGION: ${{ vars.TOPO_GOLDEN_AWS_REGION }}
+          ECR_REPOSITORY_URL: ${{ vars.TOPO_GOLDEN_ECR_REPOSITORY_URL }}
+        run: |
+          set -euo pipefail
+          [[ "${ROLE_ARN}" =~ ^arn:aws(-[a-z]+)?:iam::[0-9]{12}:role/[A-Za-z0-9+=,.@_/-]+$ ]]
+          [[ "${AWS_REGION}" =~ ^[a-z]{2}(-gov)?-[a-z]+-[0-9]+$ ]]
+          [[ "${ECR_REPOSITORY_URL}" =~ ^[0-9]{12}\.dkr\.ecr\.[a-z0-9-]+\.amazonaws\.com(\.cn)?/[a-z0-9][a-z0-9._/-]*$ ]]
+
+      - name: Configure short-lived AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.TOPO_GOLDEN_AWS_ROLE_ARN }}
+          role-session-name: topo-golden-observer-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: ${{ vars.TOPO_GOLDEN_AWS_REGION }}
+          role-duration-seconds: 1800
+          mask-aws-account-id: true
+
+      - name: Authenticate Docker to ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+        with:
+          mask-password: true
+
+      - name: Prepare immutable build metadata
+        id: metadata
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          ECR_REPOSITORY_URL: ${{ vars.TOPO_GOLDEN_ECR_REPOSITORY_URL }}
+        run: |
+          set -euo pipefail
+          if [[ "${ECR_REPOSITORY_URL%%/*}" != "${ECR_REGISTRY}" ]]; then
+            echo "Configured ECR repository does not belong to the authenticated registry." >&2
+            exit 1
+          fi
+
+          created_at="$(git show -s --format=%cI "${GITHUB_SHA}")"
+          image_tag="observer-sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          source_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}"
+
+          {
+            echo "created_at=${created_at}"
+            echo "image_tag=${image_tag}"
+            echo "source_url=${source_url}"
+            echo "tagged_image=${ECR_REPOSITORY_URL}:${image_tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build and push observer image
+        id: build
+        uses: docker/build-push-action@v7
+        with:
+          context: agent
+          file: agent/Dockerfile
+          platforms: linux/amd64
+          pull: true
+          push: true
+          tags: ${{ steps.metadata.outputs.tagged_image }}
+          build-args: |
+            OCI_SOURCE=${{ steps.metadata.outputs.source_url }}
+            OCI_REVISION=${{ github.sha }}
+            OCI_CREATED=${{ steps.metadata.outputs.created_at }}
+            OCI_VERSION=observer-sha-${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ steps.metadata.outputs.source_url }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.metadata.outputs.created_at }}
+            org.opencontainers.image.version=observer-sha-${{ github.sha }}
+            topo.component=observer
+            topo.github.workflow=${{ github.workflow }}
+            topo.github.workflow_ref=${{ github.workflow_ref }}
+            topo.github.run_id=${{ github.run_id }}
+            topo.github.run_attempt=${{ github.run_attempt }}
+            topo.github.ref=${{ github.ref }}
+
+      - name: Create immutable provenance receipt
+        id: receipt
+        shell: bash
+        env:
+          RECEIPT_PATH: ${{ runner.temp }}/topo-golden-observer-provenance.json
+          RECEIPT_REPOSITORY: ${{ github.repository }}
+          RECEIPT_COMMIT_SHA: ${{ github.sha }}
+          RECEIPT_GIT_REF: ${{ github.ref }}
+          RECEIPT_WORKFLOW_NAME: ${{ github.workflow }}
+          RECEIPT_WORKFLOW_REF: ${{ github.workflow_ref }}
+          RECEIPT_RUN_ID: ${{ github.run_id }}
+          RECEIPT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RECEIPT_ECR_REPOSITORY: ${{ vars.TOPO_GOLDEN_ECR_REPOSITORY_URL }}
+          RECEIPT_IMAGE_TAG: ${{ steps.metadata.outputs.image_tag }}
+          RECEIPT_IMAGE_DIGEST: ${{ steps.build.outputs.digest }}
+          RECEIPT_CREATED_AT: ${{ steps.metadata.outputs.created_at }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          digest = os.environ["RECEIPT_IMAGE_DIGEST"].strip().lower()
+          if re.fullmatch(r"sha256:[0-9a-f]{64}", digest) is None:
+              raise SystemExit("Build action did not return an immutable SHA256 digest.")
+
+          repository = os.environ["RECEIPT_ECR_REPOSITORY"]
+          artifact_name = (
+              f"topo-golden-observer-provenance-{os.environ['RECEIPT_RUN_ID']}-"
+              f"{os.environ['RECEIPT_RUN_ATTEMPT']}"
+          )
+          receipt = {
+              "schema_version": "topo-cloud-golden-artifact-v1",
+              "component": "observer",
+              "source_repository": os.environ["RECEIPT_REPOSITORY"],
+              "git_commit_sha": os.environ["RECEIPT_COMMIT_SHA"].lower(),
+              "git_ref": os.environ["RECEIPT_GIT_REF"],
+              "workflow_name": os.environ["RECEIPT_WORKFLOW_NAME"],
+              "workflow_ref": os.environ["RECEIPT_WORKFLOW_REF"],
+              "workflow_run_id": int(os.environ["RECEIPT_RUN_ID"]),
+              "workflow_run_attempt": int(os.environ["RECEIPT_RUN_ATTEMPT"]),
+              "ecr_repository": repository,
+              "image_tag": os.environ["RECEIPT_IMAGE_TAG"],
+              "image_digest": digest,
+              "immutable_image_ref": f"{repository}@{digest}",
+              "image_created_at": os.environ["RECEIPT_CREATED_AT"],
+              "identity": {
+                  "commit_source": "github_context",
+                  "digest_source": "build_push_action_output",
+                  "run_source": "github_context",
+              },
+          }
+
+          Path(os.environ["RECEIPT_PATH"]).write_text(
+              json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+              encoding="utf-8",
+          )
+
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as output:
+              output.write(f"image_digest={digest}\n")
+              output.write(f"immutable_image_ref={repository}@{digest}\n")
+              output.write(f"provenance_artifact={artifact_name}\n")
+
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as summary:
+              summary.write("## TopoAI immutable observer artifact\n\n")
+              summary.write(f"- Component: `{receipt['component']}`\n")
+              summary.write(f"- Repository: `{receipt['source_repository']}`\n")
+              summary.write(f"- Commit: `{receipt['git_commit_sha']}`\n")
+              summary.write(
+                  f"- Workflow run: `{receipt['workflow_run_id']}` "
+                  f"attempt `{receipt['workflow_run_attempt']}`\n"
+              )
+              summary.write(f"- Digest: `{receipt['image_digest']}`\n")
+              summary.write(f"- Immutable image: `{receipt['immutable_image_ref']}`\n")
+          PY
+
+      - name: Upload immutable provenance receipt
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.receipt.outputs.provenance_artifact }}
+          path: ${{ runner.temp }}/topo-golden-observer-provenance.json
+          if-no-files-found: error
+          retention-days: 30
