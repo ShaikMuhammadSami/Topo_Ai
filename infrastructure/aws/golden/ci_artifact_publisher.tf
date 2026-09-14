@@ -14,9 +14,8 @@ locals {
 resource "aws_iam_openid_connect_provider" "github" {
   count = var.github_oidc_provider_arn == null ? 1 : 0
 
-  url             = local.github_oidc_issuer
-  client_id_list  = [local.github_oidc_audience]
-  thumbprint_list = []
+  url            = local.github_oidc_issuer
+  client_id_list = [local.github_oidc_audience]
 
   tags = {
     Name = "${local.name}-github-actions"
