@@ -161,6 +161,7 @@ run "github_artifact_publisher_contract" {
   assert {
     condition = toset(jsondecode(aws_iam_role_policy.github_artifact_publisher.policy).Statement[1].Action) == toset([
       "ecr:BatchCheckLayerAvailability",
+      "ecr:BatchGetImage",
       "ecr:CompleteLayerUpload",
       "ecr:InitiateLayerUpload",
       "ecr:PutImage",

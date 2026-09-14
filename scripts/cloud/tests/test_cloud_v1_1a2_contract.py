@@ -98,6 +98,7 @@ class CloudV1ArtifactContractTests(unittest.TestCase):
             {
                 "ecr:GetAuthorizationToken",
                 "ecr:BatchCheckLayerAvailability",
+                "ecr:BatchGetImage",
                 "ecr:CompleteLayerUpload",
                 "ecr:InitiateLayerUpload",
                 "ecr:PutImage",
