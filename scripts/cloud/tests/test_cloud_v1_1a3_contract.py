@@ -250,17 +250,19 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
 
         self.assertEqual(pod["restartPolicy"], "Never")
         self.assertFalse(pod["automountServiceAccountToken"])
-        self.assertEqual(
-            container["command"],
-            [
-                "python",
-                "-m",
-                "alembic",
-                "-c",
-                "/opt/topo/alembic.ini",
-                "upgrade",
-                "head",
-            ],
+        self.assertEqual(container["command"], ["/bin/sh", "-eu", "-c"])
+        command_text = "\n".join(container["args"])
+        self.assertIn(
+            "python -m alembic -c /opt/topo/alembic.ini upgrade head",
+            command_text,
+        )
+        self.assertIn(
+            "python /opt/topo-admin/topo_database_admin.py reconcile",
+            command_text,
+        )
+        self.assertLess(
+            command_text.index("upgrade head"),
+            command_text.index("topo_database_admin.py reconcile"),
         )
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
         self.assertNotIn("alembic", str(_container(_resource("Deployment", "topo-backend"))))

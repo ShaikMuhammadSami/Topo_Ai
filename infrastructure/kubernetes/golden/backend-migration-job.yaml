@@ -34,13 +34,13 @@ spec:
           image: example.invalid/topo-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
           imagePullPolicy: IfNotPresent
           command:
-            - python
-            - -m
-            - alembic
+            - /bin/sh
+            - -eu
             - -c
-            - /opt/topo/alembic.ini
-            - upgrade
-            - head
+          args:
+            - |
+              python -m alembic -c /opt/topo/alembic.ini upgrade head
+              python /opt/topo-admin/topo_database_admin.py reconcile
           env:
             - name: TOPO_DATABASE_URL
               valueFrom:
@@ -50,6 +50,9 @@ spec:
             - name: TMPDIR
               value: /tmp
           volumeMounts:
+            - name: database-admin-script
+              mountPath: /opt/topo-admin
+              readOnly: true
             - name: temporary
               mountPath: /tmp
           securityContext:
@@ -66,6 +69,13 @@ spec:
               cpu: 500m
               memory: 512Mi
       volumes:
+        - name: database-admin-script
+          configMap:
+            name: topo-database-admin-scripts
+            defaultMode: 0444
+            items:
+              - key: topo_database_admin.py
+                path: topo_database_admin.py
         - name: temporary
           emptyDir:
             medium: Memory
