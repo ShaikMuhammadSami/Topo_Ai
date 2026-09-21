@@ -10,7 +10,7 @@ TopoAI uses three PostgreSQL identities with separate lifecycles:
 
 | Identity | Lifecycle | Authority |
 | --- | --- | --- |
-| RDS master | One-time/bootstrap and break-glass administration only | Creates and narrows the two dedicated roles, changes their passwords, removes inherited memberships, and establishes database/schema grants. It is never an application or migration credential. |
+| RDS master | One-time/bootstrap and break-glass administration only | Creates the two dedicated roles with PostgreSQL's safe restricted-attribute defaults, converges supported mutable attributes, changes their passwords, removes inherited memberships, and establishes database/schema grants. It is never an application or migration credential. |
 | `topo_migrator` | A controlled migration Job | Connects to the Topo database, has `USAGE, CREATE` on the `public` schema, owns the application objects it creates, runs Alembic DDL and migration-time DML, then reconciles application grants. |
 | `topo_app` | Steady-state backend replicas | Connects and performs required application DML. It does not create or own schema objects and has no database, role, replication, or row-security-bypass authority. |
 
@@ -55,10 +55,16 @@ database/schema grants therefore does not displace an unrelated application.
 
 Both dedicated roles have connection limit `-1`, no expiry, no per-role
 configuration, and no inherited role memberships. Bootstrap explicitly
-converges those attributes rather than accepting pre-existing privilege drift.
-It fails closed if a dedicated role owns the database or schema, or if
-`topo_app` owns an application object. It never transfers object ownership to
-`topo_app`.
+converges the mutable attributes that an RDS master can legally manage and
+strictly verifies the complete final attribute tuple. For a newly created
+ordinary role, PostgreSQL's safe defaults supply `NOSUPERUSER`,
+`NOREPLICATION`, and `NOBYPASSRLS`; bootstrap verifies those catalog values
+without issuing privileged attribute toggles. A pre-existing role with any of
+those elevated attributes fails closed as
+`DATABASE_ROLE_UNSAFE_ELEVATED_ATTRIBUTE` and requires human/admin
+remediation. Bootstrap also fails closed if a dedicated role owns the database
+or schema, or if `topo_app` owns an application object. It never transfers
+object ownership to `topo_app`.
 
 `PUBLIC` loses `CONNECT`, database `CREATE`/`TEMPORARY`, and schema `CREATE` on
 the dedicated Topo database. The two roles receive only their direct grants.
@@ -112,6 +118,27 @@ timeout or lost client response is an **ambiguous outcome**, not proof that the
 database was untouched. The correct retry is the same Job with the same
 intended credentials. Catalog checks, `ALTER ROLE`, `REVOKE`, `GRANT`, default
 privilege statements, and existing-object reconciliation are idempotent.
+
+## Live-discovered RDS administrator compatibility repair
+
+The first C2-B live bootstrap exposed an authority difference that the local
+acceptance fixture had masked: that fixture ran bootstrap as a true PostgreSQL
+superuser, while an AWS RDS master user is not a PostgreSQL superuser. The
+original role DDL explicitly toggled `NOSUPERUSER`, `NOREPLICATION`, and
+`NOBYPASSRLS`; PostgreSQL does not permit an ordinary RDS-style `CREATEROLE`
+administrator to manage all of those restricted attributes.
+
+Normal convergence now creates absent roles with `LOGIN`, relies on
+PostgreSQL's safe ordinary-role defaults for the three restricted attributes,
+then verifies their false values through `pg_roles`. Existing safe roles are
+converged only across supported mutable properties. Existing roles with
+`SUPERUSER`, `REPLICATION`, or `BYPASSRLS` fail closed before normal alteration.
+The full final authority invariant remains unchanged.
+
+This source repair has not been retried against live RDS. The read-only live
+diagnostic established the failure boundary, but the real database must not be
+described as bootstrapped until the guarded C2-B procedure is run again and its
+postconditions are independently verified.
 
 The script is mounted from the non-secret `topo-database-admin-scripts`
 ConfigMap into the already accepted immutable backend image. The Secret volume

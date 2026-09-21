@@ -1,8 +1,10 @@
-"""Optional PostgreSQL 16 acceptance for the C2-A1 authority contract.
+"""Optional PostgreSQL 16 acceptance for the C2 database authority contract.
 
 Set ``TOPO_C2_TEST_POSTGRES_URL`` to a disposable, empty PostgreSQL database
-owned by the URL's bootstrap user. The test deliberately disables TLS only for
-that loopback disposable database; production source always requires TLS.
+owned by the URL's fixture superuser. The superuser only constructs an
+RDS-master-like non-superuser and controlled drift; the actual Topo bootstrap
+runs as that restricted administrator. The test deliberately disables TLS only
+for that loopback disposable database; production source always requires TLS.
 """
 
 from __future__ import annotations
@@ -26,8 +28,7 @@ BACKEND_ROOT = ROOT / "backend"
 if os.fspath(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, os.fspath(BACKEND_ROOT))
 
-from app.db.schema_management import alembic_config  # noqa: I001
-
+from app.db.schema_management import alembic_config
 
 ADMIN_PATH = ROOT / "scripts/cloud/topo_database_admin.py"
 SPEC = importlib.util.spec_from_file_location(
@@ -44,6 +45,7 @@ pytestmark = pytest.mark.skipif(
     not POSTGRES_URL,
     reason="set TOPO_C2_TEST_POSTGRES_URL to run the disposable PostgreSQL test",
 )
+RDS_LIKE_ADMIN_ROLE = "topo_c2_bootstrap_admin"
 
 
 def _local_options() -> dict[str, object]:
@@ -83,7 +85,59 @@ def _expect_denied(connection_url: str, statement: str) -> None:
         cursor.execute(statement)
 
 
-def test_real_postgres_bootstrap_migration_and_reconciliation(monkeypatch) -> None:
+def _create_rds_like_admin(
+    superuser_url: str,
+    *,
+    database_name: str,
+    password: str,
+) -> None:
+    """Use fixture superuser authority only to create the restricted actor."""
+    with psycopg.connect(superuser_url, sslmode="disable") as superuser:
+        encoding = superuser.info.encoding
+        verifier = superuser.pgconn.encrypt_password(
+            password.encode(encoding),
+            RDS_LIKE_ADMIN_ROLE.encode(encoding),
+            b"scram-sha-256",
+        ).decode(encoding)
+        with superuser.cursor() as cursor:
+            cursor.execute(
+                sql.SQL(
+                    "CREATE ROLE {} WITH LOGIN NOSUPERUSER CREATEDB CREATEROLE "
+                    "INHERIT NOREPLICATION NOBYPASSRLS PASSWORD {}"
+                ).format(
+                    sql.Identifier(RDS_LIKE_ADMIN_ROLE),
+                    sql.Literal(verifier),
+                )
+            )
+            cursor.execute(
+                sql.SQL("ALTER DATABASE {} OWNER TO {}").format(
+                    sql.Identifier(database_name),
+                    sql.Identifier(RDS_LIKE_ADMIN_ROLE),
+                )
+            )
+        superuser.commit()
+
+
+def _assert_rds_like_admin(superuser_url: str) -> None:
+    with (
+        psycopg.connect(superuser_url, sslmode="disable") as superuser,
+        superuser.cursor() as cursor,
+    ):
+        cursor.execute(
+            """
+            SELECT rolcanlogin, rolsuper, rolcreatedb, rolcreaterole,
+                   rolinherit, rolreplication, rolbypassrls
+            FROM pg_catalog.pg_roles
+            WHERE rolname = %s
+            """,
+            (RDS_LIKE_ADMIN_ROLE,),
+        )
+        assert cursor.fetchone() == (True, False, True, True, True, False, False)
+
+
+def test_real_postgres_rds_like_bootstrap_migration_and_reconciliation(
+    monkeypatch,
+) -> None:
     parsed = make_url(POSTGRES_URL)
     if not all(
         (parsed.host, parsed.port, parsed.database, parsed.username, parsed.password)
@@ -94,12 +148,19 @@ def test_real_postgres_bootstrap_migration_and_reconciliation(monkeypatch) -> No
 
     app_password = secrets.token_urlsafe(48)
     migrator_password = secrets.token_urlsafe(48)
+    rds_like_admin_password = secrets.token_urlsafe(48)
+    _create_rds_like_admin(
+        POSTGRES_URL,
+        database_name=parsed.database,
+        password=rds_like_admin_password,
+    )
+    _assert_rds_like_admin(POSTGRES_URL)
     settings = ADMIN.BootstrapSettings(
         host=parsed.host,
         port=parsed.port,
         database=parsed.database,
-        master_username=parsed.username,
-        master_password=parsed.password,
+        master_username=RDS_LIKE_ADMIN_ROLE,
+        master_password=rds_like_admin_password,
         app_password=app_password,
         migrator_password=migrator_password,
     )
@@ -172,6 +233,18 @@ def test_real_postgres_bootstrap_migration_and_reconciliation(monkeypatch) -> No
                 True,
             ),
         ]
+        cursor.execute(
+            """
+            SELECT member.rolname, granted.rolname
+            FROM pg_catalog.pg_auth_members AS membership
+            JOIN pg_catalog.pg_roles AS member ON member.oid = membership.member
+            JOIN pg_catalog.pg_roles AS granted ON granted.oid = membership.roleid
+            WHERE member.rolname IN (%s, %s)
+            ORDER BY member.rolname, granted.rolname
+            """,
+            (ADMIN.APP_ROLE, ADMIN.MIGRATOR_ROLE),
+        )
+        assert cursor.fetchall() == []
 
     engine = create_engine(
         migrator_engine_url,
@@ -298,3 +371,41 @@ def test_real_postgres_bootstrap_migration_and_reconciliation(monkeypatch) -> No
                 (ADMIN.BOOTSTRAP_LOCK_KEY,),
             )
         master.commit()
+
+    # A restricted RDS-style administrator must not attempt to clear elevated
+    # flags it cannot legally manage. The preflight detects and rejects them
+    # before normal ALTER convergence.
+    try:
+        with psycopg.connect(POSTGRES_URL, sslmode="disable") as superuser:
+            with superuser.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("ALTER ROLE {} BYPASSRLS").format(
+                        sql.Identifier(ADMIN.APP_ROLE)
+                    )
+                )
+            superuser.commit()
+
+        with pytest.raises(
+            ADMIN.DatabaseAdminError,
+            match="^DATABASE_ROLE_UNSAFE_ELEVATED_ATTRIBUTE$",
+        ):
+            ADMIN.bootstrap_database(settings)
+
+        with (
+            psycopg.connect(POSTGRES_URL, sslmode="disable") as superuser,
+            superuser.cursor() as cursor,
+        ):
+            cursor.execute(
+                "SELECT rolbypassrls FROM pg_catalog.pg_roles WHERE rolname = %s",
+                (ADMIN.APP_ROLE,),
+            )
+            assert cursor.fetchone() == (True,)
+    finally:
+        with psycopg.connect(POSTGRES_URL, sslmode="disable") as superuser:
+            with superuser.cursor() as cursor:
+                cursor.execute(
+                    sql.SQL("ALTER ROLE {} NOBYPASSRLS").format(
+                        sql.Identifier(ADMIN.APP_ROLE)
+                    )
+                )
+            superuser.commit()

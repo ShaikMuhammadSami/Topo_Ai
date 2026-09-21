@@ -78,6 +78,23 @@ def _environment(container: dict) -> dict[str, dict]:
     return {item["name"]: item for item in container.get("env", [])}
 
 
+def _function_source(path: Path, name: str) -> str:
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    matches = [
+        node
+        for node in tree.body
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == name
+    ]
+    if len(matches) != 1:
+        raise AssertionError(f"Expected one function named {name}")
+    segment = ast.get_source_segment(source, matches[0])
+    if segment is None:
+        raise AssertionError(f"Unable to extract function named {name}")
+    return " ".join(segment.split())
+
+
 class CloudV1DatabaseBootstrapContractTests(unittest.TestCase):
     def test_runtime_and_migration_have_separate_non_master_credentials(self) -> None:
         backend = _container(_resource(BACKEND_PATH, "Deployment", "topo-backend"))
@@ -205,11 +222,10 @@ class CloudV1DatabaseBootstrapContractTests(unittest.TestCase):
         source = " ".join(ADMIN_PATH.read_text(encoding="utf-8").split())
 
         for required in (
-            "NOSUPERUSER",
             "NOCREATEDB",
             "NOCREATEROLE",
-            "NOREPLICATION",
-            "NOBYPASSRLS",
+            "rolsuper, rolreplication, rolbypassrls",
+            "DATABASE_ROLE_UNSAFE_ELEVATED_ATTRIBUTE",
             "REVOKE CREATE ON SCHEMA",
             "GRANT USAGE ON SCHEMA",
             "GRANT USAGE, CREATE ON SCHEMA",
@@ -223,6 +239,32 @@ class CloudV1DatabaseBootstrapContractTests(unittest.TestCase):
             self.assertIn(required, source)
         self.assertNotIn("GRANT ALL PRIVILEGES", source)
         self.assertNotIn("GRANT SUPERUSER", source)
+
+    def test_normal_role_convergence_does_not_toggle_restricted_attributes(
+        self,
+    ) -> None:
+        source = _function_source(ADMIN_PATH, "_converge_role")
+
+        self.assertIn("CREATE ROLE {} WITH LOGIN", source)
+        self.assertIn("NOCREATEDB", source)
+        self.assertIn("NOCREATEROLE", source)
+        self.assertIn("INHERIT", source)
+        self.assertIn("CONNECTION LIMIT -1", source)
+        for restricted in ("SUPERUSER", "REPLICATION", "BYPASSRLS"):
+            self.assertNotIn(restricted, source)
+
+    def test_final_role_verification_retains_strict_safe_attribute_contract(
+        self,
+    ) -> None:
+        source = _function_source(ADMIN_PATH, "_verify_role_attributes")
+        catalog_source = _function_source(ADMIN_PATH, "_role_attributes")
+
+        self.assertIn(
+            "expected = (True, False, False, False, True, False, False, -1, True, True)",
+            source,
+        )
+        for field in ("rolsuper", "rolreplication", "rolbypassrls"):
+            self.assertIn(field, catalog_source)
 
     def test_alembic_metadata_is_read_only_for_application_role(self) -> None:
         source = " ".join(ADMIN_PATH.read_text(encoding="utf-8").split())

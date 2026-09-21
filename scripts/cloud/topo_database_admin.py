@@ -37,9 +37,36 @@ BOOTSTRAP_SECRET_KEYS = (
     "topo-migrator-password",
 )
 
+DATABASE_ADMIN_ERROR_CODES = frozenset(
+    {
+        "APPLICATION_ROLE_OWNS_OBJECTS",
+        "APPLICATION_ROLE_PRIVILEGE_DRIFT",
+        "BOOTSTRAP_SECRET_INVALID",
+        "DATABASE_ADMIN_LOCK_UNAVAILABLE",
+        "DATABASE_OR_SCHEMA_OWNERSHIP_DRIFT",
+        "DATABASE_ROLE_ATTRIBUTE_DRIFT",
+        "DATABASE_ROLE_MEMBERSHIP_DRIFT",
+        "DATABASE_ROLE_MISSING",
+        "DATABASE_ROLE_PRIVILEGE_DRIFT",
+        "DATABASE_ROLE_UNSAFE_ELEVATED_ATTRIBUTE",
+        "MIGRATION_DATABASE_URL_MISSING",
+        "RECONCILE_REQUIRES_MIGRATOR",
+    }
+)
+GENERIC_DATABASE_ADMIN_ERROR_CODE = "DATABASE_ADMIN_FAILURE"
+DRIVER_DATABASE_ADMIN_ERROR_CODE = "DATABASE_DRIVER_ERROR"
+
 
 class DatabaseAdminError(RuntimeError):
     """Bounded failure code; values and driver exceptions never cross it."""
+
+    def __init__(self, code: str) -> None:
+        self.code = (
+            code
+            if code in DATABASE_ADMIN_ERROR_CODES
+            else GENERIC_DATABASE_ADMIN_ERROR_CODE
+        )
+        super().__init__(self.code)
 
 
 @dataclass(frozen=True, repr=False)
@@ -158,12 +185,32 @@ def _release_lock(connection: psycopg.Connection, lock_key: int) -> None:
         connection.commit()
 
 
-def _role_exists(cursor: psycopg.Cursor, role_name: str) -> bool:
+def _existing_role_elevated_attributes(
+    cursor: psycopg.Cursor,
+    role_name: str,
+) -> tuple[bool, bool, bool] | None:
     cursor.execute(
-        "SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = %s",
+        """
+        SELECT rolsuper, rolreplication, rolbypassrls
+        FROM pg_catalog.pg_roles
+        WHERE rolname = %s
+        """,
         (role_name,),
     )
-    return cursor.fetchone() is not None
+    value = cursor.fetchone()
+    if value is None:
+        return None
+    return value
+
+
+def _fail_if_role_has_elevated_attributes(
+    cursor: psycopg.Cursor,
+    role_name: str,
+) -> bool:
+    attributes = _existing_role_elevated_attributes(cursor, role_name)
+    if attributes is not None and any(attributes):
+        raise DatabaseAdminError("DATABASE_ROLE_UNSAFE_ELEVATED_ATTRIBUTE")
+    return attributes is not None
 
 
 def _remove_role_memberships(cursor: psycopg.Cursor, role_name: str) -> None:
@@ -196,13 +243,15 @@ def _converge_role(
     role_name: str,
     password: str,
 ) -> None:
-    if not _role_exists(cursor, role_name):
+    role_exists = _fail_if_role_has_elevated_attributes(cursor, role_name)
+    if not role_exists:
         cursor.execute(
-            sql.SQL(
-                "CREATE ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB "
-                "NOCREATEROLE INHERIT NOREPLICATION NOBYPASSRLS"
-            ).format(sql.Identifier(role_name))
+            sql.SQL("CREATE ROLE {} WITH LOGIN").format(sql.Identifier(role_name))
         )
+        # PostgreSQL creates ordinary roles with safe false values for these
+        # restricted attributes. Verify the catalog before any normal ALTER.
+        if not _fail_if_role_has_elevated_attributes(cursor, role_name):
+            raise DatabaseAdminError("DATABASE_ROLE_MISSING")
 
     encoding = connection.info.encoding
     verifier = connection.pgconn.encrypt_password(
@@ -212,8 +261,8 @@ def _converge_role(
     ).decode(encoding)
     cursor.execute(
         sql.SQL(
-            "ALTER ROLE {} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE "
-            "INHERIT NOREPLICATION NOBYPASSRLS CONNECTION LIMIT -1 "
+            "ALTER ROLE {} WITH LOGIN NOCREATEDB NOCREATEROLE "
+            "INHERIT CONNECTION LIMIT -1 "
             "PASSWORD {} VALID UNTIL 'infinity'"
         ).format(sql.Identifier(role_name), sql.Literal(verifier))
     )
@@ -605,8 +654,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         else:
             reconcile_from_environment()
             message = "Runtime database privileges reconciled."
-    # This CLI boundary deliberately suppresses unexpected driver details as
-    # well as expected bounded failures so credentials cannot leak in a trace.
+    except DatabaseAdminError as exc:
+        print(f"Topo database administration failed: {exc.code}", file=sys.stderr)
+        return 1
+    except psycopg.Error:
+        print(
+            f"Topo database administration failed: {DRIVER_DATABASE_ADMIN_ERROR_CODE}",
+            file=sys.stderr,
+        )
+        return 1
+    # This final boundary suppresses unexpected details so credentials cannot
+    # leak through exception messages or tracebacks.
     except Exception:  # noqa: BLE001
         print("Topo database administration failed safely.", file=sys.stderr)
         return 1
