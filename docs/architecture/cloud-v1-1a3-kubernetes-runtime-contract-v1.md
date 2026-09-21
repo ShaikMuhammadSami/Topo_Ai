@@ -69,10 +69,19 @@ The raw `secret-store-keyring.json` key is mounted only into a hardened,
 non-root init container using the same immutable backend image as the main
 container. As UID/GID 10001, the init container reads at most 65,536 bytes,
 rejects empty or oversized input and exclusively creates
-`/var/run/secrets/topo/keyring/keyring.json` in a bounded memory-backed
+`/run/topo/keyring/keyring.json` in a bounded memory-backed
 per-Pod `emptyDir`. It copies the bytes unchanged and verifies an owner-only
 `0600` regular, non-symlink destination. The main backend mounts only that
 staged volume, read-only; it cannot see the raw Secret projection.
+
+The init container is the custody-normalization boundary: the raw Kubernetes
+Secret projection is untrusted input and may use Kubernetes symlink semantics,
+but the entire trusted path consumed by the application must have no symlink or
+reparse ancestor. `/var/run` is intentionally forbidden for the trusted
+keyring because the production backend image resolves it through the
+`/var/run -> /run` symlink. The trusted volume is therefore mounted directly at
+`/run/topo/keyring` and `TOPO_SECRET_KEYRING_FILE` is exactly
+`/run/topo/keyring/keyring.json`.
 
 This is delivery normalization, not key rotation, re-encoding, or
 transformation. The keyring bytes, cryptographic format, active key identifier,

@@ -10,7 +10,7 @@ from pathlib import Path
 from app.security.secret_keyring import MAX_KEYRING_BYTES
 
 SOURCE_KEYRING_PATH = Path("/var/run/secrets/topo/keyring-source/keyring.json")
-STAGED_KEYRING_PATH = Path("/var/run/secrets/topo/keyring/keyring.json")
+STAGED_KEYRING_PATH = Path("/run/topo/keyring/keyring.json")
 STAGING_ERROR_CODE = "KEYRING_STAGE_FAILED"
 
 

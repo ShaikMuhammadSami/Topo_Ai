@@ -69,7 +69,7 @@ spec:
               mountPath: /var/run/secrets/topo/keyring-source
               readOnly: true
             - name: secret-store-keyring-staged
-              mountPath: /var/run/secrets/topo/keyring
+              mountPath: /run/topo/keyring
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001
@@ -116,7 +116,7 @@ spec:
             - name: TOPO_SECRET_STORE_BACKEND
               value: encrypted_db
             - name: TOPO_SECRET_KEYRING_FILE
-              value: /var/run/secrets/topo/keyring/keyring.json
+              value: /run/topo/keyring/keyring.json
             - name: TOPO_SECRET_ACTIVE_KEY_ID
               valueFrom:
                 secretKeyRef:
@@ -131,7 +131,7 @@ spec:
               value: /tmp
           volumeMounts:
             - name: secret-store-keyring-staged
-              mountPath: /var/run/secrets/topo/keyring
+              mountPath: /run/topo/keyring
               readOnly: true
             - name: temporary
               mountPath: /tmp

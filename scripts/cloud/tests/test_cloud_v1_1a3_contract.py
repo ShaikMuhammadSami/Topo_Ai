@@ -246,15 +246,26 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
             backend_mounts["secret-store-keyring-staged"],
             {
                 "name": "secret-store-keyring-staged",
-                "mountPath": "/var/run/secrets/topo/keyring",
+                "mountPath": "/run/topo/keyring",
                 "readOnly": True,
             },
+        )
+        self.assertEqual(
+            staging_mounts["secret-store-keyring-staged"]["mountPath"],
+            "/run/topo/keyring",
         )
         environment = {item["name"]: item for item in backend["env"]}
         self.assertEqual(
             environment["TOPO_SECRET_KEYRING_FILE"]["value"],
-            "/var/run/secrets/topo/keyring/keyring.json",
+            "/run/topo/keyring/keyring.json",
         )
+        trusted_paths = (
+            environment["TOPO_SECRET_KEYRING_FILE"]["value"],
+            staging_mounts["secret-store-keyring-staged"]["mountPath"],
+            backend_mounts["secret-store-keyring-staged"]["mountPath"],
+        )
+        self.assertTrue(all(path.startswith("/run/topo/") for path in trusted_paths))
+        self.assertTrue(all("/var/run" not in path for path in trusted_paths))
         self.assertNotIn("migration-database-url", yaml.safe_dump(pod))
 
     def test_keyring_staging_init_container_is_hardened_and_bounded(self) -> None:
@@ -284,6 +295,14 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
             self.assertNotIn(forbidden.casefold(), serialized)
 
         source = KEYRING_STAGING_PATH.read_text(encoding="utf-8")
+        self.assertIn(
+            'STAGED_KEYRING_PATH = Path("/run/topo/keyring/keyring.json")',
+            source,
+        )
+        self.assertNotIn(
+            'STAGED_KEYRING_PATH = Path("/var/run',
+            source,
+        )
         self.assertIn("MAX_KEYRING_BYTES + 1", source)
         self.assertIn("os.O_EXCL", source)
         self.assertIn("os.O_NOFOLLOW", source)
@@ -291,6 +310,14 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
         self.assertIn("stat.S_ISREG", source)
         self.assertIn("stat.S_ISLNK", source)
         self.assertIn('print("KEYRING_STAGE=PASS")', source)
+
+    def test_documented_trusted_keyring_path_forbids_var_run(self) -> None:
+        document = " ".join(DOCUMENT_PATH.read_text(encoding="utf-8").split())
+
+        self.assertIn("/run/topo/keyring/keyring.json", document)
+        self.assertIn("/var/run", document)
+        self.assertIn("intentionally forbidden", document)
+        self.assertIn("entire trusted path", document)
 
     def test_backend_has_no_kubernetes_api_authority(self) -> None:
         service_account = _resource("ServiceAccount", "topo-backend")
