@@ -55,6 +55,37 @@ spec:
             matchLabels:
               app.kubernetes.io/name: topo-backend
               app.kubernetes.io/component: api
+      initContainers:
+        - name: stage-secret-keyring
+          # Keep identical to the immutable backend image used below.
+          image: example.invalid/topo-backend@sha256:0000000000000000000000000000000000000000000000000000000000000000
+          imagePullPolicy: IfNotPresent
+          command:
+            - python
+            - -m
+            - app.security.keyring_staging
+          volumeMounts:
+            - name: secret-store-keyring-source
+              mountPath: /var/run/secrets/topo/keyring-source
+              readOnly: true
+            - name: secret-store-keyring-staged
+              mountPath: /var/run/secrets/topo/keyring
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            runAsGroup: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
       containers:
         - name: backend
           # Replace only with immutable_image_ref from the 1A.2 receipt.
@@ -99,7 +130,7 @@ spec:
             - name: TMPDIR
               value: /tmp
           volumeMounts:
-            - name: secret-store-keyring
+            - name: secret-store-keyring-staged
               mountPath: /var/run/secrets/topo/keyring
               readOnly: true
             - name: temporary
@@ -140,13 +171,17 @@ spec:
               cpu: "1"
               memory: 1Gi
       volumes:
-        - name: secret-store-keyring
+        - name: secret-store-keyring-source
           secret:
             secretName: topo-backend-runtime
             defaultMode: 0440
             items:
               - key: secret-store-keyring.json
                 path: keyring.json
+        - name: secret-store-keyring-staged
+          emptyDir:
+            medium: Memory
+            sizeLimit: 128Ki
         - name: temporary
           emptyDir:
             medium: Memory

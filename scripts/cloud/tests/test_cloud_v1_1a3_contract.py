@@ -7,15 +7,14 @@ from pathlib import Path
 
 import yaml
 
-
 ROOT = Path(__file__).resolve().parents[3]
 MANIFEST_DIR = ROOT / "infrastructure/kubernetes/golden"
 DOCUMENT_PATH = (
-    ROOT
-    / "docs/architecture/cloud-v1-1a3-kubernetes-runtime-contract-v1.md"
+    ROOT / "docs/architecture/cloud-v1-1a3-kubernetes-runtime-contract-v1.md"
 )
 DATABASE_PATH = ROOT / "backend/app/db/database.py"
 RUNTIME_HEALTH_PATH = ROOT / "backend/app/services/runtime_health.py"
+KEYRING_STAGING_PATH = ROOT / "backend/app/security/keyring_staging.py"
 IMAGE_REFERENCE = re.compile(r"^[^\s:@]+(?:/[^\s:@]+)+@sha256:[0-9a-f]{64}$")
 
 
@@ -64,14 +63,18 @@ def _integer_constant(path: Path, name: str) -> int:
 
 
 class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
-    def test_backend_and_migration_consume_one_digest_not_latest(self) -> None:
+    def test_backend_init_and_migration_consume_one_digest_not_latest(self) -> None:
         deployment = _resource("Deployment", "topo-backend")
         migration = _resource("Job", "topo-backend-migrate")
         backend_image = _container(deployment)["image"]
+        init_containers = deployment["spec"]["template"]["spec"]["initContainers"]
         migration_image = _container(migration)["image"]
 
+        self.assertEqual(len(init_containers), 1)
+        staging_image = init_containers[0]["image"]
         self.assertRegex(backend_image, IMAGE_REFERENCE)
         self.assertEqual(backend_image, migration_image)
+        self.assertEqual(backend_image, staging_image)
         self.assertNotIn(":latest", backend_image.casefold())
         self.assertIn("@sha256:", backend_image)
 
@@ -81,10 +84,13 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
 
         self.assertEqual(deployment["spec"]["replicas"], 2)
         self.assertEqual(strategy["type"], "RollingUpdate")
-        self.assertEqual(strategy["rollingUpdate"], {
-            "maxUnavailable": 0,
-            "maxSurge": 1,
-        })
+        self.assertEqual(
+            strategy["rollingUpdate"],
+            {
+                "maxUnavailable": 0,
+                "maxSurge": 1,
+            },
+        )
         self.assertGreaterEqual(deployment["spec"]["minReadySeconds"], 1)
 
         budget = _resource("PodDisruptionBudget", "topo-backend")
@@ -109,10 +115,7 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
         self.assertEqual(container["securityContext"]["capabilities"]["drop"], ["ALL"])
         self.assertFalse(container["securityContext"].get("privileged", False))
         self.assertTrue(
-            all(
-                volume.get("hostPath") is None
-                for volume in pod.get("volumes", [])
-            )
+            all(volume.get("hostPath") is None for volume in pod.get("volumes", []))
         )
         constraints = pod["topologySpreadConstraints"]
         self.assertEqual(
@@ -136,19 +139,22 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
         self.assertLessEqual(liveness["timeoutSeconds"], 2)
         self.assertEqual(readiness["timeoutSeconds"], 8)
         application_database_wait = _integer_constant(
-            DATABASE_PATH,
-            "POSTGRES_CONNECT_TIMEOUT_SECONDS"
+            DATABASE_PATH, "POSTGRES_CONNECT_TIMEOUT_SECONDS"
         ) + _integer_constant(
             DATABASE_PATH,
             "POSTGRES_POOL_TIMEOUT_SECONDS",
         )
-        readiness_database_wait = _integer_constant(
-            RUNTIME_HEALTH_PATH,
-            "READINESS_CONNECT_TIMEOUT_SECONDS",
-        ) + _integer_constant(
-            RUNTIME_HEALTH_PATH,
-            "READINESS_STATEMENT_TIMEOUT_MILLISECONDS",
-        ) / 1_000
+        readiness_database_wait = (
+            _integer_constant(
+                RUNTIME_HEALTH_PATH,
+                "READINESS_CONNECT_TIMEOUT_SECONDS",
+            )
+            + _integer_constant(
+                RUNTIME_HEALTH_PATH,
+                "READINESS_STATEMENT_TIMEOUT_MILLISECONDS",
+            )
+            / 1_000
+        )
         self.assertLess(
             max(application_database_wait, readiness_database_wait),
             readiness["timeoutSeconds"],
@@ -174,10 +180,7 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
     def test_database_and_root_material_are_secret_referenced(self) -> None:
         deployment = _resource("Deployment", "topo-backend")
         migration = _resource("Job", "topo-backend-migrate")
-        environment = {
-            item["name"]: item
-            for item in _container(deployment)["env"]
-        }
+        environment = {item["name"]: item for item in _container(deployment)["env"]}
 
         self.assertEqual(
             environment["TOPO_DATABASE_URL"]["valueFrom"]["secretKeyRef"],
@@ -190,7 +193,9 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
                 "key": "migration-database-url",
             },
         )
-        self.assertEqual(environment["TOPO_SECRET_STORE_BACKEND"]["value"], "encrypted_db")
+        self.assertEqual(
+            environment["TOPO_SECRET_STORE_BACKEND"]["value"], "encrypted_db"
+        )
         self.assertNotIn("value", environment["TOPO_API_TOKEN_HASHES_JSON"])
 
         config = _resource("ConfigMap", "topo-runtime-config")["data"]
@@ -203,6 +208,90 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
             )
         )
 
+    def test_keyring_secret_is_staged_into_an_isolated_memory_volume(self) -> None:
+        deployment = _resource("Deployment", "topo-backend")
+        pod = deployment["spec"]["template"]["spec"]
+        backend = _container(deployment)
+        init_containers = pod["initContainers"]
+        self.assertEqual(len(init_containers), 1)
+        staging = init_containers[0]
+        self.assertEqual(staging["name"], "stage-secret-keyring")
+
+        volumes = {volume["name"]: volume for volume in pod["volumes"]}
+        raw = volumes["secret-store-keyring-source"]["secret"]
+        self.assertEqual(raw["secretName"], "topo-backend-runtime")
+        self.assertEqual(raw["defaultMode"], 0o440)
+        self.assertEqual(
+            raw["items"],
+            [{"key": "secret-store-keyring.json", "path": "keyring.json"}],
+        )
+        self.assertEqual(
+            volumes["secret-store-keyring-staged"]["emptyDir"],
+            {"medium": "Memory", "sizeLimit": "128Ki"},
+        )
+
+        backend_mounts = {mount["name"]: mount for mount in backend["volumeMounts"]}
+        staging_mounts = {mount["name"]: mount for mount in staging["volumeMounts"]}
+        self.assertNotIn("secret-store-keyring-source", backend_mounts)
+        self.assertEqual(
+            staging_mounts["secret-store-keyring-source"],
+            {
+                "name": "secret-store-keyring-source",
+                "mountPath": "/var/run/secrets/topo/keyring-source",
+                "readOnly": True,
+            },
+        )
+        self.assertNotIn("readOnly", staging_mounts["secret-store-keyring-staged"])
+        self.assertEqual(
+            backend_mounts["secret-store-keyring-staged"],
+            {
+                "name": "secret-store-keyring-staged",
+                "mountPath": "/var/run/secrets/topo/keyring",
+                "readOnly": True,
+            },
+        )
+        environment = {item["name"]: item for item in backend["env"]}
+        self.assertEqual(
+            environment["TOPO_SECRET_KEYRING_FILE"]["value"],
+            "/var/run/secrets/topo/keyring/keyring.json",
+        )
+        self.assertNotIn("migration-database-url", yaml.safe_dump(pod))
+
+    def test_keyring_staging_init_container_is_hardened_and_bounded(self) -> None:
+        deployment = _resource("Deployment", "topo-backend")
+        pod = deployment["spec"]["template"]["spec"]
+        staging = pod["initContainers"][0]
+        security = staging["securityContext"]
+
+        self.assertFalse(pod["automountServiceAccountToken"])
+        self.assertEqual(pod["securityContext"]["runAsUser"], 10001)
+        self.assertEqual(pod["securityContext"]["runAsGroup"], 10001)
+        self.assertTrue(security["runAsNonRoot"])
+        self.assertEqual(security["runAsUser"], 10001)
+        self.assertEqual(security["runAsGroup"], 10001)
+        self.assertFalse(security["allowPrivilegeEscalation"])
+        self.assertTrue(security["readOnlyRootFilesystem"])
+        self.assertEqual(security["capabilities"]["drop"], ["ALL"])
+        self.assertFalse(security.get("privileged", False))
+        self.assertEqual(
+            staging["command"],
+            ["python", "-m", "app.security.keyring_staging"],
+        )
+        self.assertEqual(staging.get("env", []), [])
+        self.assertEqual(staging.get("envFrom", []), [])
+        serialized = yaml.safe_dump(staging).casefold()
+        for forbidden in ("aws_", "migration-database-url", "serviceaccounttoken"):
+            self.assertNotIn(forbidden.casefold(), serialized)
+
+        source = KEYRING_STAGING_PATH.read_text(encoding="utf-8")
+        self.assertIn("MAX_KEYRING_BYTES + 1", source)
+        self.assertIn("os.O_EXCL", source)
+        self.assertIn("os.O_NOFOLLOW", source)
+        self.assertIn("os.fchmod(descriptor, 0o600)", source)
+        self.assertIn("stat.S_ISREG", source)
+        self.assertIn("stat.S_ISLNK", source)
+        self.assertIn('print("KEYRING_STAGE=PASS")', source)
+
     def test_backend_has_no_kubernetes_api_authority(self) -> None:
         service_account = _resource("ServiceAccount", "topo-backend")
         self.assertFalse(service_account["automountServiceAccountToken"])
@@ -213,9 +302,9 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
             if document.get("kind") in {"RoleBinding", "ClusterRoleBinding"}
             for subject in document.get("subjects", [])
         ]
-        self.assertNotIn("topo-backend", {
-            subject.get("name") for subject in bound_subjects
-        })
+        self.assertNotIn(
+            "topo-backend", {subject.get("name") for subject in bound_subjects}
+        )
 
     def test_observer_rbac_matches_actual_list_calls_only(self) -> None:
         role = _resource("ClusterRole", "topo-observer-readonly")
@@ -265,7 +354,9 @@ class CloudV1KubernetesRuntimeContractTests(unittest.TestCase):
             command_text.index("topo_database_admin.py reconcile"),
         )
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
-        self.assertNotIn("alembic", str(_container(_resource("Deployment", "topo-backend"))))
+        self.assertNotIn(
+            "alembic", str(_container(_resource("Deployment", "topo-backend")))
+        )
 
     def test_rds_worker_security_group_limitation_is_explicit(self) -> None:
         document = " ".join(

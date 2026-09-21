@@ -23,7 +23,8 @@ ordered reviewable templates, not an instruction to apply the whole directory.
 
 ## Immutable artifact consumption
 
-Both occurrences of the backend placeholder image must be replaced with the
+All three occurrences of the backend placeholder image—the main backend,
+keyring-staging init container, and migration Job—must be replaced with the
 same `immutable_image_ref` from the 1A.2 provenance receipt:
 
 ```text
@@ -55,6 +56,27 @@ ALB, DNS and TLS remain later work.
 Resource requests are 250 millicores and 512 MiB per replica; limits are one
 CPU and 1 GiB. These are internal-golden starting values, not measured
 production capacity claims.
+
+### SecretStore keyring delivery normalization
+
+The application does not consume the Kubernetes Secret projection directly.
+Kubernetes represents projected Secret keys through symlinks and the original
+`0440` projection is group-readable, while `load_keyring` intentionally accepts
+only a regular, non-symlink, owner-only POSIX file. That application custody
+invariant remains unchanged.
+
+The raw `secret-store-keyring.json` key is mounted only into a hardened,
+non-root init container using the same immutable backend image as the main
+container. As UID/GID 10001, the init container reads at most 65,536 bytes,
+rejects empty or oversized input and exclusively creates
+`/var/run/secrets/topo/keyring/keyring.json` in a bounded memory-backed
+per-Pod `emptyDir`. It copies the bytes unchanged and verifies an owner-only
+`0600` regular, non-symlink destination. The main backend mounts only that
+staged volume, read-only; it cannot see the raw Secret projection.
+
+This is delivery normalization, not key rotation, re-encoding, or
+transformation. The keyring bytes, cryptographic format, active key identifier,
+SecretStore implementation and `load_keyring` policy are unchanged.
 
 ## Rollout, placement and disruption
 
@@ -130,7 +152,7 @@ No Kubernetes Secret value is committed. A live bring-up must create the
 | `database-url` | backend Deployment | Dedicated application PostgreSQL login; TLS-required URL, URL-encoded, never logged. |
 | `migration-database-url` | migration Job | Separately controlled schema-migration login. |
 | `bootstrap-token-hashes-json` | backend Deployment | Digest-only initial/break-glass registry; use `{}` after durable named admin authority exists. |
-| `secret-store-keyring.json` | backend volume | PH-4 root-key file, mounted read-only with group-readable restrictive mode. |
+| `secret-store-keyring.json` | keyring-staging init container only | PH-4 root-key bytes are read from the `0440` projection and copied unchanged into a memory-backed owner-only `0600` regular file; the backend mounts only the staged file read-only. |
 | `secret-store-active-key-id` | backend Deployment | Identifier selecting the mounted active root key. |
 
 The 1A.1 RDS managed-master secret is bootstrap authority, not the permanent
