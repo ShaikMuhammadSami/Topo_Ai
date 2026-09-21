@@ -1,13 +1,16 @@
 from __future__ import annotations
 
+import base64
+import json
 import os
 import stat
 from pathlib import Path
 
 import pytest
+from app.models.secret_store import SecretStoreError
 from app.security import keyring_staging
 from app.security.keyring_staging import KeyringStagingError, stage_keyring
-from app.security.secret_keyring import MAX_KEYRING_BYTES
+from app.security.secret_keyring import MAX_KEYRING_BYTES, load_keyring
 
 
 def test_stage_keyring_preserves_exact_bytes_in_new_regular_file(
@@ -15,8 +18,8 @@ def test_stage_keyring_preserves_exact_bytes_in_new_regular_file(
 ) -> None:
     payload = bytes(range(256)) + os.urandom(257)
     source = tmp_path / "projected-keyring.json"
-    destination = tmp_path / "staged" / "keyring.json"
-    destination.parent.mkdir()
+    destination = tmp_path / "run" / "topo" / "keyring" / "keyring.json"
+    destination.parent.mkdir(parents=True)
     source.write_bytes(payload)
 
     stage_keyring(source, destination)
@@ -28,6 +31,42 @@ def test_stage_keyring_preserves_exact_bytes_in_new_regular_file(
     if os.name == "posix":
         assert stat.S_IMODE(metadata.st_mode) == 0o600
         assert metadata.st_uid == os.geteuid()
+
+
+def test_trusted_staging_destination_is_rooted_directly_under_run() -> None:
+    assert keyring_staging.STAGED_KEYRING_PATH == Path("/run/topo/keyring/keyring.json")
+    assert "/var/run" not in keyring_staging.STAGED_KEYRING_PATH.as_posix()
+
+
+def test_loader_rejects_symlinked_ancestor_but_accepts_same_direct_file(
+    tmp_path: Path,
+) -> None:
+    key = os.urandom(32)
+    document = json.dumps(
+        {
+            "version": 1,
+            "keys": {"synthetic": base64.urlsafe_b64encode(key).decode("ascii")},
+        }
+    ).encode("utf-8")
+    real_run = tmp_path / "real-run"
+    direct = real_run / "topo" / "keyring" / "keyring.json"
+    direct.parent.mkdir(parents=True)
+    direct.write_bytes(document)
+    direct.chmod(0o600)
+
+    assert load_keyring(str(direct), "synthetic").key("synthetic") == key
+
+    simulated_var = tmp_path / "var"
+    simulated_var.mkdir()
+    symlinked_run = simulated_var / "run"
+    try:
+        symlinked_run.symlink_to(real_run, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlink creation is unavailable on this platform")
+
+    through_symlink = symlinked_run / "topo" / "keyring" / "keyring.json"
+    with pytest.raises(SecretStoreError, match="^SECRET_KEYRING_INVALID$"):
+        load_keyring(str(through_symlink), "synthetic")
 
 
 @pytest.mark.parametrize(
