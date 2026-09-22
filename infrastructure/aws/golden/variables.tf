@@ -52,7 +52,7 @@ variable "eks_public_access_cidrs" {
 }
 
 variable "edge_validation_ipv4_cidrs" {
-  description = "Temporary IPv4 /32 host CIDRs allowed to perform non-secret HTTP edge validation before TLS, WAF, and application DNS publication. Do not persist a personal operator address in source."
+  description = "Temporary IPv4 /32 host CIDRs allowed to perform non-secret HTTP and HTTPS edge validation before WAF and application DNS publication. Do not persist a personal operator address in source."
   type        = list(string)
   default     = []
 
@@ -66,6 +66,12 @@ variable "edge_validation_ipv4_cidrs" {
     )
     error_message = "edge_validation_ipv4_cidrs must contain unique valid IPv4 /32 host CIDRs and must not contain 0.0.0.0/0."
   }
+}
+
+variable "edge_https_enabled" {
+  description = "Enable the controlled HTTPS listener and convert HTTP to redirect-only after the Porkbun ACM validation record has been published and the certificate can be issued."
+  type        = bool
+  default     = false
 }
 
 variable "kubernetes_version" {

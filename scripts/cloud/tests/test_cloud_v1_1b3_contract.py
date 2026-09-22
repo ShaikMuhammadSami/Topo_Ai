@@ -257,7 +257,7 @@ class CloudV1PublicEdgeContractTests(unittest.TestCase):
         self.assertIn("port              = 80", listener)
         self.assertIn('protocol          = "HTTP"', listener)
         self.assertIn("aws_lb_target_group.edge_frontend.arn", listener)
-        self.assertNotIn("443", listener)
+        self.assertIn("var.edge_https_enabled ? [] : [true]", listener)
         for name, (priority, path) in expected_rules.items():
             rule = _hcl_block(source, f'resource "aws_lb_listener_rule" "{name}"')
             self.assertIn(f"priority     = {priority}", rule)
@@ -283,10 +283,9 @@ class CloudV1PublicEdgeContractTests(unittest.TestCase):
         self.assertNotRegex(output.casefold(), r"password|credential|token|secret")
 
     def test_no_tls_waf_dns_browser_origin_or_secret_authority_is_added(self) -> None:
-        terraform = "\n".join(
-            path.read_text(encoding="utf-8")
-            for path in sorted(TERRAFORM_DIR.glob("*.tf"))
-        )
+        # Later blocks may add TLS in separate files. The accepted 1B.3 source
+        # itself must remain free of certificate, DNS, and WAF authority.
+        terraform = EDGE_TERRAFORM_PATH.read_text(encoding="utf-8")
         edge_documents = _documents(EDGE_MANIFEST_PATH)
         foundation = _resource(
             _documents(FOUNDATION_MANIFEST_PATH),
