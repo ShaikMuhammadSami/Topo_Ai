@@ -1,0 +1,38 @@
+**
+!Dockerfile
+!.dockerignore
+!package.json
+!package-lock.json
+!next.config.mjs
+!next-env.d.ts
+!postcss.config.mjs
+!tsconfig.json
+!app/
+!app/**
+!components/
+!components/**
+!lib/
+!lib/**
+!public/
+!public/**
+
+# Defense-in-depth re-exclusions below the source allowlist. These prevent
+# local dependency, build, test, credential, editor, log, and temporary
+# material from re-entering the context beneath an included directory.
+**/node_modules/
+**/.next/
+**/.git/
+**/.env*
+**/test/
+**/tests/
+**/coverage/
+**/.nyc_output/
+**/.cache/
+**/*.log
+**/*.tmp
+**/*.temp
+**/.DS_Store
+**/Thumbs.db
+
+# Repository-local screenshots remain outside the allowlist. Required runtime
+# images are intentionally limited to application assets under public/.
