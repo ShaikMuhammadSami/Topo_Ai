@@ -142,22 +142,14 @@ resource "aws_lb_listener" "edge_http" {
   port              = 80
   protocol          = "HTTP"
 
-  dynamic "default_action" {
-    for_each = var.edge_https_enabled ? [] : [true]
+  default_action {
+    type             = var.edge_https_enabled ? "redirect" : "forward"
+    target_group_arn = var.edge_https_enabled ? null : aws_lb_target_group.edge_frontend.arn
 
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.edge_frontend.arn
-    }
-  }
+    dynamic "redirect" {
+      for_each = var.edge_https_enabled ? [true] : []
 
-  dynamic "default_action" {
-    for_each = var.edge_https_enabled ? [true] : []
-
-    content {
-      type = "redirect"
-
-      redirect {
+      content {
         host        = "#{host}"
         path        = "/#{path}"
         port        = "443"
@@ -173,22 +165,14 @@ resource "aws_lb_listener_rule" "edge_backend_api" {
   listener_arn = aws_lb_listener.edge_http.arn
   priority     = 100
 
-  dynamic "action" {
-    for_each = var.edge_https_enabled ? [] : [true]
+  action {
+    type             = var.edge_https_enabled ? "redirect" : "forward"
+    target_group_arn = var.edge_https_enabled ? null : aws_lb_target_group.edge_backend.arn
 
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.edge_backend.arn
-    }
-  }
+    dynamic "redirect" {
+      for_each = var.edge_https_enabled ? [true] : []
 
-  dynamic "action" {
-    for_each = var.edge_https_enabled ? [true] : []
-
-    content {
-      type = "redirect"
-
-      redirect {
+      content {
         host        = "#{host}"
         path        = "/#{path}"
         port        = "443"
@@ -210,22 +194,14 @@ resource "aws_lb_listener_rule" "edge_backend_health" {
   listener_arn = aws_lb_listener.edge_http.arn
   priority     = 110
 
-  dynamic "action" {
-    for_each = var.edge_https_enabled ? [] : [true]
+  action {
+    type             = var.edge_https_enabled ? "redirect" : "forward"
+    target_group_arn = var.edge_https_enabled ? null : aws_lb_target_group.edge_backend.arn
 
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.edge_backend.arn
-    }
-  }
+    dynamic "redirect" {
+      for_each = var.edge_https_enabled ? [true] : []
 
-  dynamic "action" {
-    for_each = var.edge_https_enabled ? [true] : []
-
-    content {
-      type = "redirect"
-
-      redirect {
+      content {
         host        = "#{host}"
         path        = "/#{path}"
         port        = "443"
@@ -247,22 +223,14 @@ resource "aws_lb_listener_rule" "edge_backend_ready" {
   listener_arn = aws_lb_listener.edge_http.arn
   priority     = 120
 
-  dynamic "action" {
-    for_each = var.edge_https_enabled ? [] : [true]
+  action {
+    type             = var.edge_https_enabled ? "redirect" : "forward"
+    target_group_arn = var.edge_https_enabled ? null : aws_lb_target_group.edge_backend.arn
 
-    content {
-      type             = "forward"
-      target_group_arn = aws_lb_target_group.edge_backend.arn
-    }
-  }
+    dynamic "redirect" {
+      for_each = var.edge_https_enabled ? [true] : []
 
-  dynamic "action" {
-    for_each = var.edge_https_enabled ? [true] : []
-
-    content {
-      type = "redirect"
-
-      redirect {
+      content {
         host        = "#{host}"
         path        = "/#{path}"
         port        = "443"
