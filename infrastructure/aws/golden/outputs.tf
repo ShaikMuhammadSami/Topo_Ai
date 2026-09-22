@@ -48,6 +48,20 @@ output "edge" {
   }
 }
 
+output "tls" {
+  description = "ACM certificate request and the single provider-authentic Porkbun validation record; this does not publish application DNS."
+  value = {
+    certificate_arn         = aws_acm_certificate.edge.arn
+    certificate_domain      = aws_acm_certificate.edge.domain_name
+    certificate_status      = aws_acm_certificate.edge.status
+    validation_record_name  = local.edge_acm_validation_record.resource_record_name
+    validation_record_type  = local.edge_acm_validation_record.resource_record_type
+    validation_record_value = local.edge_acm_validation_record.resource_record_value
+    https_enabled           = var.edge_https_enabled
+    ssl_policy              = local.edge_tls_policy
+  }
+}
+
 output "private_route_table_ids" {
   description = "Private worker route tables carrying NAT and S3 endpoint routes."
   value       = [for az in local.availability_zones : aws_route_table.private[az].id]

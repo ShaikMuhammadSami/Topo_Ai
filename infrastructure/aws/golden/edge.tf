@@ -142,9 +142,30 @@ resource "aws_lb_listener" "edge_http" {
   port              = 80
   protocol          = "HTTP"
 
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.edge_frontend.arn
+  dynamic "default_action" {
+    for_each = var.edge_https_enabled ? [] : [true]
+
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.edge_frontend.arn
+    }
+  }
+
+  dynamic "default_action" {
+    for_each = var.edge_https_enabled ? [true] : []
+
+    content {
+      type = "redirect"
+
+      redirect {
+        host        = "#{host}"
+        path        = "/#{path}"
+        port        = "443"
+        protocol    = "HTTPS"
+        query       = "#{query}"
+        status_code = "HTTP_301"
+      }
+    }
   }
 }
 
@@ -152,9 +173,30 @@ resource "aws_lb_listener_rule" "edge_backend_api" {
   listener_arn = aws_lb_listener.edge_http.arn
   priority     = 100
 
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.edge_backend.arn
+  dynamic "action" {
+    for_each = var.edge_https_enabled ? [] : [true]
+
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.edge_backend.arn
+    }
+  }
+
+  dynamic "action" {
+    for_each = var.edge_https_enabled ? [true] : []
+
+    content {
+      type = "redirect"
+
+      redirect {
+        host        = "#{host}"
+        path        = "/#{path}"
+        port        = "443"
+        protocol    = "HTTPS"
+        query       = "#{query}"
+        status_code = "HTTP_301"
+      }
+    }
   }
 
   condition {
@@ -168,9 +210,30 @@ resource "aws_lb_listener_rule" "edge_backend_health" {
   listener_arn = aws_lb_listener.edge_http.arn
   priority     = 110
 
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.edge_backend.arn
+  dynamic "action" {
+    for_each = var.edge_https_enabled ? [] : [true]
+
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.edge_backend.arn
+    }
+  }
+
+  dynamic "action" {
+    for_each = var.edge_https_enabled ? [true] : []
+
+    content {
+      type = "redirect"
+
+      redirect {
+        host        = "#{host}"
+        path        = "/#{path}"
+        port        = "443"
+        protocol    = "HTTPS"
+        query       = "#{query}"
+        status_code = "HTTP_301"
+      }
+    }
   }
 
   condition {
@@ -184,9 +247,30 @@ resource "aws_lb_listener_rule" "edge_backend_ready" {
   listener_arn = aws_lb_listener.edge_http.arn
   priority     = 120
 
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.edge_backend.arn
+  dynamic "action" {
+    for_each = var.edge_https_enabled ? [] : [true]
+
+    content {
+      type             = "forward"
+      target_group_arn = aws_lb_target_group.edge_backend.arn
+    }
+  }
+
+  dynamic "action" {
+    for_each = var.edge_https_enabled ? [true] : []
+
+    content {
+      type = "redirect"
+
+      redirect {
+        host        = "#{host}"
+        path        = "/#{path}"
+        port        = "443"
+        protocol    = "HTTPS"
+        query       = "#{query}"
+        status_code = "HTTP_301"
+      }
+    }
   }
 
   condition {
