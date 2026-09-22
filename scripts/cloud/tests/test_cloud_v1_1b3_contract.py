@@ -257,7 +257,14 @@ class CloudV1PublicEdgeContractTests(unittest.TestCase):
         self.assertIn("port              = 80", listener)
         self.assertIn('protocol          = "HTTP"', listener)
         self.assertIn("aws_lb_target_group.edge_frontend.arn", listener)
-        self.assertIn("var.edge_https_enabled ? [] : [true]", listener)
+        self.assertIn(
+            'type             = var.edge_https_enabled ? "redirect" : "forward"',
+            listener,
+        )
+        self.assertIn(
+            "target_group_arn = var.edge_https_enabled ? null : aws_lb_target_group.edge_frontend.arn",
+            listener,
+        )
         for name, (priority, path) in expected_rules.items():
             rule = _hcl_block(source, f'resource "aws_lb_listener_rule" "{name}"')
             self.assertIn(f"priority     = {priority}", rule)

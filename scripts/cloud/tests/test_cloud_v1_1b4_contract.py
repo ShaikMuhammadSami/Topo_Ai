@@ -136,25 +136,59 @@ class CloudV1AcmHttpsContractTests(unittest.TestCase):
 
     def test_http_resources_keep_addresses_and_become_redirect_only_when_enabled(self) -> None:
         source = EDGE_PATH.read_text(encoding="utf-8")
-        resources = [
-            _hcl_block(source, 'resource "aws_lb_listener" "edge_http"'),
-            _hcl_block(source, 'resource "aws_lb_listener_rule" "edge_backend_api"'),
-            _hcl_block(source, 'resource "aws_lb_listener_rule" "edge_backend_health"'),
-            _hcl_block(source, 'resource "aws_lb_listener_rule" "edge_backend_ready"'),
-        ]
+        resources = {
+            "edge_http": (
+                _hcl_block(source, 'resource "aws_lb_listener" "edge_http"'),
+                "default_action",
+                "aws_lb_target_group.edge_frontend.arn",
+            ),
+            "edge_backend_api": (
+                _hcl_block(source, 'resource "aws_lb_listener_rule" "edge_backend_api"'),
+                "action",
+                "aws_lb_target_group.edge_backend.arn",
+            ),
+            "edge_backend_health": (
+                _hcl_block(source, 'resource "aws_lb_listener_rule" "edge_backend_health"'),
+                "action",
+                "aws_lb_target_group.edge_backend.arn",
+            ),
+            "edge_backend_ready": (
+                _hcl_block(source, 'resource "aws_lb_listener_rule" "edge_backend_ready"'),
+                "action",
+                "aws_lb_target_group.edge_backend.arn",
+            ),
+        }
 
-        for block in resources:
-            resource_arguments = block.split('dynamic "', maxsplit=1)[0]
+        for _, (block, action_name, target_group) in resources.items():
+            resource_arguments = block.split(f"{action_name} {{", maxsplit=1)[0]
             self.assertNotRegex(resource_arguments, r"(?m)^\s*(?:count|for_each)\s*=")
-            self.assertIn("var.edge_https_enabled ? [] : [true]", block)
+            self.assertNotIn(f'dynamic "{action_name}"', block)
+            self.assertIn(
+                'type             = var.edge_https_enabled ? "redirect" : "forward"',
+                block,
+            )
+            self.assertIn(
+                f"target_group_arn = var.edge_https_enabled ? null : {target_group}",
+                block,
+            )
+            self.assertIn('dynamic "redirect"', block)
             self.assertIn("var.edge_https_enabled ? [true] : []", block)
-            self.assertIn('type = "redirect"', block)
             self.assertIn('host        = "#{host}"', block)
             self.assertIn('path        = "/#{path}"', block)
             self.assertIn('query       = "#{query}"', block)
             self.assertIn('port        = "443"', block)
             self.assertIn('protocol    = "HTTPS"', block)
             self.assertIn('status_code = "HTTP_301"', block)
+
+        self.assertEqual(
+            set(resources),
+            {
+                "edge_http",
+                "edge_backend_api",
+                "edge_backend_health",
+                "edge_backend_ready",
+            },
+        )
 
     def test_tls_output_preserves_exact_provider_validation_record(self) -> None:
         source = OUTPUTS_PATH.read_text(encoding="utf-8")
