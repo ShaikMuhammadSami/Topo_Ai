@@ -51,6 +51,23 @@ variable "eks_public_access_cidrs" {
   }
 }
 
+variable "edge_validation_ipv4_cidrs" {
+  description = "Temporary IPv4 /32 host CIDRs allowed to perform non-secret HTTP edge validation before TLS, WAF, and application DNS publication. Do not persist a personal operator address in source."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition = (
+      length(var.edge_validation_ipv4_cidrs) == length(distinct(var.edge_validation_ipv4_cidrs)) &&
+      alltrue([
+        for cidr in var.edge_validation_ipv4_cidrs :
+        can(cidrnetmask(cidr)) && endswith(cidr, "/32") && cidr != "0.0.0.0/0"
+      ])
+    )
+    error_message = "edge_validation_ipv4_cidrs must contain unique valid IPv4 /32 host CIDRs and must not contain 0.0.0.0/0."
+  }
+}
+
 variable "kubernetes_version" {
   description = "EKS Kubernetes minor version. Keep this on standard support."
   type        = string

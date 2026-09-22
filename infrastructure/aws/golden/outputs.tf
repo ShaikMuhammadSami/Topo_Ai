@@ -30,6 +30,24 @@ output "public_alb_subnet_ids" {
   value       = [for az in local.availability_zones : aws_subnet.public[az].id]
 }
 
+output "edge" {
+  description = "Controlled edge infrastructure identities for the later TLS, WAF, and DNS publication blocks."
+  value = {
+    load_balancer = {
+      arn               = aws_lb.edge.arn
+      dns_name          = aws_lb.edge.dns_name
+      zone_id           = aws_lb.edge.zone_id
+      security_group_id = aws_security_group.edge_alb.id
+    }
+    target_group_arns = {
+      backend  = aws_lb_target_group.edge_backend.arn
+      frontend = aws_lb_target_group.edge_frontend.arn
+    }
+    listener_arn = aws_lb_listener.edge_http.arn
+    node_ports   = local.edge_node_ports
+  }
+}
+
 output "private_route_table_ids" {
   description = "Private worker route tables carrying NAT and S3 endpoint routes."
   value       = [for az in local.availability_zones : aws_route_table.private[az].id]
