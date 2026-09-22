@@ -92,7 +92,7 @@ class CloudV1AcmHttpsContractTests(unittest.TestCase):
         self.assertIn("count = var.edge_https_enabled ? 1 : 0", validation)
         self.assertIn("certificate_arn = aws_acm_certificate.edge.arn", validation)
         self.assertIn(
-            "for_each = var.edge_https_enabled ? toset(var.edge_validation_ipv4_cidrs) : toset([])",
+            "for_each = var.edge_https_enabled && !var.edge_public_ingress_enabled ? toset(var.edge_validation_ipv4_cidrs) : toset([])",
             ingress,
         )
         self.assertIn("cidr_ipv4         = each.value", ingress)
@@ -237,14 +237,15 @@ class CloudV1AcmHttpsContractTests(unittest.TestCase):
             self.assertIn("referenced_security_group_id", block)
             self.assertNotIn("cidr_ipv4", block)
 
-    def test_no_dns_waf_cloudfront_or_public_cidr_authority_is_added(self) -> None:
+    def test_no_dns_cloudfront_or_1b4_public_cidr_authority_is_added(self) -> None:
         source = _terraform_source()
         edge_boundary = "\n".join(
             (EDGE_PATH.read_text(encoding="utf-8"), TLS_PATH.read_text(encoding="utf-8"))
         )
 
-        for forbidden in ("aws_route53_", "aws_wafv2_", "aws_cloudfront_"):
+        for forbidden in ("aws_route53_", "aws_cloudfront_"):
             self.assertNotRegex(source, rf'resource\s+"{forbidden}')
+        self.assertNotRegex(edge_boundary, r'resource\s+"aws_wafv2_')
         self.assertNotRegex(
             edge_boundary,
             r'cidr_ipv[46]\s*=\s*"(?:0\.0\.0\.0/0|::/0)"',
