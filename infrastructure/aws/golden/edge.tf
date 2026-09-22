@@ -26,10 +26,24 @@ resource "aws_security_group" "edge_alb" {
   tags = {
     Name = "${local.name}-edge-alb"
   }
+
+  lifecycle {
+    precondition {
+      condition = (
+        !var.edge_public_ingress_enabled ||
+        (
+          var.edge_https_enabled &&
+          var.edge_waf_enabled &&
+          var.edge_waf_mode == "block"
+        )
+      )
+      error_message = "Public edge ingress requires HTTPS and WAF block mode to be enabled."
+    }
+  }
 }
 
 resource "aws_vpc_security_group_ingress_rule" "edge_alb_http_validation" {
-  for_each = toset(var.edge_validation_ipv4_cidrs)
+  for_each = var.edge_public_ingress_enabled ? toset([]) : toset(var.edge_validation_ipv4_cidrs)
 
   security_group_id = aws_security_group.edge_alb.id
   cidr_ipv4         = each.value

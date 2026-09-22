@@ -62,6 +62,21 @@ output "tls" {
   }
 }
 
+output "edge_protection" {
+  description = "Non-secret WAF and public-edge operational state; no request samples or sensitive headers are exposed."
+  value = {
+    enabled                   = var.edge_waf_enabled
+    mode                      = var.edge_waf_mode
+    web_acl_arn               = try(aws_wafv2_web_acl.edge[0].arn, null)
+    web_acl_name              = try(aws_wafv2_web_acl.edge[0].name, null)
+    association_target_arn    = var.edge_waf_enabled ? aws_lb.edge.arn : null
+    rate_limit                = var.edge_waf_rate_limit
+    evaluation_window_seconds = 300
+    log_group_name            = var.edge_waf_enabled ? local.edge_waf_log_group_name : null
+    public_ingress_enabled    = var.edge_public_ingress_enabled
+  }
+}
+
 output "private_route_table_ids" {
   description = "Private worker route tables carrying NAT and S3 endpoint routes."
   value       = [for az in local.availability_zones : aws_route_table.private[az].id]

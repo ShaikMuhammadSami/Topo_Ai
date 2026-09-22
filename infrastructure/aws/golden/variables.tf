@@ -74,6 +74,44 @@ variable "edge_https_enabled" {
   default     = false
 }
 
+variable "edge_waf_enabled" {
+  description = "Attach the regional edge Web ACL, its security-only logging, and managed/rate rules."
+  type        = bool
+  default     = false
+}
+
+variable "edge_waf_mode" {
+  description = "WAF operating mode: count observes managed/rate matches; block enforces the managed actions and rate limit."
+  type        = string
+  default     = "count"
+
+  validation {
+    condition     = contains(["count", "block"], var.edge_waf_mode)
+    error_message = "edge_waf_mode must be either count or block."
+  }
+}
+
+variable "edge_public_ingress_enabled" {
+  description = "Replace operator /32 listener ingress with public IPv4 80/443 ingress after HTTPS and WAF block-mode authority are enabled."
+  type        = bool
+  default     = false
+}
+
+variable "edge_waf_rate_limit" {
+  description = "Maximum requests accepted by the WAF rate rule per source IP during the five-minute evaluation window."
+  type        = number
+  default     = 2000
+
+  validation {
+    condition = (
+      var.edge_waf_rate_limit == floor(var.edge_waf_rate_limit) &&
+      var.edge_waf_rate_limit >= 100 &&
+      var.edge_waf_rate_limit <= 2000000
+    )
+    error_message = "edge_waf_rate_limit must be a whole number between 100 and 2,000,000 requests per five minutes."
+  }
+}
+
 variable "kubernetes_version" {
   description = "EKS Kubernetes minor version. Keep this on standard support."
   type        = string

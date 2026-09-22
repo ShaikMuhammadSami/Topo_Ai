@@ -30,7 +30,7 @@ resource "aws_acm_certificate_validation" "edge" {
 }
 
 resource "aws_vpc_security_group_ingress_rule" "edge_alb_https_validation" {
-  for_each = var.edge_https_enabled ? toset(var.edge_validation_ipv4_cidrs) : toset([])
+  for_each = var.edge_https_enabled && !var.edge_public_ingress_enabled ? toset(var.edge_validation_ipv4_cidrs) : toset([])
 
   security_group_id = aws_security_group.edge_alb.id
   cidr_ipv4         = each.value
