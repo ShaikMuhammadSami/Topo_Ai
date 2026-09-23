@@ -284,7 +284,7 @@ class CloudV1WafPublicEdgeContractTests(unittest.TestCase):
         for forbidden in ("aws_route53_", "aws_cloudfront_"):
             self.assertNotRegex(terraform, rf'resource\s+"{forbidden}')
         self.assertNotIn("api.topoai.io", terraform)
-        self.assertEqual(config_map["data"]["browser-allowed-origins-json"], "[]")
+        self.assertEqual(config_map["data"]["browser-allowed-origins-json"], '["https://app.topoai.io"]')
         self.assertIn("status_code=401", system_api)
         self.assertIn("load_change_source_for_authentication", change_webhook)
         self.assertIn("WebhookAuthenticationError", change_webhook)

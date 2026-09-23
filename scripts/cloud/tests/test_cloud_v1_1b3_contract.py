@@ -312,7 +312,7 @@ class CloudV1PublicEdgeContractTests(unittest.TestCase):
             )
         self.assertNotIn("app.topoai.io", terraform)
         self.assertNotIn("api.topoai.io", terraform)
-        self.assertEqual(foundation["data"]["browser-allowed-origins-json"], "[]")
+        self.assertEqual(foundation["data"]["browser-allowed-origins-json"], '["https://app.topoai.io"]')
 
         serialized = yaml.safe_dump(edge_documents, sort_keys=True)
         for forbidden in (

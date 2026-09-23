@@ -20,7 +20,7 @@ data:
   installation-id: REPLACE_WITH_INSTALLATION_ID
   cluster-name: REPLACE_WITH_CLUSTER_NAME
   environment: golden
-  browser-allowed-origins-json: "[]"
+  browser-allowed-origins-json: '["https://app.topoai.io"]'
 ---
 apiVersion: v1
 kind: ServiceAccount

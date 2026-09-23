@@ -269,7 +269,7 @@ class CloudV1AcmHttpsContractTests(unittest.TestCase):
             and item.get("metadata", {}).get("name") == "topo-runtime-config"
         )
 
-        self.assertEqual(config_map["data"]["browser-allowed-origins-json"], "[]")
+        self.assertEqual(config_map["data"]["browser-allowed-origins-json"], '["https://app.topoai.io"]')
 
     def test_document_defines_staged_external_dns_and_controlled_tls_acceptance(self) -> None:
         document = DOCUMENT_PATH.read_text(encoding="utf-8")
