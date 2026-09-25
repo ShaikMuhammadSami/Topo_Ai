@@ -49,6 +49,50 @@ def client_error(code: str, operation: str) -> ClientError:
     return ClientError({"Error": {"Code": code, "Message": "bounded test error"}}, operation)
 
 
+def backend_object_result(contents_expression: str) -> dict[str, object]:
+    source = text(MIGRATION)
+    match = re.search(
+        r"function Get-BackendObjects \{.*?\n\}\n\nfunction Invoke-Precheck",
+        source,
+        re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError("Get-BackendObjects function was not found")
+    function_source = match.group(0).rsplit("\n\nfunction Invoke-Precheck", 1)[0]
+    script = f"""
+Set-StrictMode -Version Latest
+$BackendBucket = "{BUCKET}"
+$BackendKey = "{KEY}"
+$LockKey = "$BackendKey.tflock"
+$ExpectedAccount = "297361542190"
+$script:MockResponse = {contents_expression}
+function Invoke-AwsJson {{
+    param($Service, $Operation, $Arguments)
+    return $script:MockResponse
+}}
+{function_source}
+$objects = @(Get-BackendObjects)
+$stateExists = @($objects | Where-Object {{ $_.Key -eq $BackendKey }}).Count -gt 0
+$lockExists = @($objects | Where-Object {{ $_.Key -eq $LockKey }}).Count -gt 0
+[pscustomobject]@{{
+    object_count = $objects.Count
+    state_object_exists = $stateExists
+    lock_object_exists = $lockExists
+    precheck_can_continue = -not $lockExists -and -not $stateExists
+}} | ConvertTo-Json -Compress
+"""
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stdout + result.stderr)
+    return json.loads(result.stdout)
+
+
 class ExactBucket:
     def __init__(self, *, configured: bool = True) -> None:
         self.configured = configured
@@ -180,6 +224,31 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
         postcheck = source[match.end():]
         self.assertIn('"workspace", "show"', postcheck)
         self.assertIn('"state", "list"', postcheck)
+
+    def test_empty_s3_response_is_a_valid_zero_object_precheck(self) -> None:
+        result = backend_object_result("[pscustomobject]@{}")
+        self.assertEqual(0, result["object_count"])
+        self.assertFalse(result["state_object_exists"])
+        self.assertFalse(result["lock_object_exists"])
+        self.assertTrue(result["precheck_can_continue"])
+
+    def test_state_object_is_detected(self) -> None:
+        result = backend_object_result(
+            f'[pscustomobject]@{{ Contents = @([pscustomobject]@{{ Key = "{KEY}" }}) }}'
+        )
+        self.assertEqual(1, result["object_count"])
+        self.assertTrue(result["state_object_exists"])
+        self.assertFalse(result["lock_object_exists"])
+        self.assertFalse(result["precheck_can_continue"])
+
+    def test_lock_object_is_detected_as_blocking(self) -> None:
+        result = backend_object_result(
+            f'[pscustomobject]@{{ Contents = @([pscustomobject]@{{ Key = "{KEY}.tflock" }}) }}'
+        )
+        self.assertEqual(1, result["object_count"])
+        self.assertFalse(result["state_object_exists"])
+        self.assertTrue(result["lock_object_exists"])
+        self.assertFalse(result["precheck_can_continue"])
 
     def test_real_local_state_emits_only_approved_metadata(self) -> None:
         result = INSPECTOR.inspect_accepted_state()

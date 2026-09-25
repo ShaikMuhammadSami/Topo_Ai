@@ -250,7 +250,17 @@ function Get-BackendObjects {
         "--max-keys", "10",
         "--expected-bucket-owner", $ExpectedAccount
     )
-    return @($response.Contents)
+
+    if ($null -eq $response) {
+        return @()
+    }
+
+    $contentsProperty = $response.PSObject.Properties["Contents"]
+    if ($null -eq $contentsProperty -or $null -eq $contentsProperty.Value) {
+        return @()
+    }
+
+    return @($contentsProperty.Value)
 }
 
 function Invoke-Precheck {
