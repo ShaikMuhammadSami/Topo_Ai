@@ -14,6 +14,9 @@ __v0_jsx-dev-runtime.ts
 .v0-trash/
 .vercel/
 
+# CX-0 live inventory and reconciliation receipts are local, generated evidence.
+/artifacts/cx0/
+
 # Local environment variables (templates remain trackable)
 .env
 .env.*

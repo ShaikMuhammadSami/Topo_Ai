@@ -1,0 +1,206 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://topoai.io/schemas/cx0a-reproducibility-v1.json",
+  "title": "TopoAI CX-0A reproducibility inventory",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "captured_at_utc",
+    "tool_versions",
+    "authority",
+    "environment",
+    "source",
+    "eks",
+    "kubernetes",
+    "images",
+    "network",
+    "edge",
+    "waf",
+    "acm",
+    "dns",
+    "rds",
+    "migrations",
+    "secretstore_recovery",
+    "terraform",
+    "iam",
+    "logging",
+    "cost_relevant_resources",
+    "reproducibility",
+    "fingerprints",
+    "safety"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "cx0a.reproducibility.v1"
+    },
+    "captured_at_utc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "tool_versions": { "type": "object" },
+    "authority": {
+      "type": "object",
+      "required": [
+        "accepted_predecessor_head",
+        "accepted_predecessor_tree",
+        "current_branch",
+        "current_head",
+        "current_tree"
+      ],
+      "properties": {
+        "accepted_predecessor_head": {
+          "const": "e676559b3daf586b4dc53041d1638a3d2191910a"
+        },
+        "accepted_predecessor_tree": {
+          "const": "c4389d7613afeb7f908e87ed5c4e6c04e599fc0c"
+        },
+        "current_branch": { "type": "string", "minLength": 1 },
+        "current_head": { "type": "string", "pattern": "^[0-9a-f]{40}$" },
+        "current_tree": { "type": "string", "pattern": "^[0-9a-f]{40}$" }
+      },
+      "additionalProperties": true
+    },
+    "environment": {
+      "type": "object",
+      "required": ["aws_account_id", "region", "eks_cluster", "namespace"],
+      "properties": {
+        "aws_account_id": { "const": "297361542190" },
+        "region": { "const": "us-east-1" },
+        "eks_cluster": { "const": "topo-golden" },
+        "namespace": { "const": "topo-system" }
+      },
+      "additionalProperties": true
+    },
+    "source": { "type": "object" },
+    "eks": { "type": "object" },
+    "kubernetes": { "type": "object" },
+    "images": { "type": "object" },
+    "network": { "type": "object" },
+    "edge": { "type": "object" },
+    "waf": { "type": "object" },
+    "acm": { "type": "object" },
+    "dns": { "type": "object" },
+    "rds": { "type": "object" },
+    "migrations": { "type": "object" },
+    "secretstore_recovery": {
+      "type": "object",
+      "required": [
+        "custody_mechanism",
+        "runtime_secret_name",
+        "active_key_identifier",
+        "active_key_identifier_status",
+        "live_keyring_sha256",
+        "recovery_secret_name",
+        "recovery_secret_arn",
+        "recovery_secret_version_id",
+        "recovery_keyring_sha256",
+        "keyring_fingerprint_match",
+        "external_recovery_custody_found",
+        "recovery_procedure_reference",
+        "recovery_procedure_found",
+        "separation_from_database_backup",
+        "location_class",
+        "recovery_authority_status"
+      ],
+      "properties": {
+        "keyring_fingerprint_match": { "type": "boolean" },
+        "external_recovery_custody_found": { "type": "boolean" },
+        "recovery_procedure_found": { "type": "boolean" },
+        "separation_from_database_backup": { "type": "boolean" },
+        "location_class": {
+          "enum": ["LIVE_CLUSTER_SECRET", "DURABLE_EXTERNAL_AUTHORITY"]
+        },
+        "recovery_authority_status": {
+          "enum": ["NOT_SEPARATELY_PROVEN", "SEPARATELY_PROVEN"]
+        }
+      },
+      "additionalProperties": true
+    },
+    "terraform": {
+      "type": "object",
+      "required": [
+        "backend_type",
+        "backend_bucket",
+        "backend_key",
+        "backend_region",
+        "backend_source_contract_matches",
+        "backend_source_versioned",
+        "use_lockfile",
+        "dynamodb_locking_configured",
+        "bucket_exists",
+        "bucket_configuration_matches",
+        "state_object_exists",
+        "state_object_version_id",
+        "lock_object_exists",
+        "local_state_authority_class",
+        "local_state_original_sha256",
+        "workspace",
+        "resource_address_count",
+        "state_values_read"
+      ],
+      "properties": {
+        "backend_type": { "enum": ["local", "s3"] },
+        "backend_bucket": { "const": "topo-tfstate-297361542190-us-east-1" },
+        "backend_key": { "const": "golden/terraform.tfstate" },
+        "backend_region": { "const": "us-east-1" },
+        "backend_source_contract_matches": { "type": "boolean" },
+        "backend_source_versioned": { "type": "boolean" },
+        "use_lockfile": { "type": "boolean" },
+        "dynamodb_locking_configured": { "const": false },
+        "bucket_exists": { "type": "boolean" },
+        "bucket_configuration_matches": { "type": "boolean" },
+        "state_object_exists": { "type": "boolean" },
+        "state_object_version_id": { "type": ["string", "null"] },
+        "lock_object_exists": { "type": "boolean" },
+        "local_state_authority_class": {
+          "enum": ["UNRECONCILED_LOCAL_AUTHORITY", "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY"]
+        },
+        "local_state_original_sha256": { "type": ["string", "null"] },
+        "workspace": { "type": ["string", "null"] },
+        "resource_address_count": { "type": "integer", "minimum": 0 },
+        "state_values_read": { "const": false }
+      },
+      "additionalProperties": true
+    },
+    "iam": { "type": "object" },
+    "logging": { "type": "object" },
+    "cost_relevant_resources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["resource_type", "identifier", "billing_class"]
+      }
+    },
+    "reproducibility": {
+      "type": "object",
+      "required": ["blockers", "unknowns"],
+      "properties": {
+        "blockers": { "type": "array", "items": { "type": "string" }, "uniqueItems": true },
+        "unknowns": { "type": "array", "items": { "type": "string" }, "uniqueItems": true }
+      },
+      "additionalProperties": true
+    },
+    "fingerprints": { "type": "object" },
+    "safety": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "aws_mutation_performed",
+        "kubernetes_mutation_performed",
+        "dns_mutation_performed",
+        "database_mutation_performed",
+        "deletion_performed",
+        "secret_values_emitted"
+      ],
+      "properties": {
+        "aws_mutation_performed": { "const": false },
+        "kubernetes_mutation_performed": { "const": false },
+        "dns_mutation_performed": { "const": false },
+        "database_mutation_performed": { "const": false },
+        "deletion_performed": { "const": false },
+        "secret_values_emitted": { "const": false }
+      }
+    }
+  }
+}
