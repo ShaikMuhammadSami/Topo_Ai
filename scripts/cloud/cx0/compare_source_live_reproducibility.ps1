@@ -222,6 +222,11 @@ $iamMatches = @($inventory.iam.roles).Count -ge 2 -and @($inventory.iam.roles.na
 Add-Comparison $comparisons "iam_roles_and_policies" $(if ($iamMatches) { "MATCH" } else { "UNKNOWN" }) $true `
     "infrastructure/aws/golden IAM source" $(if ($iamMatches) { "Required cluster/node roles and sanitized attachments/trust metadata are captured." } else { "Required IAM authority is incomplete." })
 
+$terraformEquivalence = $inventory.terraform.migration_semantic_equivalence
+$terraformSourceKinds = Get-PropertyValue $terraformEquivalence "check_results_kinds_source"
+$terraformDestinationKinds = Get-PropertyValue $terraformEquivalence "check_results_kinds_destination"
+$terraformSourceStatuses = Get-PropertyValue $terraformEquivalence "check_results_statuses_source"
+$terraformDestinationStatuses = Get-PropertyValue $terraformEquivalence "check_results_statuses_destination"
 $terraformRemoteProven = (
     $inventory.terraform.backend_type -eq "s3" -and
     $inventory.terraform.backend_bucket -eq "topo-tfstate-297361542190-us-east-1" -and
@@ -229,6 +234,8 @@ $terraformRemoteProven = (
     $inventory.terraform.backend_region -eq "us-east-1" -and
     $inventory.terraform.backend_source_contract_matches -eq $true -and
     $inventory.terraform.backend_source_versioned -eq $true -and
+    $inventory.terraform.backend_durable -eq $true -and
+    $inventory.terraform.remote_state_authority_class -eq "DURABLE_EXTERNAL_AUTHORITY" -and
     $inventory.terraform.use_lockfile -eq $true -and
     $inventory.terraform.dynamodb_locking_configured -eq $false -and
     $inventory.terraform.bucket_exists -eq $true -and
@@ -238,15 +245,35 @@ $terraformRemoteProven = (
     $inventory.terraform.lock_object_exists -eq $false -and
     $inventory.terraform.workspace -eq "default" -and
     $inventory.terraform.resource_address_count -eq 80 -and
-    $inventory.terraform.local_state_authority_class -eq "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY" -and
-    $inventory.terraform.local_state_original_sha256 -eq "b3321648facd8506f322b7f91ad3ad04dd8b1a017ba89124c5f382e4abd48994"
+    $inventory.terraform.representative_addresses_present -eq $true -and
+    $inventory.terraform.source_state_lineage -eq "13c78cf7-912f-cacc-74eb-15c7ee33112f" -and
+    $inventory.terraform.source_state_serial -eq 97 -and
+    $inventory.terraform.destination_state_lineage -eq "dc5223d7-8ffe-cacf-e04f-f1f42a8bc584" -and
+    $inventory.terraform.destination_state_serial -eq 1 -and
+    (Get-PropertyValue $terraformEquivalence "resources_match" $false) -eq $true -and
+    (Get-PropertyValue $terraformEquivalence "outputs_match" $false) -eq $true -and
+    (Get-PropertyValue $terraformEquivalence "non_check_state_match" $false) -eq $true -and
+    (Get-PropertyValue $terraformEquivalence "check_results_unordered_match" $false) -eq $true -and
+    (Get-PropertyValue $terraformEquivalence "check_results_count_source" -1) -eq 18 -and
+    (Get-PropertyValue $terraformEquivalence "check_results_count_destination" -1) -eq 18 -and
+    (Get-PropertyValue $terraformSourceKinds "resource" -1) -eq 1 -and
+    (Get-PropertyValue $terraformSourceKinds "var" -1) -eq 17 -and
+    (Get-PropertyValue $terraformDestinationKinds "resource" -1) -eq 1 -and
+    (Get-PropertyValue $terraformDestinationKinds "var" -1) -eq 17 -and
+    (Get-PropertyValue $terraformSourceStatuses "pass" -1) -eq 18 -and
+    (Get-PropertyValue $terraformDestinationStatuses "pass" -1) -eq 18 -and
+    $inventory.terraform.local_state_authority_class -eq "NON_AUTHORITATIVE_EMPTY_PRIMARY" -and
+    $inventory.terraform.local_state_sha256 -eq "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" -and
+    $inventory.terraform.local_state_size_bytes -eq 0 -and
+    $inventory.terraform.local_backup_present -eq $true -and
+    $inventory.terraform.local_backup_authority_class -eq "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT"
 )
 $terraformClass = if ($terraformRemoteProven) { "MATCH" } else { "LIVE_ONLY_REQUIRED" }
 Add-Comparison $comparisons "terraform_backend_and_state_identity" $terraformClass $true `
     "Terraform source plus durable state-backend identity" $(if ($terraformClass -eq "MATCH") {
-        "The versioned native-locking S3 backend, retained bucket configuration, versioned state object, default workspace, all 80 resource addresses, and non-authoritative local recovery copy are proven without reading state values."
+        "The versioned native-locking S3 backend is durable authority; all 80 remote addresses and representatives are present, accepted semantic equivalence is recorded across the lineage/serial transition, the empty local primary is non-authoritative, and the retained backup is only a recovery artifact."
     } else {
-        "Durable S3 authority is not accepted until its exact configuration and versioned state object, all 80 remote addresses, versioned use_lockfile source, and explicit local-copy demotion are proven."
+        "Durable S3 authority is not accepted until its exact configuration and versioned state object, all 80 remote addresses and representatives, complete semantic-equivalence receipt, versioned use_lockfile source, and explicit local-primary/backup demotion are proven."
     })
 
 $secretStoreProven = (

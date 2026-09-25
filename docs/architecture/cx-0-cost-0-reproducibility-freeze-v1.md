@@ -107,11 +107,19 @@ deny-non-TLS policy, and no state-version expiration.
 
 Backend bootstrap remains independent of the golden Terraform root to avoid a
 state-storage circular dependency. Bootstrap and migration are separate,
-explicitly confirmed operations. Merely declaring the backend does not close
-the recreation blocker. Closure requires the exact retained bucket controls,
-a versioned state object, remote enumeration of all 80 resource addresses,
-versioned source authority for native S3 locking, and a receipt that demotes
-the preserved local state to `NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY`.
+explicitly confirmed operations. The completed migration is accepted without
+requiring destination lineage or serial equality: its receipt preserves source
+lineage/serial and destination lineage/serial while requiring resource,
+output, non-check-state, and unordered check-result equivalence. The receipt
+stores no state payload or secret value.
+
+Closure additionally requires the exact retained bucket controls, a versioned
+AES256 state object, remote enumeration of all 80 resource addresses and the
+five expected representatives, versioned source authority for native S3
+locking, and explicit local demotion. The zero-byte local primary is
+`NON_AUTHORITATIVE_EMPTY_PRIMARY`; the retained `.backup` is only
+`NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT`. The S3 object remains
+`DURABLE_EXTERNAL_AUTHORITY`.
 
 ## Stable fingerprints
 

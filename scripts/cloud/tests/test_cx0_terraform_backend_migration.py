@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import base64
 import hashlib
 import json
 import re
@@ -91,6 +92,65 @@ $lockExists = @($objects | Where-Object {{ $_.Key -eq $LockKey }}).Count -gt 0
     if result.returncode != 0:
         raise AssertionError(result.stdout + result.stderr)
     return json.loads(result.stdout)
+
+
+def accepted_migration_receipt() -> dict[str, object]:
+    return {
+        "schema_version": "cx0a.terraform-migration-receipt.v2",
+        "backend_type": "s3",
+        "backend_bucket": BUCKET,
+        "backend_key": KEY,
+        "remote_state_authority": "DURABLE_EXTERNAL_AUTHORITY",
+        "state_object_encryption": "AES256",
+        "source_state_lineage": "13c78cf7-912f-cacc-74eb-15c7ee33112f",
+        "source_state_serial": 97,
+        "destination_state_lineage": "dc5223d7-8ffe-cacf-e04f-f1f42a8bc584",
+        "destination_state_serial": 1,
+        "state_payloads_stored": False,
+        "secret_values_stored": False,
+        "migration_semantic_equivalence": {
+            "resources_match": True,
+            "outputs_match": True,
+            "non_check_state_match": True,
+            "check_results_unordered_match": True,
+            "check_results_count_source": 18,
+            "check_results_count_destination": 18,
+            "check_results_kinds_source": {"resource": 1, "var": 17},
+            "check_results_kinds_destination": {"resource": 1, "var": 17},
+            "check_results_statuses_source": {"pass": 18},
+            "check_results_statuses_destination": {"pass": 18},
+        },
+    }
+
+
+def receipt_contract_result(receipt: dict[str, object]) -> bool:
+    source = text(INVENTORY)
+    match = re.search(
+        r"function Get-PropertyValue \{.*?\n\}\n\nfunction Test-TerraformMigrationReceiptContract \{.*?\n\}\n\nfunction Get-Sha256Text",
+        source,
+        re.DOTALL,
+    )
+    if match is None:
+        raise AssertionError("Terraform migration receipt validator was not found")
+    function_source = match.group(0).rsplit("\n\nfunction Get-Sha256Text", 1)[0]
+    encoded = base64.b64encode(json.dumps(receipt).encode("utf-8")).decode("ascii")
+    script = f"""
+Set-StrictMode -Version Latest
+{function_source}
+$json = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("{encoded}"))
+$receipt = $json | ConvertFrom-Json -Depth 30
+Test-TerraformMigrationReceiptContract $receipt | ConvertTo-Json -Compress
+"""
+    result = subprocess.run(
+        ["pwsh", "-NoProfile", "-NonInteractive", "-Command", script],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        raise AssertionError(result.stdout + result.stderr)
+    return bool(json.loads(result.stdout))
 
 
 class ExactBucket:
@@ -210,7 +270,7 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
     def test_precheck_is_independent_of_initialized_backend(self) -> None:
         source = text(MIGRATION)
         match = re.search(
-            r"function Invoke-Precheck \{(.*?)\n\}\n\nfunction Invoke-PostMigrationVerification",
+            r"function Invoke-Precheck \{(.*?)\n\}\n\nfunction Get-RemoteStateMetadata",
             source,
             re.DOTALL,
         )
@@ -250,31 +310,69 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
         self.assertTrue(result["lock_object_exists"])
         self.assertFalse(result["precheck_can_continue"])
 
-    def test_real_local_state_emits_only_approved_metadata(self) -> None:
-        result = INSPECTOR.inspect_accepted_state()
-        self.assertEqual(80, result["resource_address_count"])
-        self.assertTrue(result["all_representative_addresses_present"])
-        self.assertFalse(result["raw_state_emitted"])
-        self.assertFalse(result["resource_attributes_emitted"])
-        self.assertFalse(result["outputs_emitted"])
-        self.assertEqual(
-            {
-                "state_format_version",
-                "terraform_version",
-                "lineage",
-                "serial",
-                "resource_address_count",
-                "representative_addresses_present",
-                "all_representative_addresses_present",
-                "local_state_sha256",
-                "local_state_size_bytes",
-                "state_payload_read_in_memory",
-                "raw_state_emitted",
-                "resource_attributes_emitted",
-                "outputs_emitted",
-            },
-            set(result),
+    def test_lineage_change_and_destination_serial_restart_are_accepted(self) -> None:
+        receipt = accepted_migration_receipt()
+        self.assertNotEqual(receipt["source_state_lineage"], receipt["destination_state_lineage"])
+        self.assertEqual(97, receipt["source_state_serial"])
+        self.assertEqual(1, receipt["destination_state_serial"])
+        self.assertTrue(receipt_contract_result(receipt))
+
+    def test_resource_output_and_non_check_equivalence_are_mandatory(self) -> None:
+        for field in ("resources_match", "outputs_match", "non_check_state_match"):
+            receipt = accepted_migration_receipt()
+            receipt["migration_semantic_equivalence"][field] = False
+            self.assertFalse(receipt_contract_result(receipt), field)
+
+    def test_check_result_order_only_difference_is_accepted(self) -> None:
+        receipt = accepted_migration_receipt()
+        equivalence = receipt["migration_semantic_equivalence"]
+        self.assertTrue(equivalence["check_results_unordered_match"])
+        self.assertTrue(receipt_contract_result(receipt))
+
+    def test_different_check_result_contents_are_rejected(self) -> None:
+        variants = []
+        unordered = accepted_migration_receipt()
+        unordered["migration_semantic_equivalence"]["check_results_unordered_match"] = False
+        variants.append(unordered)
+        count = accepted_migration_receipt()
+        count["migration_semantic_equivalence"]["check_results_count_destination"] = 17
+        variants.append(count)
+        kinds = accepted_migration_receipt()
+        kinds["migration_semantic_equivalence"]["check_results_kinds_destination"]["var"] = 16
+        variants.append(kinds)
+        statuses = accepted_migration_receipt()
+        statuses["migration_semantic_equivalence"]["check_results_statuses_destination"]["pass"] = 17
+        variants.append(statuses)
+        for receipt in variants:
+            self.assertFalse(receipt_contract_result(receipt))
+
+    def test_reconcile_mode_cannot_rerun_state_migration(self) -> None:
+        source = text(MIGRATION)
+        match = re.search(
+            r'if \(\$Mode -eq "RECONCILE"\) \{(.*?)\n\}\n\nif \(-not \$ExecuteMigration',
+            source,
+            re.DOTALL,
         )
+        self.assertIsNotNone(match)
+        reconcile = match.group(1)
+        self.assertNotIn("-migrate-state", reconcile)
+        self.assertNotRegex(reconcile, r'&\s*terraform[^\n]*\binit\b')
+        self.assertIn("Get-RemoteStateMetadata", reconcile)
+        self.assertIn("New-AcceptedMigrationReceipt", reconcile)
+
+    def test_empty_post_migration_local_primary_is_non_authoritative(self) -> None:
+        payload = b""
+        self.assertEqual(b"", payload)
+        self.assertEqual(
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            hashlib.sha256(payload).hexdigest(),
+        )
+        combined = text(MIGRATION) + "\n" + text(INVENTORY) + "\n" + text(COMPARATOR)
+        self.assertIn("NON_AUTHORITATIVE_EMPTY_PRIMARY", combined)
+        self.assertIn('$localPrimarySize -eq 0', text(INVENTORY))
+        self.assertIn("NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT", combined)
+        self.assertIn("remote_state_authority_class", combined)
+        self.assertNotIn("local_state_original_sha256", text(INVENTORY) + "\n" + text(COMPARATOR))
 
     def test_inspector_does_not_project_arbitrary_state_fields(self) -> None:
         state = {
@@ -331,7 +429,12 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
             "$ExpectedResourceCount = 80",
             "backend state object already exists before first migration",
             "unexpected Terraform lock object exists",
-            "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY",
+            "NON_AUTHORITATIVE_EMPTY_PRIMARY",
+            "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT",
+            "DURABLE_EXTERNAL_AUTHORITY",
+            "source_state_lineage",
+            "destination_state_lineage",
+            "migration_semantic_equivalence",
             "state_object_version_id",
             "aws_vpc.golden",
             "aws_eks_cluster.golden",
@@ -352,7 +455,13 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
             "state_object_version_id",
             "resource_address_count -eq 80",
             "use_lockfile",
-            "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY",
+            "NON_AUTHORITATIVE_EMPTY_PRIMARY",
+            "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT",
+            "DURABLE_EXTERNAL_AUTHORITY",
+            "resources_match",
+            "outputs_match",
+            "non_check_state_match",
+            "check_results_unordered_match",
         ):
             self.assertIn(marker, combined)
 
@@ -364,7 +473,8 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
             "DURABLE_EXTERNAL_AUTHORITY",
             "COST_0_RETAIN",
             "DO_NOT_DELETE_DURING_CX_0B",
-            "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY",
+            "NON_AUTHORITATIVE_EMPTY_PRIMARY",
+            "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT",
         ):
             self.assertIn(marker, combined)
 

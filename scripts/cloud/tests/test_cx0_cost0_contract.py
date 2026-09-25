@@ -234,7 +234,9 @@ class Cx0Cost0ContractTests(unittest.TestCase):
             "Durable S3 authority is not accepted until",
             comparator,
         )
-        self.assertIn("NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY", inventory + comparator)
+        self.assertIn("NON_AUTHORITATIVE_EMPTY_PRIMARY", inventory + comparator)
+        self.assertIn("NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT", inventory + comparator)
+        self.assertIn("DURABLE_EXTERNAL_AUTHORITY", inventory + comparator)
 
     def test_secretstore_recovery_requires_all_independent_authority_gates(self) -> None:
         inventory = text(INVENTORY)

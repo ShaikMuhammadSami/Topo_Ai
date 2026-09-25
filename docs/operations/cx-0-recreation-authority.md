@@ -69,13 +69,31 @@ booleans for the five approved representative addresses. Raw JSON, outputs,
 attributes, provider data, and values are never emitted. Backend-dependent
 `workspace show` and `state list` are reserved for post-migration verification.
 
-After a separately authorized migration, acceptance requires a versioned S3
-state object, successful remote enumeration of exactly 80 addresses including
-the representative VPC/EKS/RDS/ALB/ECR addresses, a clean native lock, and a
-safe migration receipt. The original local file is retained and classified
-`NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY`; migration does not delete it. At the
-time this contract was implemented, neither bucket creation nor state
-migration had been executed.
+The migration is now accepted. Terraform assigned a new destination lineage
+and restarted the destination serial; neither is required to equal the source
+identity. The safe receipt preserves both identities:
+
+```ini
+SOURCE_STATE_LINEAGE=13c78cf7-912f-cacc-74eb-15c7ee33112f
+SOURCE_STATE_SERIAL=97
+DESTINATION_STATE_LINEAGE=dc5223d7-8ffe-cacf-e04f-f1f42a8bc584
+DESTINATION_STATE_SERIAL=1
+REMOTE_STATE_VERSION_ID=Zq_uCrcG0Z51r_Qbho9lvn0QZ8AtA2.Z
+REMOTE_STATE_ENCRYPTION=AES256
+```
+
+Acceptance is semantic rather than lineage equality: resources, outputs, and
+all non-check state matched exactly; the 18 check results matched as an
+unordered collection with identical `resource:1,var:17` kinds and `pass:18`
+statuses. No state payload or secret value is retained in the receipt.
+
+The versioned S3 object is `DURABLE_EXTERNAL_AUTHORITY`. Remote verification
+enumerates exactly 80 addresses including the representative VPC/EKS/RDS/ALB/
+ECR addresses. Terraform left the local primary as a zero-byte file with
+SHA-256 `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`;
+it is `NON_AUTHORITATIVE_EMPTY_PRIMARY`. The retained `.backup` file is only
+`NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT` and must not be copied back over
+the primary or treated as current authority.
 
 ## SecretStore recovery custody
 

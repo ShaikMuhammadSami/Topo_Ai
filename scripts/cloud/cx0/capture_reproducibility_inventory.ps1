@@ -169,7 +169,8 @@ function Invoke-KubectlReadOnlyText {
     if ($script:KubernetesReadOnlyOperations -notcontains $OperationKey) {
         throw "Kubernetes operation is not in the CX-0A read-only allowlist: $OperationKey"
     }
-    return Invoke-NativeCapture -FilePath "kubectl" -ArgumentList $Arguments -SafeDescription "Kubernetes read-only $OperationKey"
+    $contextBoundArguments = @("--context", $ExpectedCluster) + $Arguments
+    return Invoke-NativeCapture -FilePath "kubectl" -ArgumentList $contextBoundArguments -SafeDescription "Kubernetes read-only $OperationKey"
 }
 
 function Invoke-KubectlGetJson {
@@ -196,6 +197,42 @@ function Get-PropertyValue {
     $property = $InputObject.PSObject.Properties[$Name]
     if ($null -eq $property) { return $Default }
     return $property.Value
+}
+
+function Test-TerraformMigrationReceiptContract {
+    param([AllowNull()][object]$Receipt)
+
+    $semantic = Get-PropertyValue $Receipt "migration_semantic_equivalence"
+    $sourceKinds = Get-PropertyValue $semantic "check_results_kinds_source"
+    $destinationKinds = Get-PropertyValue $semantic "check_results_kinds_destination"
+    $sourceStatuses = Get-PropertyValue $semantic "check_results_statuses_source"
+    $destinationStatuses = Get-PropertyValue $semantic "check_results_statuses_destination"
+    return (
+        (Get-PropertyValue $Receipt "schema_version") -eq "cx0a.terraform-migration-receipt.v2" -and
+        (Get-PropertyValue $Receipt "backend_type") -eq "s3" -and
+        (Get-PropertyValue $Receipt "backend_bucket") -eq "topo-tfstate-297361542190-us-east-1" -and
+        (Get-PropertyValue $Receipt "backend_key") -eq "golden/terraform.tfstate" -and
+        (Get-PropertyValue $Receipt "remote_state_authority") -eq "DURABLE_EXTERNAL_AUTHORITY" -and
+        (Get-PropertyValue $Receipt "state_object_encryption") -eq "AES256" -and
+        (Get-PropertyValue $Receipt "source_state_lineage") -eq "13c78cf7-912f-cacc-74eb-15c7ee33112f" -and
+        (Get-PropertyValue $Receipt "source_state_serial" -1) -eq 97 -and
+        (Get-PropertyValue $Receipt "destination_state_lineage") -eq "dc5223d7-8ffe-cacf-e04f-f1f42a8bc584" -and
+        (Get-PropertyValue $Receipt "destination_state_serial" -1) -eq 1 -and
+        (Get-PropertyValue $Receipt "state_payloads_stored" $true) -eq $false -and
+        (Get-PropertyValue $Receipt "secret_values_stored" $true) -eq $false -and
+        (Get-PropertyValue $semantic "resources_match" $false) -eq $true -and
+        (Get-PropertyValue $semantic "outputs_match" $false) -eq $true -and
+        (Get-PropertyValue $semantic "non_check_state_match" $false) -eq $true -and
+        (Get-PropertyValue $semantic "check_results_unordered_match" $false) -eq $true -and
+        (Get-PropertyValue $semantic "check_results_count_source" -1) -eq 18 -and
+        (Get-PropertyValue $semantic "check_results_count_destination" -1) -eq 18 -and
+        (Get-PropertyValue $sourceKinds "resource" -1) -eq 1 -and
+        (Get-PropertyValue $sourceKinds "var" -1) -eq 17 -and
+        (Get-PropertyValue $destinationKinds "resource" -1) -eq 1 -and
+        (Get-PropertyValue $destinationKinds "var" -1) -eq 17 -and
+        (Get-PropertyValue $sourceStatuses "pass" -1) -eq 18 -and
+        (Get-PropertyValue $destinationStatuses "pass" -1) -eq 18
+    )
 }
 
 function Get-Sha256Text {
@@ -649,11 +686,9 @@ if ([string](Get-PropertyValue $identity "Account") -ne $ExpectedAccount) {
     throw "STOP: expected AWS account 297361542190"
 }
 
-$kubeContext = Invoke-KubectlReadOnlyText "config current-context" @("config", "current-context")
-if ($kubeContext -ne $ExpectedCluster) {
-    throw "STOP: expected topo-golden"
-}
 $kubeConfig = (Invoke-KubectlReadOnlyText "config view" @("config", "view", "--minify", "--output", "json")) | ConvertFrom-Json -Depth 50
+$kubeContext = [string](Get-PropertyValue $kubeConfig "current-context")
+if ($kubeContext -ne $ExpectedCluster) { throw "STOP: expected topo-golden" }
 
 $clusterResponse = Invoke-AwsReadOnlyJson "eks" "describe-cluster" @("--name", $ClusterName)
 $cluster = Get-PropertyValue $clusterResponse "cluster"
@@ -1384,6 +1419,7 @@ $backendMatch = [regex]::Match($versionsSource, 'backend\s+"([^"]+)"')
 $backendType = if ($backendMatch.Success) { $backendMatch.Groups[1].Value } else { "local" }
 $lockPath = Join-Path $TerraformRoot ".terraform.lock.hcl"
 $localStatePath = Join-Path $TerraformRoot "terraform.tfstate"
+$localBackupStatePath = Join-Path $TerraformRoot "terraform.tfstate.backup"
 $backendBucket = "topo-tfstate-297361542190-us-east-1"
 $backendKey = "golden/terraform.tfstate"
 $backendRegion = "us-east-1"
@@ -1439,15 +1475,40 @@ if (Test-Path -LiteralPath $TerraformMigrationReceipt -PathType Leaf) {
         Add-UniqueText $unknowns "TERRAFORM_MIGRATION_RECEIPT_INVALID"
     }
 }
+$semanticEquivalence = Get-PropertyValue $migrationReceipt "migration_semantic_equivalence"
+$receiptContractProven = Test-TerraformMigrationReceiptContract $migrationReceipt
+$localPrimaryReceipt = Get-PropertyValue $migrationReceipt "local_primary"
+$localBackupReceipt = Get-PropertyValue $migrationReceipt "local_backup"
+$localPrimaryExists = Test-Path -LiteralPath $localStatePath -PathType Leaf
+$localBackupExists = Test-Path -LiteralPath $localBackupStatePath -PathType Leaf
+$localPrimarySize = if ($localPrimaryExists) { (Get-Item -LiteralPath $localStatePath).Length } else { $null }
+$localPrimarySha256 = if ($localPrimaryExists) { Get-FileSha256 $localStatePath } else { $null }
+$localBackupSha256 = if ($localBackupExists) { Get-FileSha256 $localBackupStatePath } else { $null }
 $localStateNonAuthoritative = (
-    $null -ne $migrationReceipt -and
-    (Get-PropertyValue $migrationReceipt "backend_type") -eq "s3" -and
-    (Get-PropertyValue $migrationReceipt "backend_bucket") -eq $backendBucket -and
-    (Get-PropertyValue $migrationReceipt "backend_key") -eq $backendKey -and
-    (Get-PropertyValue $migrationReceipt "local_recovery_copy_classification") -eq "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY" -and
-    (Get-PropertyValue $migrationReceipt "local_recovery_copy_original_sha256") -eq "b3321648facd8506f322b7f91ad3ad04dd8b1a017ba89124c5f382e4abd48994" -and
-    (Get-PropertyValue $migrationReceipt "local_recovery_copy_deleted" $true) -eq $false
+    $receiptContractProven -and
+    $localPrimaryExists -and
+    $localPrimarySize -eq 0 -and
+    $localPrimarySha256 -eq "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855" -and
+    (Get-PropertyValue $localPrimaryReceipt "classification") -eq "NON_AUTHORITATIVE_EMPTY_PRIMARY" -and
+    (Get-PropertyValue $localPrimaryReceipt "authoritative" $true) -eq $false -and
+    (Get-PropertyValue $localPrimaryReceipt "sha256") -eq $localPrimarySha256 -and
+    (Get-PropertyValue $localPrimaryReceipt "deleted" $true) -eq $false -and
+    $localBackupExists -and
+    (Get-PropertyValue $localBackupReceipt "classification") -eq "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT" -and
+    (Get-PropertyValue $localBackupReceipt "authoritative" $true) -eq $false -and
+    (Get-PropertyValue $localBackupReceipt "sha256") -eq $localBackupSha256 -and
+    (Get-PropertyValue $localBackupReceipt "deleted" $true) -eq $false
 )
+$representativeAddresses = @(
+    "aws_vpc.golden",
+    "aws_eks_cluster.golden",
+    "aws_db_instance.postgres",
+    "aws_lb.edge",
+    "aws_ecr_repository.topo"
+)
+$representativeAddressesPresent = @(
+    $representativeAddresses | Where-Object { $terraformAddresses -contains $_ }
+).Count -eq $representativeAddresses.Count
 $remoteStateProven = (
     $backendSourceContract -and
     $backendSourceVersioned -and
@@ -1456,9 +1517,11 @@ $remoteStateProven = (
     (Get-PropertyValue $backendInspection "configuration_matches" $false) -eq $true -and
     (Get-PropertyValue $backendInspection "state_object_exists" $false) -eq $true -and
     -not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue $backendInspection "state_object_version_id")) -and
+    (Get-PropertyValue $migrationReceipt "state_object_version_id") -eq (Get-PropertyValue $backendInspection "state_object_version_id") -and
     (Get-PropertyValue $backendInspection "lock_object_exists" $true) -eq $false -and
     $terraformWorkspace -eq "default" -and
     $terraformAddresses.Count -eq 80 -and
+    $representativeAddressesPresent -and
     $localStateNonAuthoritative
 )
 $terraform = [pscustomobject]@{
@@ -1469,6 +1532,7 @@ $terraform = [pscustomobject]@{
     backend_source_file = "infrastructure/aws/golden/versions.tf"
     backend_location_class = if ($remoteStateProven) { "DURABLE_EXTERNAL_AUTHORITY" } elseif ($backendType -eq "local") { "LOCAL_WORKING_COPY" } else { "UNPROVEN_REMOTE_AUTHORITY" }
     backend_durable = $remoteStateProven
+    remote_state_authority_class = if ($remoteStateProven) { "DURABLE_EXTERNAL_AUTHORITY" } else { "UNPROVEN_REMOTE_AUTHORITY" }
     backend_bucket = $backendBucket
     backend_key = $backendKey
     backend_region = $backendRegion
@@ -1481,13 +1545,23 @@ $terraform = [pscustomobject]@{
     state_object_exists = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "state_object_exists" $false } else { $false }
     state_object_version_id = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "state_object_version_id" } else { $null }
     lock_object_exists = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "lock_object_exists" $false } else { $false }
-    local_state_file_present = Test-Path -LiteralPath $localStatePath -PathType Leaf
-    local_state_authority_class = if ($localStateNonAuthoritative) { "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY" } else { "UNRECONCILED_LOCAL_AUTHORITY" }
-    local_state_original_sha256 = if ($null -ne $migrationReceipt) { Get-PropertyValue $migrationReceipt "local_recovery_copy_original_sha256" } else { $null }
+    local_state_file_present = $localPrimaryExists
+    local_state_authority_class = if ($localStateNonAuthoritative) { "NON_AUTHORITATIVE_EMPTY_PRIMARY" } else { "UNRECONCILED_LOCAL_AUTHORITY" }
+    local_state_sha256 = $localPrimarySha256
+    local_state_size_bytes = $localPrimarySize
+    local_backup_present = $localBackupExists
+    local_backup_authority_class = if ($localStateNonAuthoritative) { "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT" } else { "UNRECONCILED_LOCAL_AUTHORITY" }
+    local_backup_sha256 = $localBackupSha256
+    source_state_lineage = Get-PropertyValue $migrationReceipt "source_state_lineage"
+    source_state_serial = Get-PropertyValue $migrationReceipt "source_state_serial"
+    destination_state_lineage = Get-PropertyValue $migrationReceipt "destination_state_lineage"
+    destination_state_serial = Get-PropertyValue $migrationReceipt "destination_state_serial"
+    migration_semantic_equivalence = $semanticEquivalence
     migration_receipt_present = $null -ne $migrationReceipt
     workspace = $terraformWorkspace
     resource_addresses = $terraformAddresses
     resource_address_count = $terraformAddresses.Count
+    representative_addresses_present = $representativeAddressesPresent
     state_values_read = $false
     source = $source.terraform
 }

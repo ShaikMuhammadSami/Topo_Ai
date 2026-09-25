@@ -133,10 +133,21 @@
         "state_object_exists",
         "state_object_version_id",
         "lock_object_exists",
+        "remote_state_authority_class",
         "local_state_authority_class",
-        "local_state_original_sha256",
+        "local_state_sha256",
+        "local_state_size_bytes",
+        "local_backup_present",
+        "local_backup_authority_class",
+        "local_backup_sha256",
+        "source_state_lineage",
+        "source_state_serial",
+        "destination_state_lineage",
+        "destination_state_serial",
+        "migration_semantic_equivalence",
         "workspace",
         "resource_address_count",
+        "representative_addresses_present",
         "state_values_read"
       ],
       "properties": {
@@ -153,12 +164,54 @@
         "state_object_exists": { "type": "boolean" },
         "state_object_version_id": { "type": ["string", "null"] },
         "lock_object_exists": { "type": "boolean" },
-        "local_state_authority_class": {
-          "enum": ["UNRECONCILED_LOCAL_AUTHORITY", "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY"]
+        "remote_state_authority_class": {
+          "enum": ["UNPROVEN_REMOTE_AUTHORITY", "DURABLE_EXTERNAL_AUTHORITY"]
         },
-        "local_state_original_sha256": { "type": ["string", "null"] },
+        "local_state_authority_class": {
+          "enum": ["UNRECONCILED_LOCAL_AUTHORITY", "NON_AUTHORITATIVE_EMPTY_PRIMARY"]
+        },
+        "local_state_sha256": { "type": ["string", "null"] },
+        "local_state_size_bytes": { "type": ["integer", "null"], "minimum": 0 },
+        "local_backup_present": { "type": "boolean" },
+        "local_backup_authority_class": {
+          "enum": ["UNRECONCILED_LOCAL_AUTHORITY", "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT"]
+        },
+        "local_backup_sha256": { "type": ["string", "null"] },
+        "source_state_lineage": { "type": ["string", "null"] },
+        "source_state_serial": { "type": ["integer", "null"], "minimum": 0 },
+        "destination_state_lineage": { "type": ["string", "null"] },
+        "destination_state_serial": { "type": ["integer", "null"], "minimum": 0 },
+        "migration_semantic_equivalence": {
+          "type": ["object", "null"],
+          "required": [
+            "resources_match",
+            "outputs_match",
+            "non_check_state_match",
+            "check_results_unordered_match",
+            "check_results_count_source",
+            "check_results_count_destination",
+            "check_results_kinds_source",
+            "check_results_kinds_destination",
+            "check_results_statuses_source",
+            "check_results_statuses_destination"
+          ],
+          "properties": {
+            "resources_match": { "type": "boolean" },
+            "outputs_match": { "type": "boolean" },
+            "non_check_state_match": { "type": "boolean" },
+            "check_results_unordered_match": { "type": "boolean" },
+            "check_results_count_source": { "type": "integer", "minimum": 0 },
+            "check_results_count_destination": { "type": "integer", "minimum": 0 },
+            "check_results_kinds_source": { "type": "object" },
+            "check_results_kinds_destination": { "type": "object" },
+            "check_results_statuses_source": { "type": "object" },
+            "check_results_statuses_destination": { "type": "object" }
+          },
+          "additionalProperties": false
+        },
         "workspace": { "type": ["string", "null"] },
         "resource_address_count": { "type": "integer", "minimum": 0 },
+        "representative_addresses_present": { "type": "boolean" },
         "state_values_read": { "const": false }
       },
       "additionalProperties": true

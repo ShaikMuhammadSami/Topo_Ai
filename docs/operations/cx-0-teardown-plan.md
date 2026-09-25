@@ -18,7 +18,7 @@ contract is written.
 | Final RDS snapshot | future proof | immutable artifact | retain | retain | storage | RDS snapshot ARN | proven restore | retained and encrypted |
 | SecretStore recovery keyring | `arn:aws:secretsmanager:us-east-1:297361542190:secret:topo/golden/recovery/secret-store-keyring-v1-Y8D1I4` | durable external authority | retain before/during/after all runtime and database actions | retain; `COST_0_RETAIN`; `DO_NOT_DELETE_DURING_CX_0B` | low/storage | exact binary keyring fingerprint plus documented recovery procedure | fingerprint and active key ID remain verified | object ARN retained and fingerprint unchanged |
 | Domain and ACM validation record | Porkbun/ACM | external authority | retain unless intentional retirement | retain | low/no runtime | domain/certificate custody | explicit certificate strategy | authoritative records verified |
-| Terraform backend/state | `s3://topo-tfstate-297361542190-us-east-1/golden/terraform.tfstate` | bootstrap utility plus versioned S3 authority, independent of golden root state | retain before/during/after every runtime teardown action | retain; `COST_0_RETAIN`; `DO_NOT_DELETE_DURING_CX_0B` | low/storage | versioned private S3, SSE-S3, native `use_lockfile` | exact bucket controls, state VersionId, 80 remote addresses, and migration receipt verified | state identity readable without object body; local copy remains non-authoritative recovery copy |
+| Terraform backend/state | `s3://topo-tfstate-297361542190-us-east-1/golden/terraform.tfstate` | accepted versioned S3 durable authority, independent of golden root state | retain before/during/after every runtime teardown action | retain; `COST_0_RETAIN`; `DO_NOT_DELETE_DURING_CX_0B` | low/storage | versioned private S3, SSE-S3, native `use_lockfile` | exact bucket controls, state VersionId, 80 remote addresses, representatives, and semantic-equivalence receipt verified | remote state remains readable without object-body output; empty local primary is non-authoritative and `.backup` remains only a recovery artifact |
 
 The live inventory is authoritative for completeness and may add resources.
 No row is permission to act. The final plan must have one reviewed row per live
@@ -28,6 +28,6 @@ resource, with exact identifiers and dependency order, before CX-0B review.
 
 The Terraform backend bucket and every noncurrent state version are outside
 CX-0B deletion authority. No lifecycle expiration is permitted by this
-contract. The S3 backend row becomes proven only after the separately guarded
-migration has completed; source configuration alone is not durable state
-authority.
+contract. Migration is accepted by semantic equivalence across the source and
+destination lineage/serial transition. The zero-byte local primary must not be
+restored from `.backup`; neither local file is current state authority.

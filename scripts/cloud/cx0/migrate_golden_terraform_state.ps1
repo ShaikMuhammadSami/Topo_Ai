@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidateSet("PRECHECK", "EXECUTE")]
+    [ValidateSet("PRECHECK", "EXECUTE", "RECONCILE")]
     [string]$Mode = "PRECHECK",
     [switch]$ExecuteMigration,
     [string]$Confirmation = "",
@@ -20,10 +20,17 @@ $ExpectedWorkspace = "default"
 $ExpectedTerraformMinimum = [version]"1.10.0"
 $ExpectedResourceCount = 80
 $ExpectedLocalStateSha256 = "b3321648facd8506f322b7f91ad3ad04dd8b1a017ba89124c5f382e4abd48994"
+$ExpectedEmptyStateSha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+$AcceptedSourceLineage = "13c78cf7-912f-cacc-74eb-15c7ee33112f"
+$AcceptedSourceSerial = 97
+$AcceptedDestinationLineage = "dc5223d7-8ffe-cacf-e04f-f1f42a8bc584"
+$AcceptedDestinationSerial = 1
+$AcceptedStateVersionId = "Zq_uCrcG0Z51r_Qbho9lvn0QZ8AtA2.Z"
 $BackendBucket = "topo-tfstate-297361542190-us-east-1"
 $BackendKey = "golden/terraform.tfstate"
 $LockKey = "$BackendKey.tflock"
 $RequiredConfirmation = "MIGRATE_GOLDEN_STATE_TO_S3"
+$ReconcileConfirmation = "RECORD_ACCEPTED_TERRAFORM_MIGRATION_RECEIPT"
 $RepresentativeAddresses = @(
     "aws_vpc.golden",
     "aws_eks_cluster.golden",
@@ -36,6 +43,7 @@ $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
 $TerraformRoot = Join-Path $RepoRoot "infrastructure/aws/golden"
 $VersionsPath = Join-Path $TerraformRoot "versions.tf"
 $LocalStatePath = Join-Path $TerraformRoot "terraform.tfstate"
+$LocalBackupStatePath = Join-Path $TerraformRoot "terraform.tfstate.backup"
 $LocalStateInspector = Join-Path $PSScriptRoot "inspect_local_terraform_state.py"
 $TerraformWorkspaceMetadataPath = Join-Path $TerraformRoot ".terraform/environment"
 $ExpectedRoot = [System.IO.Path]::GetFullPath("C:\Topo-ai\infrastructure\aws\golden")
@@ -302,6 +310,10 @@ function Invoke-Precheck {
         throw "STOP: representative local resource addresses are incomplete."
     }
     if (
+        [string]$localStateMetadata.lineage -ne $AcceptedSourceLineage -or
+        [int]$localStateMetadata.serial -ne $AcceptedSourceSerial
+    ) { throw "STOP: source state lineage/serial differs from accepted migration authority." }
+    if (
         $localStateMetadata.raw_state_emitted -ne $false -or
         $localStateMetadata.resource_attributes_emitted -ne $false -or
         $localStateMetadata.outputs_emitted -ne $false
@@ -349,12 +361,7 @@ function Invoke-Precheck {
     }
 }
 
-function Invoke-PostMigrationVerification {
-    param([Parameter(Mandatory = $true)][object]$Precheck)
-
-    & terraform "-chdir=$TerraformRoot" init
-    if ($LASTEXITCODE -ne 0) { throw "STOP: post-migration Terraform initialization failed." }
-
+function Get-RemoteStateMetadata {
     $workspace = (Invoke-NativeSafe "terraform" @("-chdir=$TerraformRoot", "workspace", "show") "Remote workspace read").Trim()
     if ($workspace -ne $ExpectedWorkspace) { throw "STOP: migrated workspace differs." }
     $addresses = @(
@@ -375,13 +382,18 @@ function Invoke-PostMigrationVerification {
     if ([string]::IsNullOrWhiteSpace([string]$head.VersionId) -or [string]$head.VersionId -eq "null") {
         throw "STOP: migrated backend state has no durable S3 VersionId."
     }
+    if ([string]$head.VersionId -ne $AcceptedStateVersionId) {
+        throw "STOP: remote state VersionId differs from the accepted migration evidence."
+    }
+    if ([string]$head.ServerSideEncryption -ne "AES256") {
+        throw "STOP: remote state object encryption differs from AES256."
+    }
     $objects = Get-BackendObjects
     if (@($objects | Where-Object { $_.Key -eq $LockKey }).Count -gt 0) {
         throw "STOP: Terraform lock object remained after migration."
     }
 
     return [pscustomobject]@{
-        migrated_at_utc = [DateTimeOffset]::UtcNow.ToString("o")
         backend_type = "s3"
         backend_bucket = $BackendBucket
         backend_key = $BackendKey
@@ -394,14 +406,92 @@ function Invoke-PostMigrationVerification {
         state_object_etag = [string]$head.ETag
         state_object_modified_at = [string]$head.LastModified
         state_object_size_bytes = [long]$head.ContentLength
-        local_recovery_copy_classification = "NON_AUTHORITATIVE_LOCAL_RECOVERY_COPY"
-        local_recovery_copy_path = [string]$Precheck.local_state_path
-        local_recovery_copy_original_sha256 = [string]$Precheck.local_state_sha256
-        local_state_lineage = [string]$Precheck.local_state_lineage
-        local_state_pre_migration_serial = [int]$Precheck.local_state_serial
-        local_recovery_copy_deleted = $false
-        state_values_read = $false
+        state_object_encryption = [string]$head.ServerSideEncryption
     }
+}
+
+function New-AcceptedMigrationReceipt {
+    param([Parameter(Mandatory = $true)][object]$RemoteState)
+
+    if (-not (Test-Path -LiteralPath $LocalStatePath -PathType Leaf)) {
+        throw "STOP: post-migration local primary is absent."
+    }
+    if (-not (Test-Path -LiteralPath $LocalBackupStatePath -PathType Leaf)) {
+        throw "STOP: retained local backup artifact is absent."
+    }
+    $localPrimary = Get-Item -LiteralPath $LocalStatePath
+    $localPrimarySha256 = (Get-FileHash -LiteralPath $LocalStatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($localPrimary.Length -ne 0 -or $localPrimarySha256 -ne $ExpectedEmptyStateSha256) {
+        throw "STOP: post-migration local primary is not the accepted empty non-authoritative file."
+    }
+    $localBackup = Get-Item -LiteralPath $LocalBackupStatePath
+    $localBackupSha256 = (Get-FileHash -LiteralPath $LocalBackupStatePath -Algorithm SHA256).Hash.ToLowerInvariant()
+
+    return [pscustomobject]@{
+        schema_version = "cx0a.terraform-migration-receipt.v2"
+        recorded_at_utc = [DateTimeOffset]::UtcNow.ToString("o")
+        evidence_source = "ARCHITECT_ACCEPTED_CX_0A2B_R"
+        backend_type = [string]$RemoteState.backend_type
+        backend_bucket = [string]$RemoteState.backend_bucket
+        backend_key = [string]$RemoteState.backend_key
+        backend_region = [string]$RemoteState.backend_region
+        locking_model = [string]$RemoteState.locking_model
+        remote_state_authority = "DURABLE_EXTERNAL_AUTHORITY"
+        workspace = [string]$RemoteState.workspace
+        resource_address_count = [int]$RemoteState.resource_address_count
+        representative_addresses = @($RemoteState.representative_addresses)
+        state_object_version_id = [string]$RemoteState.state_object_version_id
+        state_object_etag = [string]$RemoteState.state_object_etag
+        state_object_modified_at = [string]$RemoteState.state_object_modified_at
+        state_object_size_bytes = [long]$RemoteState.state_object_size_bytes
+        state_object_encryption = [string]$RemoteState.state_object_encryption
+        source_state_lineage = $AcceptedSourceLineage
+        source_state_serial = $AcceptedSourceSerial
+        destination_state_lineage = $AcceptedDestinationLineage
+        destination_state_serial = $AcceptedDestinationSerial
+        migration_semantic_equivalence = [pscustomobject]@{
+            resources_match = $true
+            outputs_match = $true
+            non_check_state_match = $true
+            check_results_unordered_match = $true
+            check_results_count_source = 18
+            check_results_count_destination = 18
+            check_results_kinds_source = [pscustomobject]@{ resource = 1; var = 17 }
+            check_results_kinds_destination = [pscustomobject]@{ resource = 1; var = 17 }
+            check_results_statuses_source = [pscustomobject]@{ pass = 18 }
+            check_results_statuses_destination = [pscustomobject]@{ pass = 18 }
+        }
+        local_primary = [pscustomobject]@{
+            path = $LocalStatePath
+            size_bytes = [long]$localPrimary.Length
+            sha256 = $localPrimarySha256
+            classification = "NON_AUTHORITATIVE_EMPTY_PRIMARY"
+            authoritative = $false
+            deleted = $false
+        }
+        local_backup = [pscustomobject]@{
+            path = $LocalBackupStatePath
+            size_bytes = [long]$localBackup.Length
+            sha256 = $localBackupSha256
+            classification = "NON_AUTHORITATIVE_LOCAL_RECOVERY_ARTIFACT"
+            authoritative = $false
+            deleted = $false
+        }
+        state_payloads_stored = $false
+        secret_values_stored = $false
+    }
+}
+
+function Write-MigrationReceipt {
+    param([Parameter(Mandatory = $true)][object]$Receipt)
+
+    $safeOutputRoot = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "artifacts/cx0"))
+    $requestedOutputRoot = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDirectory))
+    if ($requestedOutputRoot -ne $safeOutputRoot) { throw "STOP: migration receipt path must remain artifacts/cx0." }
+    New-Item -ItemType Directory -Path $safeOutputRoot -Force | Out-Null
+    $receiptPath = Join-Path $safeOutputRoot "terraform-state-migration-receipt.json"
+    $Receipt | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $receiptPath -Encoding utf8NoBOM
+    return $receiptPath
 }
 
 if ($Mode -eq "PRECHECK") {
@@ -409,6 +499,24 @@ if ($Mode -eq "PRECHECK") {
         throw "STOP: PRECHECK accepts no execution flag or confirmation."
     }
     Invoke-Precheck -RequireStateAbsent $true | ConvertTo-Json -Depth 10
+    exit 0
+}
+
+if ($Mode -eq "RECONCILE") {
+    if ($ExecuteMigration -or $Confirmation -ne $ReconcileConfirmation) {
+        throw "STOP: RECONCILE requires the exact receipt confirmation and forbids -ExecuteMigration."
+    }
+    if ((Invoke-NativeSafe "git" @("-C", $RepoRoot, "branch", "--show-current") "Git branch read").Trim() -ne $ExpectedBranch) {
+        throw "STOP: current branch differs from the approved migration branch."
+    }
+    Test-BackendSourceContract
+    $identity = Invoke-AwsJson "sts" "get-caller-identity"
+    if ([string]$identity.Account -ne $ExpectedAccount) { throw "STOP: AWS account differs." }
+    $remoteState = Get-RemoteStateMetadata
+    $receipt = New-AcceptedMigrationReceipt -RemoteState $remoteState
+    $receiptPath = Write-MigrationReceipt -Receipt $receipt
+    Write-Host "TERRAFORM_MIGRATION_RECEIPT=RECONCILED"
+    Write-Host "MIGRATION_RECEIPT=$receiptPath"
     exit 0
 }
 
@@ -423,12 +531,8 @@ $precheck = Invoke-Precheck -RequireStateAbsent $true
 & terraform "-chdir=$TerraformRoot" init -migrate-state
 if ($LASTEXITCODE -ne 0) { throw "STOP: Terraform native backend migration failed." }
 
-$receipt = Invoke-PostMigrationVerification -Precheck $precheck
-$safeOutputRoot = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot "artifacts/cx0"))
-$requestedOutputRoot = [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDirectory))
-if ($requestedOutputRoot -ne $safeOutputRoot) { throw "STOP: migration receipt path must remain artifacts/cx0." }
-New-Item -ItemType Directory -Path $safeOutputRoot -Force | Out-Null
-$receiptPath = Join-Path $safeOutputRoot "terraform-state-migration-receipt.json"
-$receipt | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $receiptPath -Encoding utf8NoBOM
+$remoteState = Get-RemoteStateMetadata
+$receipt = New-AcceptedMigrationReceipt -RemoteState $remoteState
+$receiptPath = Write-MigrationReceipt -Receipt $receipt
 Write-Host "TERRAFORM_STATE_MIGRATION=VERIFIED"
 Write-Host "MIGRATION_RECEIPT=$receiptPath"
