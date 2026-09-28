@@ -1,0 +1,204 @@
+{
+  "$defs": {
+    "authority_fingerprint": {
+      "anyOf": [
+        {"pattern": "^[0-9a-f]{64}$", "type": "string"},
+        {"type": "null"}
+      ]
+    },
+    "bounded_summary": {
+      "additionalProperties": false,
+      "properties": {
+        "references": {"items": {"type": "string"}, "type": "array"},
+        "status": {"type": "string"},
+        "summary": {"type": ["string", "null"]}
+      },
+      "required": ["status", "summary", "references"],
+      "type": "object"
+    },
+    "cause": {
+      "additionalProperties": false,
+      "properties": {
+        "cause_kind": {"minLength": 1, "type": "string"},
+        "logical_change": {"minLength": 1, "type": "string"},
+        "semantic_level": {"minLength": 1, "type": "string"}
+      },
+      "required": ["cause_kind", "logical_change", "semantic_level"],
+      "type": "object"
+    },
+    "causal_hop": {
+      "additionalProperties": false,
+      "properties": {
+        "from": {"minLength": 1, "type": "string"},
+        "predicate": {"minLength": 1, "type": "string"},
+        "relationship_id": {"type": ["string", "null"]},
+        "to": {"minLength": 1, "type": "string"}
+      },
+      "required": ["from", "predicate", "to", "relationship_id"],
+      "type": "object"
+    },
+    "cleanup_result": {
+      "additionalProperties": false,
+      "properties": {
+        "completed": {"type": "boolean"},
+        "protected_control_plane_unchanged": {"type": "boolean"},
+        "removed_scenario_assets": {"items": {"type": "string"}, "type": "array"},
+        "warnings": {"items": {"type": "string"}, "type": "array"}
+      },
+      "required": ["completed", "protected_control_plane_unchanged", "removed_scenario_assets", "warnings"],
+      "type": "object"
+    },
+    "evidence_reference": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_id": {"minLength": 1, "type": "string"},
+        "evidence_type": {"minLength": 1, "type": "string"},
+        "source_reference": {"type": ["string", "null"]}
+      },
+      "required": ["evidence_id", "evidence_type", "source_reference"],
+      "type": "object"
+    },
+    "ground_truth_ref": {
+      "additionalProperties": false,
+      "properties": {
+        "ground_truth_id": {"pattern": "^gt:G-[A-Z0-9-]+:v1$", "type": "string"},
+        "ground_truth_version": {"const": "cx0-golden-ground-truth-v1"},
+        "path": {"const": "evaluation/golden/cx0/golden_ground_truth_v1.json"}
+      },
+      "required": ["ground_truth_id", "ground_truth_version", "path"],
+      "type": "object"
+    },
+    "hypothesis": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_state": {"type": ["string", "null"]},
+        "hypothesis_id": {"minLength": 1, "type": "string"},
+        "rank": {"minimum": 1, "type": "integer"},
+        "root_event_id": {"type": ["string", "null"]},
+        "support_qualified": {"type": "boolean"}
+      },
+      "required": ["hypothesis_id", "rank", "root_event_id", "evidence_state", "support_qualified"],
+      "type": "object"
+    },
+    "logical_entity": {
+      "additionalProperties": false,
+      "properties": {
+        "canonical_entity_id": {"type": ["string", "null"]},
+        "logical_alias": {"minLength": 1, "type": "string"},
+        "provider_uid": {"type": ["string", "null"]}
+      },
+      "required": ["logical_alias", "canonical_entity_id", "provider_uid"],
+      "type": "object"
+    },
+    "mutation_receipt": {
+      "additionalProperties": false,
+      "properties": {
+        "action_reference": {"type": ["string", "null"]},
+        "mutation_class": {"minLength": 1, "type": "string"},
+        "scope": {"minLength": 1, "type": "string"}
+      },
+      "required": ["mutation_class", "scope", "action_reference"],
+      "type": "object"
+    },
+    "support_gate_result": {
+      "additionalProperties": false,
+      "properties": {
+        "policy_version": {"const": "causal-support-gate-v1"},
+        "state": {"minLength": 1, "type": "string"},
+        "supported_hypothesis_ids": {"items": {"type": "string"}, "type": "array"}
+      },
+      "required": ["policy_version", "state", "supported_hypothesis_ids"],
+      "type": "object"
+    }
+  },
+  "$id": "https://topoai.local/schemas/cx0/golden-scenario-receipt-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "allOf": [
+    {
+      "if": {"properties": {"status": {"const": "CONSTRUCTION_BLOCKED"}}, "required": ["status"]},
+      "then": {"properties": {"construction_blocked_reason": {"minLength": 1, "type": "string"}}},
+      "else": {"properties": {"construction_blocked_reason": {"type": "null"}}}
+    }
+  ],
+  "properties": {
+    "actual_diagnostic_hypotheses": {"items": {"$ref": "#/$defs/hypothesis"}, "type": "array"},
+    "actual_incident_id": {"type": ["string", "null"]},
+    "actual_snapshot_id": {"type": ["string", "null"]},
+    "actual_supported_hypotheses": {"items": {"$ref": "#/$defs/hypothesis"}, "type": "array"},
+    "authorized_mutation": {"$ref": "#/$defs/mutation_receipt"},
+    "backend_image_digest": {"anyOf": [{"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
+    "causal_path": {"items": {"$ref": "#/$defs/causal_hop"}, "type": "array"},
+    "cleanup_result": {"$ref": "#/$defs/cleanup_result"},
+    "construction_blocked_reason": {"type": ["string", "null"]},
+    "database_migration_head": {"type": ["string", "null"]},
+    "evidence_references": {"items": {"$ref": "#/$defs/evidence_reference"}, "type": "array"},
+    "execution_class": {"enum": ["OFFLINE_FIXTURE", "LIVE_GOLDEN", "LIVE_GOLDEN_SYNTHETIC_MUTATION", "FUTURE_EPHEMERAL_CLOUD"]},
+    "expected_abstention": {"type": "boolean"},
+    "expected_affected_entities": {"items": {"$ref": "#/$defs/logical_entity"}, "type": "array"},
+    "expected_cause": {"anyOf": [{"$ref": "#/$defs/cause"}, {"type": "null"}]},
+    "expected_required_causal_hops": {"items": {"$ref": "#/$defs/causal_hop"}, "type": "array"},
+    "frontend_image_digest": {"anyOf": [{"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
+    "ground_truth_ref": {"$ref": "#/$defs/ground_truth_ref"},
+    "impact": {"anyOf": [{"$ref": "#/$defs/bounded_summary"}, {"type": "null"}]},
+    "infrastructure_fingerprint": {"$ref": "#/$defs/authority_fingerprint"},
+    "limitations": {"items": {"type": "string"}, "type": "array"},
+    "observer_image_digest": {"anyOf": [{"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
+    "ownership": {"anyOf": [{"$ref": "#/$defs/bounded_summary"}, {"type": "null"}]},
+    "post_cleanup_fingerprint": {"$ref": "#/$defs/authority_fingerprint"},
+    "precondition_fingerprint": {"$ref": "#/$defs/authority_fingerprint"},
+    "recovery_result": {"anyOf": [{"$ref": "#/$defs/bounded_summary"}, {"type": "null"}]},
+    "response_guidance": {"anyOf": [{"$ref": "#/$defs/bounded_summary"}, {"type": "null"}]},
+    "scenario_contract_version": {"const": "cx0-golden-scenario-v1"},
+    "scenario_end_utc": {"format": "date-time", "type": ["string", "null"]},
+    "scenario_family": {"minLength": 1, "type": "string"},
+    "scenario_id": {"pattern": "^G-(?:POS|EPH|TIME|ADV|REC)-[0-9]+$", "type": "string"},
+    "scenario_start_utc": {"format": "date-time", "type": "string"},
+    "schema_version": {"const": "cx0-golden-scenario-receipt-v1"},
+    "source_head": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+    "source_tree": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
+    "status": {"enum": ["PASS", "FAIL", "CONSTRUCTION_BLOCKED", "INCOMPLETE"]},
+    "support_gate_result": {"$ref": "#/$defs/support_gate_result"}
+  },
+  "required": [
+    "schema_version",
+    "scenario_id",
+    "scenario_family",
+    "scenario_contract_version",
+    "execution_class",
+    "ground_truth_ref",
+    "source_head",
+    "source_tree",
+    "backend_image_digest",
+    "frontend_image_digest",
+    "observer_image_digest",
+    "database_migration_head",
+    "infrastructure_fingerprint",
+    "scenario_start_utc",
+    "scenario_end_utc",
+    "precondition_fingerprint",
+    "authorized_mutation",
+    "expected_cause",
+    "expected_abstention",
+    "expected_affected_entities",
+    "expected_required_causal_hops",
+    "actual_incident_id",
+    "actual_snapshot_id",
+    "actual_supported_hypotheses",
+    "actual_diagnostic_hypotheses",
+    "support_gate_result",
+    "evidence_references",
+    "causal_path",
+    "impact",
+    "ownership",
+    "response_guidance",
+    "recovery_result",
+    "cleanup_result",
+    "post_cleanup_fingerprint",
+    "status",
+    "construction_blocked_reason",
+    "limitations"
+  ],
+  "title": "TopoAI CX-0 Golden Scenario Receipt v1",
+  "type": "object"
+}

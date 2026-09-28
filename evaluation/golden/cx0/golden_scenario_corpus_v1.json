@@ -1,0 +1,604 @@
+{
+  "authority_name": "topoai-cx0-golden-scenario-corpus",
+  "execution_classes": [
+    "OFFLINE_FIXTURE",
+    "LIVE_GOLDEN",
+    "LIVE_GOLDEN_SYNTHETIC_MUTATION",
+    "FUTURE_EPHEMERAL_CLOUD"
+  ],
+  "live_evaluation_namespace": "topo-eval",
+  "protected_control_plane": "topo-system",
+  "scenario_contract_version": "cx0-golden-scenario-v1",
+  "scenarios": [
+    {
+      "authorized_mutation_classes": [
+        "evaluation_namespace_source_fixture_change",
+        "evaluation_namespace_workload_rollout",
+        "evaluation_namespace_human_recovery"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "LIVE_GOLDEN_SYNTHETIC_MUTATION",
+      "expected_abstention": false,
+      "expected_affected_entities": [
+        "failing_pod_uid",
+        "owning_replicaset_uid",
+        "owning_deployment_uid"
+      ],
+      "expected_identity_invariants": [
+        "repository_commit_run_image_identity_is_provider_authoritative",
+        "deployment_replicaset_pod_identity_uses_exact_uid_ownership",
+        "incident_affected_entity_matches_failing_pod_uid"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "source_commit", "predicate": "triggers", "to": "actions_run"},
+        {"from": "actions_run", "predicate": "produces", "to": "immutable_image"},
+        {"from": "immutable_image", "predicate": "used_by", "to": "failing_deployment"},
+        {"from": "failing_deployment", "predicate": "owns", "to": "owning_replicaset"},
+        {"from": "owning_replicaset", "predicate": "owns", "to": "failing_pod"},
+        {"from": "failing_pod", "predicate": "exhibits", "to": "runtime_failure"}
+      ],
+      "expected_supported_cause": {
+        "cause_kind": "source_file_mutation",
+        "logical_change": "healthy_to_fail",
+        "semantic_level": "INITIATING_MUTATION"
+      },
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EXPECTED_CAUSE_AT_SUPPORTED_TOP1",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "incident_uses_incident_boundary_snapshot",
+        "source_and_provider_event_times_precede_failure",
+        "latest_topology_is_not_substituted"
+      ],
+      "ground_truth_id": "gt:G-POS-1:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "provider_truth_and_cleanup_are_complete",
+        "supported_top1_matches_frozen_expected_cause",
+        "required_identity_chain_and_causal_hops_are_proven",
+        "recovery_condition_is_verified"
+      ],
+      "prerequisites": [
+        "accepted_source_build_image_fixture",
+        "three_immutable_image_digests",
+        "read_only_product_observation_access",
+        "dedicated_labeled_evaluation_namespace"
+      ],
+      "prohibited_mutation_classes": [
+        "topo_system_mutation",
+        "backend_frontend_observer_failure_injection",
+        "rds_alb_waf_dns_acm_eks_control_plane_mutation",
+        "terraform_or_secretstore_authority_mutation",
+        "provider_evidence_fabrication"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "canonical_source_to_runtime_recovery",
+      "scenario_id": "G-POS-1"
+    },
+    {
+      "authorized_mutation_classes": [
+        "evaluation_namespace_pod_replacement"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "LIVE_GOLDEN_SYNTHETIC_MUTATION",
+      "expected_abstention": true,
+      "expected_affected_entities": [],
+      "expected_identity_invariants": [
+        "replacement_pod_has_new_uid",
+        "workload_uid_and_revision_remain_unchanged",
+        "human_readable_pod_name_is_not_identity_authority"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "unchanged_deployment", "predicate": "owns", "to": "unchanged_replicaset"},
+        {"from": "unchanged_replicaset", "predicate": "owns", "to": "replacement_pod"}
+      ],
+      "expected_supported_cause": null,
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EMPTY",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "replacement_observation_follows_original_pod_observation",
+        "pod_replacement_alone_does_not_create_an_incident"
+      ],
+      "ground_truth_id": "gt:G-EPH-1:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "replacement_uid_is_distinct",
+        "owner_chain_resolves_by_uid",
+        "no_supported_cause_or_incident_is_created_from_replacement_alone",
+        "cleanup_and_protected_boundary_pass"
+      ],
+      "prerequisites": [
+        "healthy_evaluation_workload",
+        "stable_deployment_and_replicaset_uid",
+        "dedicated_labeled_evaluation_namespace"
+      ],
+      "prohibited_mutation_classes": [
+        "topo_system_mutation",
+        "workload_revision_change",
+        "provider_evidence_fabrication",
+        "identity_matching_by_display_name_only"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "ephemeral_pod_replacement",
+      "scenario_id": "G-EPH-1"
+    },
+    {
+      "authorized_mutation_classes": [
+        "evaluation_namespace_deployment_revision_change",
+        "evaluation_namespace_human_recovery"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "LIVE_GOLDEN_SYNTHETIC_MUTATION",
+      "expected_abstention": false,
+      "expected_affected_entities": [
+        "new_failing_pod_uid",
+        "new_replicaset_uid",
+        "deployment_uid"
+      ],
+      "expected_identity_invariants": [
+        "deployment_uid_is_stable_across_rollout",
+        "new_replicaset_and_pod_have_new_uids",
+        "old_replicaset_is_not_the_affected_owner"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "deployment_revision_change", "predicate": "changes", "to": "deployment_uid"},
+        {"from": "deployment_uid", "predicate": "owns", "to": "new_replicaset_uid"},
+        {"from": "new_replicaset_uid", "predicate": "owns", "to": "new_failing_pod_uid"},
+        {"from": "new_failing_pod_uid", "predicate": "exhibits", "to": "runtime_failure"}
+      ],
+      "expected_supported_cause": {
+        "cause_kind": "deployment_revision_change",
+        "logical_change": "healthy_image_to_failing_image",
+        "semantic_level": "INITIATING_MUTATION"
+      },
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EXPECTED_CAUSE_AT_SUPPORTED_TOP1",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "revision_change_precedes_new_replicaset_and_failure",
+        "incident_snapshot_contains_new_owner_chain"
+      ],
+      "ground_truth_id": "gt:G-EPH-2:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "new_revision_owner_chain_is_exact",
+        "supported_top1_matches_deployment_revision_change",
+        "old_revision_is_not_reported_as_affected",
+        "cleanup_and_recovery_pass"
+      ],
+      "prerequisites": [
+        "healthy_evaluation_deployment",
+        "healthy_and_failing_immutable_image_digests",
+        "dedicated_labeled_evaluation_namespace"
+      ],
+      "prohibited_mutation_classes": [
+        "topo_system_mutation",
+        "provider_evidence_fabrication",
+        "owner_inference_without_uid_chain",
+        "latest_topology_substitution"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "ephemeral_rolling_deployment",
+      "scenario_id": "G-EPH-2"
+    },
+    {
+      "authorized_mutation_classes": [
+        "evaluation_namespace_resource_recreation_same_name",
+        "evaluation_namespace_human_recovery"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "LIVE_GOLDEN_SYNTHETIC_MUTATION",
+      "expected_abstention": false,
+      "expected_affected_entities": [
+        "recreated_failing_pod_uid",
+        "recreated_replicaset_uid",
+        "recreated_deployment_uid"
+      ],
+      "expected_identity_invariants": [
+        "recreated_objects_have_new_uids",
+        "same_human_readable_name_does_not_merge_old_and_new_entities",
+        "incident_pin_identifies_recreated_uid_chain"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "resource_recreation", "predicate": "creates", "to": "recreated_deployment_uid"},
+        {"from": "recreated_deployment_uid", "predicate": "owns", "to": "recreated_replicaset_uid"},
+        {"from": "recreated_replicaset_uid", "predicate": "owns", "to": "recreated_failing_pod_uid"}
+      ],
+      "expected_supported_cause": {
+        "cause_kind": "resource_recreation_with_failing_revision",
+        "logical_change": "same_name_new_uid",
+        "semantic_level": "INITIATING_MUTATION"
+      },
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EXPECTED_CAUSE_AT_SUPPORTED_TOP1",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "old_uid_observation_precedes_recreation",
+        "new_uid_chain_exists_at_incident_boundary",
+        "old_entity_is_not_rewritten"
+      ],
+      "ground_truth_id": "gt:G-EPH-3:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "new_uid_chain_is_preserved",
+        "same_name_does_not_override_uid_identity",
+        "supported_top1_targets_recreated_authority",
+        "cleanup_and_recovery_pass"
+      ],
+      "prerequisites": [
+        "recreatable_labeled_evaluation_workload",
+        "healthy_and_failing_immutable_image_digests",
+        "dedicated_labeled_evaluation_namespace"
+      ],
+      "prohibited_mutation_classes": [
+        "topo_system_mutation",
+        "name_only_identity_resolution",
+        "old_uid_reuse",
+        "provider_evidence_fabrication"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "ephemeral_same_name_new_uid",
+      "scenario_id": "G-EPH-3"
+    },
+    {
+      "authorized_mutation_classes": [
+        "evaluation_namespace_causal_failure",
+        "evaluation_namespace_post_incident_topology_advance",
+        "evaluation_namespace_human_recovery"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "LIVE_GOLDEN_SYNTHETIC_MUTATION",
+      "expected_abstention": false,
+      "expected_affected_entities": [
+        "incident_time_failing_pod_uid",
+        "incident_time_replicaset_uid",
+        "deployment_uid"
+      ],
+      "expected_identity_invariants": [
+        "incident_snapshot_id_is_immutable",
+        "post_incident_entities_do_not_replace_incident_time_entities",
+        "causal_path_edges_exist_in_pinned_snapshot"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "incident_time_change", "predicate": "changes", "to": "deployment_uid"},
+        {"from": "deployment_uid", "predicate": "owns", "to": "incident_time_replicaset_uid"},
+        {"from": "incident_time_replicaset_uid", "predicate": "owns", "to": "incident_time_failing_pod_uid"}
+      ],
+      "expected_supported_cause": {
+        "cause_kind": "deployment_revision_change",
+        "logical_change": "incident_time_failing_revision",
+        "semantic_level": "INITIATING_MUTATION"
+      },
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EXPECTED_CAUSE_AT_SUPPORTED_TOP1",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "all_rca_topology_evidence_uses_incident_pinned_snapshot",
+        "later_snapshot_never_backfills_historical_path",
+        "topology_advance_occurs_after_incident_boundary"
+      ],
+      "ground_truth_id": "gt:G-TIME-1:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "incident_pin_remains_original_after_topology_advance",
+        "supported_top1_uses_incident_time_evidence",
+        "latest_topology_is_not_used",
+        "cleanup_and_recovery_pass"
+      ],
+      "prerequisites": [
+        "automatic_incident_boundary_snapshot",
+        "ability_to_advance_only_evaluation_namespace_topology",
+        "dedicated_labeled_evaluation_namespace"
+      ],
+      "prohibited_mutation_classes": [
+        "topo_system_mutation",
+        "incident_snapshot_repin",
+        "latest_topology_fallback",
+        "provider_evidence_fabrication"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "temporal_historical_topology",
+      "scenario_id": "G-TIME-1"
+    },
+    {
+      "authorized_mutation_classes": [
+        "offline_fixture_observation_order_permutation"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "OFFLINE_FIXTURE",
+      "expected_abstention": false,
+      "expected_affected_entities": ["fixture_failing_pod_uid"],
+      "expected_identity_invariants": [
+        "provider_event_identity_is_unchanged_by_arrival_order",
+        "immutable_lineage_identity_is_exact",
+        "fixture_source_is_read_only"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "source_commit", "predicate": "triggers", "to": "actions_run"},
+        {"from": "actions_run", "predicate": "produces", "to": "immutable_image"},
+        {"from": "immutable_image", "predicate": "used_by", "to": "fixture_failing_pod_uid"}
+      ],
+      "expected_supported_cause": {
+        "cause_kind": "source_file_mutation",
+        "logical_change": "immutable_lineage_delayed_arrival",
+        "semantic_level": "INITIATING_MUTATION"
+      },
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EXPECTED_CAUSE_AT_SUPPORTED_TOP1",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "provider_occurrence_time_not_ingest_arrival_order_governs_sequence",
+        "direct_immutable_lineage_may_admit_older_source_evidence",
+        "global_temporal_lookback_is_not_widened"
+      ],
+      "ground_truth_id": "gt:G-TIME-2:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "permuted_arrival_order_has_identical_supported_result",
+        "supported_top1_matches_frozen_source_cause",
+        "no_fixture_authority_is_rewritten",
+        "cleanup_fingerprint_matches_precondition"
+      ],
+      "prerequisites": [
+        "frozen_lineage_fixture",
+        "deterministic_timestamp_and_order_controls",
+        "independent_ground_truth"
+      ],
+      "prohibited_mutation_classes": [
+        "live_provider_mutation",
+        "global_lookback_change",
+        "fixture_ground_truth_rewrite",
+        "product_scoring_change"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "temporal_delayed_evidence",
+      "scenario_id": "G-TIME-2"
+    },
+    {
+      "authorized_mutation_classes": [
+        "offline_fixture_noncausal_distractor_injection",
+        "offline_fixture_storage_order_permutation"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "OFFLINE_FIXTURE",
+      "expected_abstention": false,
+      "expected_affected_entities": ["golden_failing_pod_uid"],
+      "expected_identity_invariants": [
+        "golden_lineage_identity_is_unchanged",
+        "distractor_identity_is_distinct",
+        "evaluator_ground_truth_is_not_visible_to_product"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "golden_source_commit", "predicate": "triggers", "to": "golden_actions_run"},
+        {"from": "golden_actions_run", "predicate": "produces", "to": "golden_immutable_image"},
+        {"from": "golden_immutable_image", "predicate": "used_by", "to": "golden_failing_pod_uid"}
+      ],
+      "expected_supported_cause": {
+        "cause_kind": "source_file_mutation",
+        "logical_change": "golden_source_mutation",
+        "semantic_level": "INITIATING_MUTATION"
+      },
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EXPECTED_CAUSE_AT_SUPPORTED_TOP1",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "nearby_timing_alone_does_not_establish_support",
+        "storage_order_does_not_change_supported_projection"
+      ],
+      "ground_truth_id": "gt:G-ADV-1:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "supported_top1_remains_golden_cause",
+        "unsupported_high_ranked_distractors_consume_zero_supported_capacity",
+        "all_distractor_orders_are_deterministic",
+        "cleanup_fingerprint_matches_precondition"
+      ],
+      "prerequisites": [
+        "frozen_post_sc4_lineage_fixture",
+        "lineage_2a_distractor_generator",
+        "independent_distractor_ground_truth"
+      ],
+      "prohibited_mutation_classes": [
+        "live_provider_mutation",
+        "supported_projection_capacity_consumption_by_unsupported_distractor",
+        "product_score_retuning",
+        "ground_truth_rewrite"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "adversarial_noncausal_distractor",
+      "scenario_id": "G-ADV-1"
+    },
+    {
+      "authorized_mutation_classes": [
+        "offline_fixture_authoritative_lineage_cut"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "OFFLINE_FIXTURE",
+      "expected_abstention": true,
+      "expected_affected_entities": ["golden_failing_pod_uid"],
+      "expected_identity_invariants": [
+        "preserved_source_and_runtime_truth_remain_byte_equivalent",
+        "removed_hop_has_no_remaining_authoritative_coreference",
+        "no_synthetic_replacement_authority_is_created"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "golden_source_commit", "predicate": "triggers", "to": "golden_actions_run"},
+        {"from": "golden_actions_run", "predicate": "produces", "to": "golden_immutable_image"},
+        {"from": "golden_immutable_image", "predicate": "used_by", "to": "golden_failing_pod_uid"}
+      ],
+      "expected_supported_cause": null,
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EMPTY",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "incident_boundary_and_pinned_snapshot_identity_are_preserved",
+        "latest_topology_is_not_used_to_reconstruct_missing_lineage"
+      ],
+      "ground_truth_id": "gt:G-ADV-2:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "valid_counterfactual_is_constructed_or_status_is_construction_blocked_with_reason",
+        "missing_immutable_lineage_reduces_specificity_or_abstains",
+        "supported_projection_is_empty",
+        "no_authority_is_fabricated"
+      ],
+      "prerequisites": [
+        "frozen_lineage_2b_fixture",
+        "representability_audit",
+        "protected_truth_fingerprints"
+      ],
+      "prohibited_mutation_classes": [
+        "live_provider_mutation",
+        "stale_derived_edge_retention",
+        "partial_atomic_authoritative_observation",
+        "identity_semantics_weakening",
+        "synthetic_provider_authority"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "adversarial_missing_immutable_lineage",
+      "scenario_id": "G-ADV-2"
+    },
+    {
+      "authorized_mutation_classes": [
+        "evaluation_namespace_causal_failure",
+        "evaluation_namespace_human_recovery"
+      ],
+      "cleanup_contract": {
+        "post_cleanup_fingerprint_required": true,
+        "protected_control_plane_must_be_unchanged": true,
+        "remove_only_labeled_scenario_assets": true
+      },
+      "execution_class": "LIVE_GOLDEN_SYNTHETIC_MUTATION",
+      "expected_abstention": false,
+      "expected_affected_entities": [
+        "failing_pod_uid",
+        "owning_replicaset_uid",
+        "owning_deployment_uid"
+      ],
+      "expected_identity_invariants": [
+        "recovery_targets_the_same_deployment_uid",
+        "recovery_revision_is_provider_verified",
+        "incident_and_original_snapshot_identity_remain_immutable"
+      ],
+      "expected_required_causal_hops": [
+        {"from": "initiating_change", "predicate": "changes", "to": "owning_deployment_uid"},
+        {"from": "owning_deployment_uid", "predicate": "owns", "to": "owning_replicaset_uid"},
+        {"from": "owning_replicaset_uid", "predicate": "owns", "to": "failing_pod_uid"}
+      ],
+      "expected_supported_cause": {
+        "cause_kind": "deployment_revision_change",
+        "logical_change": "healthy_to_failing_revision",
+        "semantic_level": "INITIATING_MUTATION"
+      },
+      "expected_support_gate_behavior": {
+        "diagnostic_top1_required_to_match": false,
+        "supported_projection": "EXPECTED_CAUSE_AT_SUPPORTED_TOP1",
+        "unsupported_candidates_consume_supported_capacity": false
+      },
+      "expected_temporal_invariants": [
+        "failure_precedes_human_recovery",
+        "recovery_observation_follows_manual_action",
+        "original_incident_snapshot_is_not_replaced"
+      ],
+      "ground_truth_id": "gt:G-REC-1:v1",
+      "mutation_scope": {
+        "evaluation_namespace": "topo-eval",
+        "protected_control_plane": "topo-system"
+      },
+      "pass_criteria": [
+        "supported_top1_matches_frozen_cause",
+        "recovery_is_human_initiated_not_automatic",
+        "topo_verifies_workload_health_and_incident_recovery",
+        "cleanup_and_protected_boundary_pass"
+      ],
+      "prerequisites": [
+        "healthy_and_failing_immutable_image_digests",
+        "manual_recovery_action_receipt",
+        "dedicated_labeled_evaluation_namespace"
+      ],
+      "prohibited_mutation_classes": [
+        "topo_system_mutation",
+        "automatic_product_remediation",
+        "provider_evidence_fabrication",
+        "incident_snapshot_repin"
+      ],
+      "scenario_contract_version": "cx0-golden-scenario-v1",
+      "scenario_family": "human_recovery_verification",
+      "scenario_id": "G-REC-1"
+    }
+  ],
+  "schema_version": "cx0-golden-scenario-corpus-v1"
+}
