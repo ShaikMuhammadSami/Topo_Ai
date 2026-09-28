@@ -31,6 +31,15 @@
       "expected_abstention": true,
       "expected_unaffected_entities": ["unchanged_deployment_uid", "unchanged_replicaset_uid", "topo_system"],
       "ground_truth_id": "gt:G-EPH-1:v1",
+      "historical_identity_contract": {
+        "deployment_uid_stays_stable": true,
+        "incident_pin_retains_old_pod_and_time_when_applicable": true,
+        "old_and_replacement_pods_not_falsely_merged": true,
+        "old_pod_identity_not_rewritten": true,
+        "old_pod_uid_preserved_as_historical_truth": true,
+        "replacement_pod_uid_is_distinct": true,
+        "replicaset_uid_and_revision_stay_stable": true
+      },
       "scenario_contract_version": "cx0-golden-scenario-v1",
       "scenario_id": "G-EPH-1",
       "system_under_test_cannot_modify_truth": true,
@@ -47,6 +56,13 @@
       "expected_supported_cause": {"cause_kind": "deployment_revision_change", "logical_change": "healthy_image_to_failing_image", "semantic_level": "INITIATING_MUTATION"},
       "expected_abstention": false,
       "expected_unaffected_entities": ["old_replicaset_uid", "old_pod_uid", "topo_system"],
+      "generation_mapping_contract": {
+        "cross_generation_causal_jump_forbidden": true,
+        "immutable_image_digest_maps_to_correct_new_replicaset_and_pods": true,
+        "old_commit_or_image_not_attributable_to_new_failing_pod": true,
+        "old_and_new_pod_generations_remain_distinct": true,
+        "old_and_new_replicasets_remain_distinct": true
+      },
       "ground_truth_id": "gt:G-EPH-2:v1",
       "scenario_contract_version": "cx0-golden-scenario-v1",
       "scenario_id": "G-EPH-2",
@@ -85,7 +101,7 @@
       "scenario_contract_version": "cx0-golden-scenario-v1",
       "scenario_id": "G-TIME-1",
       "system_under_test_cannot_modify_truth": true,
-      "truth_source_authorities": ["incident_boundary_time", "pinned_topology_snapshot", "provider_uid_ownership"]
+      "truth_source_authorities": ["incident_boundary_time", "kubernetes_topology_observation_at_incident_boundary", "kubernetes_uid_ownership_at_incident_boundary", "provider_observation_timestamp"]
     },
     {
       "expected_affected_entities": ["fixture_failing_pod_uid"],
@@ -98,6 +114,14 @@
       "expected_supported_cause": {"cause_kind": "source_file_mutation", "logical_change": "immutable_lineage_delayed_arrival", "semantic_level": "INITIATING_MUTATION"},
       "expected_abstention": false,
       "expected_unaffected_entities": ["unrelated_fixture_entity", "topo_system"],
+      "bitemporal_contract": {
+        "arrival_order_cannot_rewrite_provider_occurrence_truth": true,
+        "future_state_substitution_forbidden": true,
+        "historical_entity_identity_remains_unchanged": true,
+        "learned_recorded_time_separate": true,
+        "recomputation_requires_prior_and_revised_analysis_identity_and_state": true,
+        "valid_effective_time_separate": true
+      },
       "ground_truth_id": "gt:G-TIME-2:v1",
       "scenario_contract_version": "cx0-golden-scenario-v1",
       "scenario_id": "G-TIME-2",

@@ -29,12 +29,42 @@
     "causal_hop": {
       "additionalProperties": false,
       "properties": {
+        "contradiction_or_missing_state": {
+          "enum": ["none", "contradicted", "missing", "unknown"]
+        },
+        "evidence_quality": {
+          "enum": ["direct", "strong", "limited", "legacy", "unknown"]
+        },
+        "evidence_reference_ids": {
+          "items": {"minLength": 1, "type": "string"},
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "evidence_semantics": {
+          "enum": ["observed", "declared", "derived", "inferred"]
+        },
         "from": {"minLength": 1, "type": "string"},
+        "learned_recorded_time": {"format": "date-time", "type": "string"},
         "predicate": {"minLength": 1, "type": "string"},
-        "relationship_id": {"type": ["string", "null"]},
-        "to": {"minLength": 1, "type": "string"}
+        "provenance_source": {"minLength": 1, "type": "string"},
+        "relationship_id": {"minLength": 1, "type": "string"},
+        "to": {"minLength": 1, "type": "string"},
+        "valid_effective_time": {"format": "date-time", "type": "string"}
       },
-      "required": ["from", "predicate", "to", "relationship_id"],
+      "required": [
+        "from",
+        "to",
+        "predicate",
+        "relationship_id",
+        "provenance_source",
+        "evidence_reference_ids",
+        "evidence_semantics",
+        "valid_effective_time",
+        "learned_recorded_time",
+        "evidence_quality",
+        "contradiction_or_missing_state"
+      ],
       "type": "object"
     },
     "cleanup_result": {
@@ -71,13 +101,75 @@
     "hypothesis": {
       "additionalProperties": false,
       "properties": {
+        "cause": {
+          "anyOf": [{"$ref": "#/$defs/cause"}, {"type": "null"}]
+        },
         "evidence_state": {"type": ["string", "null"]},
         "hypothesis_id": {"minLength": 1, "type": "string"},
         "rank": {"minimum": 1, "type": "integer"},
         "root_event_id": {"type": ["string", "null"]},
         "support_qualified": {"type": "boolean"}
       },
-      "required": ["hypothesis_id", "rank", "root_event_id", "evidence_state", "support_qualified"],
+      "required": ["hypothesis_id", "rank", "root_event_id", "cause", "evidence_state", "support_qualified"],
+      "type": "object"
+    },
+    "pass_criterion_result": {
+      "additionalProperties": false,
+      "properties": {
+        "criterion_id": {"minLength": 1, "type": "string"},
+        "evidence_reference_ids": {
+          "items": {"minLength": 1, "type": "string"},
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "passed": {"type": "boolean"}
+      },
+      "required": ["criterion_id", "passed", "evidence_reference_ids"],
+      "type": "object"
+    },
+    "abstention_result": {
+      "additionalProperties": false,
+      "properties": {
+        "evidence_reference_ids": {
+          "items": {"minLength": 1, "type": "string"},
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "observed": {"type": "boolean"},
+        "reason": {"minLength": 1, "type": "string"},
+        "supported_projection_empty": {"type": "boolean"}
+      },
+      "required": ["observed", "supported_projection_empty", "reason", "evidence_reference_ids"],
+      "type": "object"
+    },
+    "temporal_audit": {
+      "additionalProperties": false,
+      "properties": {
+        "arrival_order_rewrites_provider_truth": {"type": "boolean"},
+        "future_state_substitution_used": {"type": "boolean"},
+        "historical_entity_identity_unchanged": {"type": "boolean"},
+        "learned_recorded_time": {"format": "date-time", "type": "string"},
+        "prior_analysis_id": {"type": ["string", "null"]},
+        "prior_analysis_state": {"type": ["string", "null"]},
+        "recomputation_performed": {"type": "boolean"},
+        "revised_analysis_id": {"type": ["string", "null"]},
+        "revised_analysis_state": {"type": ["string", "null"]},
+        "valid_effective_time": {"format": "date-time", "type": "string"}
+      },
+      "required": [
+        "valid_effective_time",
+        "learned_recorded_time",
+        "arrival_order_rewrites_provider_truth",
+        "future_state_substitution_used",
+        "historical_entity_identity_unchanged",
+        "recomputation_performed",
+        "prior_analysis_id",
+        "prior_analysis_state",
+        "revised_analysis_id",
+        "revised_analysis_state"
+      ],
       "type": "object"
     },
     "logical_entity": {
@@ -122,6 +214,9 @@
     }
   ],
   "properties": {
+    "abstention_result": {
+      "anyOf": [{"$ref": "#/$defs/abstention_result"}, {"type": "null"}]
+    },
     "actual_diagnostic_hypotheses": {"items": {"$ref": "#/$defs/hypothesis"}, "type": "array"},
     "actual_incident_id": {"type": ["string", "null"]},
     "actual_snapshot_id": {"type": ["string", "null"]},
@@ -135,9 +230,9 @@
     "evidence_references": {"items": {"$ref": "#/$defs/evidence_reference"}, "type": "array"},
     "execution_class": {"enum": ["OFFLINE_FIXTURE", "LIVE_GOLDEN", "LIVE_GOLDEN_SYNTHETIC_MUTATION", "FUTURE_EPHEMERAL_CLOUD"]},
     "expected_abstention": {"type": "boolean"},
-    "expected_affected_entities": {"items": {"$ref": "#/$defs/logical_entity"}, "type": "array"},
+    "expected_affected_entities": {"items": {"type": "string"}, "type": "array"},
     "expected_cause": {"anyOf": [{"$ref": "#/$defs/cause"}, {"type": "null"}]},
-    "expected_required_causal_hops": {"items": {"$ref": "#/$defs/causal_hop"}, "type": "array"},
+    "expected_required_causal_hops": {"items": {"type": "string"}, "type": "array"},
     "frontend_image_digest": {"anyOf": [{"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
     "ground_truth_ref": {"$ref": "#/$defs/ground_truth_ref"},
     "impact": {"anyOf": [{"$ref": "#/$defs/bounded_summary"}, {"type": "null"}]},
@@ -145,6 +240,10 @@
     "limitations": {"items": {"type": "string"}, "type": "array"},
     "observer_image_digest": {"anyOf": [{"pattern": "^sha256:[0-9a-f]{64}$", "type": "string"}, {"type": "null"}]},
     "ownership": {"anyOf": [{"$ref": "#/$defs/bounded_summary"}, {"type": "null"}]},
+    "pass_criteria_results": {
+      "items": {"$ref": "#/$defs/pass_criterion_result"},
+      "type": "array"
+    },
     "post_cleanup_fingerprint": {"$ref": "#/$defs/authority_fingerprint"},
     "precondition_fingerprint": {"$ref": "#/$defs/authority_fingerprint"},
     "recovery_result": {"anyOf": [{"$ref": "#/$defs/bounded_summary"}, {"type": "null"}]},
@@ -158,7 +257,11 @@
     "source_head": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
     "source_tree": {"pattern": "^[0-9a-f]{40}$", "type": "string"},
     "status": {"enum": ["PASS", "FAIL", "CONSTRUCTION_BLOCKED", "INCOMPLETE"]},
-    "support_gate_result": {"$ref": "#/$defs/support_gate_result"}
+    "support_gate_result": {"$ref": "#/$defs/support_gate_result"},
+    "temporal_audit": {
+      "anyOf": [{"$ref": "#/$defs/temporal_audit"}, {"type": "null"}]
+    },
+    "unsupported_critical_hop_count": {"minimum": 0, "type": "integer"}
   },
   "required": [
     "schema_version",
@@ -182,6 +285,7 @@
     "expected_abstention",
     "expected_affected_entities",
     "expected_required_causal_hops",
+    "abstention_result",
     "actual_incident_id",
     "actual_snapshot_id",
     "actual_supported_hypotheses",
@@ -189,12 +293,15 @@
     "support_gate_result",
     "evidence_references",
     "causal_path",
+    "unsupported_critical_hop_count",
     "impact",
     "ownership",
     "response_guidance",
     "recovery_result",
     "cleanup_result",
+    "pass_criteria_results",
     "post_cleanup_fingerprint",
+    "temporal_audit",
     "status",
     "construction_blocked_reason",
     "limitations"

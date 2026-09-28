@@ -86,6 +86,10 @@ G0 adds four versioned authorities without replacing the existing harness:
 4. `cx0-golden-scenario-receipt-v1.schema.json` defines the receipt produced
    by future G1-G6 adapters. It references ground truth; it does not contain
    the sole truth authority.
+5. `evaluation/cx0_golden_receipt.py` is the deterministic semantic grader.
+   JSON Schema remains structural validation; PASS, abstention, and
+   construction-blocked validity are decided against the authority, corpus,
+   and independent ground truth.
 
 ### RETIRE / LEGACY
 
@@ -201,6 +205,18 @@ Receipts contain actual supported and actual diagnostic hypotheses in separate
 fields. They may not redefine expected truth. Nullable impact, ownership, and
 recovery values are permitted when the fixture has no independent authority.
 
+G-TIME-1 expected truth comes from an independent Kubernetes topology
+observation, UID ownership at the incident boundary, and provider observation
+time. Topo's `actual_snapshot_id` is graded output and is never an independent
+truth source.
+
+Every observed critical causal hop records its endpoints and predicate,
+relationship ID, provenance source, evidence-reference IDs, relationship
+origin semantics (`observed`, `declared`, `derived`, or `inferred`), effective
+time, recorded time, causal evidence quality, and contradiction/missing state.
+A positive PASS cannot satisfy a required hop with only a from/predicate/to
+triple.
+
 ## Receipt, storage, and integrity
 
 The v1 receipt binds source commit/tree, all three immutable image digests,
@@ -210,11 +226,15 @@ snapshot, both projections, evidence/path, impact/ownership/guidance/recovery,
 cleanup, post-cleanup fingerprint, status, construction blocker, and
 limitations.
 
-Future result artifacts remain under ignored `evaluation/results/`. Finalized
-result families must generate and verify `artifact-integrity-v1.json` after
-ordinary files are quiescent. EAI-1 hashes every scoped regular file and a
-canonical tree material; credentials, tokens, cookies, database URLs,
-SecretStore values, kubeconfig material, and customer data are forbidden.
+Future result artifacts may be assembled under ignored `evaluation/results/`
+as scratch output. Before a G1-G6 gate is accepted, the sanitized receipt,
+semantic decision, authority binding, and verified `artifact-integrity-v1.json`
+must be finalized under the tracked durable release-evidence path
+`docs/architecture/evaluation/receipts/cx0/`. G6 binds their receipt and EAI
+hashes into `GOLDEN_EVALUATION_RECEIPT_V1`. EAI-1 hashes every scoped regular
+file and canonical tree material; credentials, tokens, cookies, database URLs,
+SecretStore values, kubeconfig material, raw secret-bearing provider payloads,
+and customer data are forbidden.
 
 ## Deferred non-blocking families
 

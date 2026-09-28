@@ -12,7 +12,8 @@
   "scenarios": [
     {
       "authorized_mutation_classes": [
-        "evaluation_namespace_source_fixture_change",
+        "evaluation_fixture_repository_source_change",
+        "provider_build_execution",
         "evaluation_namespace_workload_rollout",
         "evaluation_namespace_human_recovery"
       ],
@@ -67,8 +68,13 @@
         "required_identity_chain_and_causal_hops_are_proven",
         "recovery_condition_is_verified"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "accepted_source_build_image_fixture",
+        "dedicated_evaluation_fixture_repository",
         "three_immutable_image_digests",
         "read_only_product_observation_access",
         "dedicated_labeled_evaluation_namespace"
@@ -97,8 +103,12 @@
       "expected_abstention": true,
       "expected_affected_entities": [],
       "expected_identity_invariants": [
+        "old_pod_uid_remains_preserved_as_historical_truth",
         "replacement_pod_has_new_uid",
-        "workload_uid_and_revision_remain_unchanged",
+        "deployment_uid_remains_stable",
+        "replicaset_uid_and_revision_remain_stable",
+        "old_and_replacement_pods_are_not_falsely_merged",
+        "old_pod_identity_is_not_rewritten_into_replacement_pod",
         "human_readable_pod_name_is_not_identity_authority"
       ],
       "expected_required_causal_hops": [
@@ -113,6 +123,7 @@
       },
       "expected_temporal_invariants": [
         "replacement_observation_follows_original_pod_observation",
+        "incident_pin_retains_old_pod_and_time_when_applicable",
         "pod_replacement_alone_does_not_create_an_incident"
       ],
       "ground_truth_id": "gt:G-EPH-1:v1",
@@ -121,11 +132,18 @@
         "protected_control_plane": "topo-system"
       },
       "pass_criteria": [
+        "old_pod_uid_remains_preserved_as_historical_truth",
         "replacement_uid_is_distinct",
-        "owner_chain_resolves_by_uid",
+        "deployment_and_replicaset_identity_remain_stable",
+        "old_and_replacement_pods_are_not_falsely_merged_or_rewritten",
+        "incident_pin_retains_old_pod_and_time_when_applicable",
         "no_supported_cause_or_incident_is_created_from_replacement_alone",
         "cleanup_and_protected_boundary_pass"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": false,
+        "actual_snapshot_required": false
+      },
       "prerequisites": [
         "healthy_evaluation_workload",
         "stable_deployment_and_replicaset_uid",
@@ -160,7 +178,12 @@
       ],
       "expected_identity_invariants": [
         "deployment_uid_is_stable_across_rollout",
+        "old_and_new_replicaset_uids_remain_distinct",
+        "old_and_new_pod_generations_remain_distinct",
         "new_replicaset_and_pod_have_new_uids",
+        "immutable_image_digest_maps_to_correct_new_replicaset_and_pods",
+        "rollout_overlap_cannot_jump_causal_lineage_between_generations",
+        "old_commit_or_image_is_not_attributed_to_new_failing_pod",
         "old_replicaset_is_not_the_affected_owner"
       ],
       "expected_required_causal_hops": [
@@ -189,11 +212,19 @@
         "protected_control_plane": "topo-system"
       },
       "pass_criteria": [
+        "old_and_new_replicasets_and_pod_generations_remain_distinct",
+        "immutable_image_digest_maps_to_correct_new_replicaset_and_pods",
+        "rollout_overlap_does_not_jump_causal_lineage_between_generations",
+        "old_commit_or_image_is_not_attributed_to_new_failing_pod",
         "new_revision_owner_chain_is_exact",
         "supported_top1_matches_deployment_revision_change",
         "old_revision_is_not_reported_as_affected",
         "cleanup_and_recovery_pass"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "healthy_evaluation_deployment",
         "healthy_and_failing_immutable_image_digests",
@@ -262,6 +293,10 @@
         "supported_top1_targets_recreated_authority",
         "cleanup_and_recovery_pass"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "recreatable_labeled_evaluation_workload",
         "healthy_and_failing_immutable_image_digests",
@@ -331,6 +366,10 @@
         "latest_topology_is_not_used",
         "cleanup_and_recovery_pass"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "automatic_incident_boundary_snapshot",
         "ability_to_advance_only_evaluation_namespace_topology",
@@ -379,7 +418,12 @@
         "unsupported_candidates_consume_supported_capacity": false
       },
       "expected_temporal_invariants": [
+        "valid_effective_event_time_is_separate_from_learned_recorded_time",
         "provider_occurrence_time_not_ingest_arrival_order_governs_sequence",
+        "arrival_order_cannot_rewrite_provider_occurrence_truth",
+        "recomputation_preserves_auditable_prior_and_revised_analysis_identity_and_state",
+        "future_state_substitution_is_forbidden",
+        "historical_entity_identity_remains_unchanged",
         "direct_immutable_lineage_may_admit_older_source_evidence",
         "global_temporal_lookback_is_not_widened"
       ],
@@ -389,11 +433,19 @@
         "protected_control_plane": "topo-system"
       },
       "pass_criteria": [
+        "valid_effective_and_learned_recorded_times_are_separate",
+        "arrival_order_does_not_rewrite_provider_occurrence_truth",
+        "recomputation_audits_prior_and_revised_analysis_identity_and_state",
+        "no_future_state_substitution_or_historical_identity_rewrite",
         "permuted_arrival_order_has_identical_supported_result",
         "supported_top1_matches_frozen_source_cause",
         "no_fixture_authority_is_rewritten",
         "cleanup_fingerprint_matches_precondition"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "frozen_lineage_fixture",
         "deterministic_timestamp_and_order_controls",
@@ -457,6 +509,10 @@
         "all_distractor_orders_are_deterministic",
         "cleanup_fingerprint_matches_precondition"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "frozen_post_sc4_lineage_fixture",
         "lineage_2a_distractor_generator",
@@ -515,6 +571,10 @@
         "supported_projection_is_empty",
         "no_authority_is_fabricated"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "frozen_lineage_2b_fixture",
         "representability_audit",
@@ -584,6 +644,10 @@
         "topo_verifies_workload_health_and_incident_recovery",
         "cleanup_and_protected_boundary_pass"
       ],
+      "receipt_requirements": {
+        "actual_incident_required": true,
+        "actual_snapshot_required": true
+      },
       "prerequisites": [
         "healthy_and_failing_immutable_image_digests",
         "manual_recovery_action_receipt",

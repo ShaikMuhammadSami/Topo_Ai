@@ -11,6 +11,13 @@
     "supported_top1_must_match_expected": true
   },
   "construction_blocked_contract": {
+    "allowed_reason_codes": [
+      "counterfactual_requires_synthetic_authority",
+      "counterfactual_would_corrupt_preserved_truth",
+      "evidence_model_nonseparable",
+      "seed_lacks_required_authoritative_observation",
+      "snapshot_identity_nonseparable"
+    ],
     "contract_version": "cx0-construction-blocked-v1",
     "reason_required": true,
     "source_paths": [
@@ -18,6 +25,13 @@
       "docs/architecture/evaluation/lineage-broken-immutable-lineage-v1.md"
     ],
     "valid_only_when": "the intended counterfactual cannot be represented truthfully by the evidence ontology without fabricating authority or corrupting protected truth"
+  },
+  "durable_accepted_receipts": {
+    "acceptance_requires_artifact_integrity_manifest": true,
+    "contract_version": "cx0-durable-evaluation-receipts-v1",
+    "g6_binding_name": "GOLDEN_EVALUATION_RECEIPT_V1",
+    "scratch_path": "evaluation/results/",
+    "tracked_release_evidence_path": "docs/architecture/evaluation/receipts/cx0/"
   },
   "deferred_scenario_families": [
     "broad_terraform_cloud_faults",
@@ -61,6 +75,8 @@
     "derived_from_result_output": false
   },
   "live_evaluation_namespace": "topo-eval",
+  "g0r_base_head": "34e36a91798d3b52338bf96ca18a2a0b78bd149b",
+  "g0r_base_tree": "def8b5a31addde73924ae4f079c7baf18040cc3e",
   "mandatory_pre_cx0b_scenarios": [
     "G-POS-1",
     "G-EPH-1",
@@ -82,6 +98,10 @@
       "CONSTRUCTION_BLOCKED",
       "INCOMPLETE"
     ]
+  },
+  "semantic_receipt_validator": {
+    "contract_version": "cx0-golden-receipt-validator-v1",
+    "implementation_path": "evaluation/cx0_golden_receipt.py"
   },
   "scenario_corpus": {
     "contract_version": "cx0-golden-scenario-corpus-v1",

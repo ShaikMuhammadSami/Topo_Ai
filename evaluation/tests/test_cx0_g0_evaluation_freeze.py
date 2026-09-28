@@ -8,6 +8,8 @@ from typing import Any
 
 import pytest
 
+from evaluation.cx0_golden_receipt import validate_golden_receipt
+
 
 ROOT = Path(__file__).resolve().parents[2]
 AUTHORITY_PATH = (
@@ -76,6 +78,27 @@ def receipt_schema() -> dict[str, Any]:
     return _load(RECEIPT_SCHEMA_PATH)
 
 
+def _causal_hop(
+    ordinal: int,
+    source: str,
+    predicate: str,
+    target: str,
+) -> dict[str, Any]:
+    return {
+        "from": source,
+        "to": target,
+        "predicate": predicate,
+        "relationship_id": f"rel:{ordinal}",
+        "provenance_source": "provider_and_topology_evidence",
+        "evidence_reference_ids": [f"evidence:{ordinal}"],
+        "evidence_semantics": "observed",
+        "valid_effective_time": f"2026-09-28T00:0{ordinal}:00Z",
+        "learned_recorded_time": f"2026-09-28T00:0{ordinal}:10Z",
+        "evidence_quality": "direct",
+        "contradiction_or_missing_state": "none",
+    }
+
+
 def _sample_receipt(status: str = "PASS") -> dict[str, Any]:
     reason = (
         "evidence_model_nonseparable"
@@ -115,19 +138,17 @@ def _sample_receipt(status: str = "PASS") -> dict[str, Any]:
         },
         "expected_abstention": False,
         "expected_affected_entities": [
-            {
-                "logical_alias": "failing_pod_uid",
-                "canonical_entity_id": "k8s:pod:1",
-                "provider_uid": "00000000-0000-0000-0000-000000000001",
-            }
+            "failing_pod_uid",
+            "owning_replicaset_uid",
+            "owning_deployment_uid",
         ],
         "expected_required_causal_hops": [
-            {
-                "from": "source_commit",
-                "predicate": "triggers",
-                "to": "actions_run",
-                "relationship_id": "rel:1",
-            }
+            "commit_to_run",
+            "run_to_image",
+            "image_to_deployment",
+            "deployment_to_replicaset",
+            "replicaset_to_pod",
+            "pod_to_failure",
         ],
         "actual_incident_id": "incident:1",
         "actual_snapshot_id": "snapshot:1",
@@ -136,6 +157,11 @@ def _sample_receipt(status: str = "PASS") -> dict[str, Any]:
                 "hypothesis_id": "hypothesis:supported",
                 "rank": 1,
                 "root_event_id": "change-event:golden",
+                "cause": {
+                    "cause_kind": "source_file_mutation",
+                    "logical_change": "healthy_to_fail",
+                    "semantic_level": "INITIATING_MUTATION",
+                },
                 "evidence_state": "supported_under_current_model",
                 "support_qualified": True,
             }
@@ -145,6 +171,7 @@ def _sample_receipt(status: str = "PASS") -> dict[str, Any]:
                 "hypothesis_id": "hypothesis:distractor",
                 "rank": 1,
                 "root_event_id": "change-event:distractor",
+                "cause": None,
                 "evidence_state": "insufficient_candidate_specific_evidence",
                 "support_qualified": False,
             }
@@ -156,19 +183,22 @@ def _sample_receipt(status: str = "PASS") -> dict[str, Any]:
         },
         "evidence_references": [
             {
-                "evidence_id": "evidence:1",
+                "evidence_id": f"evidence:{ordinal}",
                 "evidence_type": "provider_lineage",
-                "source_reference": "receipt:1",
+                "source_reference": f"receipt:{ordinal}",
             }
+            for ordinal in range(1, 7)
         ],
         "causal_path": [
-            {
-                "from": "source_commit",
-                "predicate": "triggers",
-                "to": "actions_run",
-                "relationship_id": "rel:1",
-            }
+            _causal_hop(1, "source_commit", "triggers", "actions_run"),
+            _causal_hop(2, "actions_run", "produces", "immutable_image"),
+            _causal_hop(3, "immutable_image", "used_by", "failing_deployment"),
+            _causal_hop(4, "failing_deployment", "owns", "owning_replicaset"),
+            _causal_hop(5, "owning_replicaset", "owns", "failing_pod"),
+            _causal_hop(6, "failing_pod", "exhibits", "runtime_failure"),
         ],
+        "unsupported_critical_hop_count": 0,
+        "abstention_result": None,
         "impact": None,
         "ownership": None,
         "response_guidance": None,
@@ -183,11 +213,123 @@ def _sample_receipt(status: str = "PASS") -> dict[str, Any]:
             "removed_scenario_assets": ["topo-eval/workload"],
             "warnings": [],
         },
+        "pass_criteria_results": [
+            {
+                "criterion_id": criterion,
+                "passed": True,
+                "evidence_reference_ids": ["evidence:1"],
+            }
+            for criterion in (
+                "provider_truth_and_cleanup_are_complete",
+                "supported_top1_matches_frozen_expected_cause",
+                "required_identity_chain_and_causal_hops_are_proven",
+                "recovery_condition_is_verified",
+            )
+        ],
         "post_cleanup_fingerprint": "6" * 64,
+        "temporal_audit": None,
         "status": status,
         "construction_blocked_reason": reason,
         "limitations": ["single controlled scenario"],
     }
+
+
+def _receipt_for_scenario(scenario_id: str) -> dict[str, Any]:
+    corpus = _load(CORPUS_PATH)
+    truth = _load(GROUND_TRUTH_PATH)
+    scenario = next(
+        item for item in corpus["scenarios"] if item["scenario_id"] == scenario_id
+    )
+    expected = next(
+        item
+        for item in truth["ground_truth_records"]
+        if item["scenario_id"] == scenario_id
+    )
+    receipt = _sample_receipt()
+    receipt.update(
+        {
+            "scenario_id": scenario_id,
+            "scenario_family": scenario["scenario_family"],
+            "execution_class": scenario["execution_class"],
+            "ground_truth_ref": {
+                "ground_truth_id": expected["ground_truth_id"],
+                "ground_truth_version": "cx0-golden-ground-truth-v1",
+                "path": "evaluation/golden/cx0/golden_ground_truth_v1.json",
+            },
+            "expected_cause": expected["expected_supported_cause"],
+            "expected_abstention": expected["expected_abstention"],
+            "expected_affected_entities": expected["expected_affected_entities"],
+            "expected_required_causal_hops": expected[
+                "expected_required_causal_hops"
+            ],
+            "pass_criteria_results": [
+                {
+                    "criterion_id": criterion,
+                    "passed": True,
+                    "evidence_reference_ids": ["evidence:1"],
+                }
+                for criterion in scenario["pass_criteria"]
+            ],
+            "causal_path": [
+                _causal_hop(
+                    ordinal,
+                    hop["from"],
+                    hop.get("predicate", "related_to"),
+                    hop["to"],
+                )
+                for ordinal, hop in enumerate(
+                    scenario["expected_required_causal_hops"], start=1
+                )
+            ],
+            "actual_incident_id": (
+                "incident:1"
+                if scenario["receipt_requirements"]["actual_incident_required"]
+                else None
+            ),
+            "actual_snapshot_id": (
+                "snapshot:1"
+                if scenario["receipt_requirements"]["actual_snapshot_required"]
+                else None
+            ),
+            "recovery_result": (
+                receipt["recovery_result"]
+                if expected["expected_recovery_condition"] is not None
+                else None
+            ),
+        }
+    )
+    if expected["expected_abstention"]:
+        receipt["actual_supported_hypotheses"] = []
+        receipt["support_gate_result"] = {
+            "policy_version": "causal-support-gate-v1",
+            "state": "insufficient_candidate_specific_evidence",
+            "supported_hypothesis_ids": [],
+        }
+        receipt["abstention_result"] = {
+            "observed": True,
+            "supported_projection_empty": True,
+            "reason": "Frozen evidence does not support a causal conclusion.",
+            "evidence_reference_ids": ["evidence:1"],
+        }
+        receipt["causal_path"] = []
+    else:
+        receipt["actual_supported_hypotheses"][0]["cause"] = expected[
+            "expected_supported_cause"
+        ]
+    if scenario_id == "G-TIME-2":
+        receipt["temporal_audit"] = {
+            "valid_effective_time": "2026-09-28T00:01:00Z",
+            "learned_recorded_time": "2026-09-28T01:01:00Z",
+            "arrival_order_rewrites_provider_truth": False,
+            "future_state_substitution_used": False,
+            "historical_entity_identity_unchanged": True,
+            "recomputation_performed": True,
+            "prior_analysis_id": "causal-analysis:before",
+            "prior_analysis_state": "completed_no_hypothesis",
+            "revised_analysis_id": "causal-analysis:after",
+            "revised_analysis_state": "completed",
+        }
+    return receipt
 
 
 def _validate(schema: dict[str, Any], value: dict[str, Any]) -> None:
@@ -326,6 +468,7 @@ def test_each_scenario_freezes_required_contract_fields(corpus: dict[str, Any]) 
         "expected_support_gate_behavior",
         "cleanup_contract",
         "pass_criteria",
+        "receipt_requirements",
         "ground_truth_id",
     }
     for scenario in corpus["scenarios"]:
@@ -373,12 +516,16 @@ def test_receipt_schema_is_valid_and_contains_every_required_field(
         "support_gate_result",
         "evidence_references",
         "causal_path",
+        "unsupported_critical_hop_count",
+        "abstention_result",
         "impact",
         "ownership",
         "response_guidance",
         "recovery_result",
         "cleanup_result",
+        "pass_criteria_results",
         "post_cleanup_fingerprint",
+        "temporal_audit",
         "status",
         "construction_blocked_reason",
         "limitations",
@@ -535,3 +682,235 @@ def test_receipt_schema_does_not_mutate_when_validating(
     before = deepcopy(receipt_schema)
     _validate(receipt_schema, _sample_receipt())
     assert receipt_schema == before
+
+
+def test_causal_hop_schema_requires_complete_machine_authority(
+    receipt_schema: dict[str, Any],
+) -> None:
+    required = set(receipt_schema["$defs"]["causal_hop"]["required"])
+    assert required == {
+        "from",
+        "to",
+        "predicate",
+        "relationship_id",
+        "provenance_source",
+        "evidence_reference_ids",
+        "evidence_semantics",
+        "valid_effective_time",
+        "learned_recorded_time",
+        "evidence_quality",
+        "contradiction_or_missing_state",
+    }
+
+
+def test_semantic_validator_accepts_complete_positive_receipt() -> None:
+    decision = validate_golden_receipt(_sample_receipt(), repository_root=ROOT)
+    assert decision.valid is True
+    assert decision.errors == ()
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "error"),
+    (
+        ("precondition_fingerprint", None, "precondition_fingerprint_missing"),
+        ("infrastructure_fingerprint", None, "infrastructure_fingerprint_missing"),
+        ("post_cleanup_fingerprint", None, "post_cleanup_fingerprint_missing"),
+    ),
+)
+def test_pass_rejects_missing_authority(
+    field: str, value: Any, error: str
+) -> None:
+    receipt = _sample_receipt()
+    receipt[field] = value
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert error in decision.errors
+
+
+def test_pass_rejects_incomplete_cleanup() -> None:
+    receipt = _sample_receipt()
+    receipt["cleanup_result"]["completed"] = False
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert "cleanup_incomplete" in decision.errors
+
+
+def test_pass_rejects_changed_protected_control_plane() -> None:
+    receipt = _sample_receipt()
+    receipt["cleanup_result"]["protected_control_plane_unchanged"] = False
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert "protected_control_plane_changed" in decision.errors
+
+
+def test_positive_pass_rejects_empty_supported_projection() -> None:
+    receipt = _sample_receipt()
+    receipt["actual_supported_hypotheses"] = []
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert "supported_top1_missing" in decision.errors
+
+
+def test_positive_pass_rejects_wrong_supported_top1() -> None:
+    receipt = _sample_receipt()
+    receipt["actual_supported_hypotheses"][0]["cause"]["logical_change"] = (
+        "unrelated_change"
+    )
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert "supported_top1_mismatch" in decision.errors
+
+
+def test_positive_pass_rejects_missing_required_causal_hop() -> None:
+    receipt = _sample_receipt()
+    receipt["causal_path"] = receipt["causal_path"][:-1]
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert any(
+        error.startswith("required_causal_hop_missing:")
+        for error in decision.errors
+    )
+
+
+def test_positive_pass_rejects_hop_without_provenance_or_evidence() -> None:
+    receipt = _sample_receipt()
+    receipt["causal_path"][0]["provenance_source"] = ""
+    receipt["causal_path"][0]["evidence_reference_ids"] = []
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert any(
+        error.startswith("causal_hop_authority_incomplete:")
+        for error in decision.errors
+    )
+
+
+def test_pass_rejects_receipt_expectation_mismatch() -> None:
+    receipt = _sample_receipt()
+    receipt["expected_affected_entities"] = ["invented_entity"]
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert "expected_affected_entities_mismatch" in decision.errors
+
+
+def test_expected_abstention_requires_audited_abstention_not_empty_by_accident() -> None:
+    receipt = _receipt_for_scenario("G-ADV-2")
+    receipt["abstention_result"] = None
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert "abstention_result_missing" in decision.errors
+
+
+def test_time_one_truth_is_independent_of_topo_snapshot(
+    truth: dict[str, Any],
+) -> None:
+    record = next(
+        item
+        for item in truth["ground_truth_records"]
+        if item["scenario_id"] == "G-TIME-1"
+    )
+    assert "pinned_topology_snapshot" not in record["truth_source_authorities"]
+    assert "kubernetes_topology_observation_at_incident_boundary" in record[
+        "truth_source_authorities"
+    ]
+    assert "kubernetes_uid_ownership_at_incident_boundary" in record[
+        "truth_source_authorities"
+    ]
+    assert "provider_observation_timestamp" in record["truth_source_authorities"]
+
+
+def test_ephemeral_one_freezes_historical_uid_contract(
+    truth: dict[str, Any],
+) -> None:
+    record = next(
+        item
+        for item in truth["ground_truth_records"]
+        if item["scenario_id"] == "G-EPH-1"
+    )
+    contract = record["historical_identity_contract"]
+    assert contract and all(contract.values())
+    assert contract["old_pod_uid_preserved_as_historical_truth"] is True
+    assert contract["replacement_pod_uid_is_distinct"] is True
+    assert contract["old_and_replacement_pods_not_falsely_merged"] is True
+    assert contract["old_pod_identity_not_rewritten"] is True
+
+
+def test_ephemeral_two_freezes_generation_and_image_mapping(
+    truth: dict[str, Any],
+) -> None:
+    record = next(
+        item
+        for item in truth["ground_truth_records"]
+        if item["scenario_id"] == "G-EPH-2"
+    )
+    contract = record["generation_mapping_contract"]
+    assert contract and all(contract.values())
+    assert contract["old_and_new_replicasets_remain_distinct"] is True
+    assert contract[
+        "immutable_image_digest_maps_to_correct_new_replicaset_and_pods"
+    ] is True
+    assert contract["cross_generation_causal_jump_forbidden"] is True
+
+
+def test_time_two_freezes_bitemporal_and_revision_audit(
+    truth: dict[str, Any],
+) -> None:
+    record = next(
+        item
+        for item in truth["ground_truth_records"]
+        if item["scenario_id"] == "G-TIME-2"
+    )
+    contract = record["bitemporal_contract"]
+    assert contract and all(contract.values())
+    receipt = _receipt_for_scenario("G-TIME-2")
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is True
+
+
+@pytest.mark.parametrize(
+    "invalid_reason",
+    (
+        "harness_not_implemented",
+        "provider_failure",
+        "infrastructure_failure",
+        "unexpected_product_output",
+    ),
+)
+def test_construction_blocked_rejects_nonrepresentability_unrelated_failures(
+    invalid_reason: str,
+) -> None:
+    receipt = _sample_receipt("CONSTRUCTION_BLOCKED")
+    receipt["construction_blocked_reason"] = invalid_reason
+    decision = validate_golden_receipt(receipt, repository_root=ROOT)
+    assert decision.valid is False
+    assert "construction_blocked_reason_not_representability_failure" in (
+        decision.errors
+    )
+
+
+def test_gpos_source_and_namespace_scopes_are_separate(corpus: dict[str, Any]) -> None:
+    scenario = next(
+        item for item in corpus["scenarios"] if item["scenario_id"] == "G-POS-1"
+    )
+    authorized = set(scenario["authorized_mutation_classes"])
+    assert "evaluation_fixture_repository_source_change" in authorized
+    assert "provider_build_execution" in authorized
+    assert "evaluation_namespace_workload_rollout" in authorized
+    assert "evaluation_namespace_source_fixture_change" not in authorized
+    assert "dedicated_evaluation_fixture_repository" in scenario["prerequisites"]
+
+
+def test_durable_accepted_receipt_storage_is_frozen(
+    authority: dict[str, Any],
+) -> None:
+    contract = authority["durable_accepted_receipts"]
+    assert contract["tracked_release_evidence_path"] == (
+        "docs/architecture/evaluation/receipts/cx0/"
+    )
+    assert contract["acceptance_requires_artifact_integrity_manifest"] is True
+    assert contract["g6_binding_name"] == "GOLDEN_EVALUATION_RECEIPT_V1"
+    text = (
+        ROOT / "docs/architecture/evaluation/receipts/cx0/README.md"
+    ).read_text(encoding="utf-8")
+    assert "artifact-integrity-v1.json" in text
+    assert "GOLDEN_EVALUATION_RECEIPT_V1" in text
+    assert "evaluation/results/" in text
