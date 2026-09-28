@@ -256,9 +256,33 @@ $rdsMatches = $inventory.rds.identifier -eq "topo-golden-postgres" -and $invento
 Add-Comparison $comparisons "rds_runtime_requirements" $(if ($rdsMatches) { "MATCH" } else { "LIVE_ONLY_REQUIRED" }) $true `
     "infrastructure/aws/golden/rds.tf plus future proven recovery artifact" $(if ($rdsMatches) { "The private PostgreSQL runtime shape matches source; recovery proof remains an independent gate." } else { "Live RDS runtime differs from source requirements." })
 
-$migrationClass = if ($inventory.migrations.match -eq $true) { "MATCH" } else { "UNKNOWN" }
+$migrationStatus = [string](Get-PropertyValue $inventory.migrations "database_migration_head_status" "UNKNOWN_REQUIRED")
+$migrationClass = if (
+    $migrationStatus -eq "MATCH" -and
+    $inventory.migrations.match -eq $true -and
+    $inventory.migrations.database_migration_head_probe_completed -eq $true -and
+    $inventory.migrations.source_database_migration_head_count -eq 1 -and
+    $inventory.migrations.live_database_migration_head_count -eq 1 -and
+    $inventory.migrations.source_database_migration_head -ceq $inventory.migrations.live_database_migration_head -and
+    $inventory.migrations.driver -eq "psycopg-v3" -and
+    $inventory.migrations.query_type -eq "SELECT_ONLY" -and
+    $inventory.migrations.transaction_mode -eq "READ_ONLY" -and
+    $inventory.migrations.transaction_completion -eq "ROLLBACK"
+) {
+    "MATCH"
+} elseif ($migrationStatus -eq "UNKNOWN_REQUIRED") {
+    "UNKNOWN"
+} else {
+    "LIVE_ONLY_REQUIRED"
+}
 Add-Comparison $comparisons "database_migration_head" $migrationClass $true "backend/alembic plus a separately safe live DB revision probe" `
-    $(if ($migrationClass -eq "MATCH") { "Live database revision matches the single repository head." } else { "The repository head is recorded, but the live revision has not been obtained through an accepted secret-safe probe." })
+    $(if ($migrationClass -eq "MATCH") {
+        "The single live database migration head matches the single source head under a completed psycopg v3 read-only transaction that ended in rollback."
+    } elseif ($migrationClass -eq "UNKNOWN") {
+        "The repository head is recorded, but the live revision has not been obtained through an accepted secret-safe read-only probe."
+    } else {
+        "Database migration-head evidence differs or is non-unique; CX-0 authority remains blocked."
+    })
 
 $iamMatches = @($inventory.iam.roles).Count -ge 2 -and @($inventory.iam.roles.name) -contains "topo-golden-eks-cluster" -and @($inventory.iam.roles.name) -contains "topo-golden-eks-nodes"
 Add-Comparison $comparisons "iam_roles_and_policies" $(if ($iamMatches) { "MATCH" } else { "UNKNOWN" }) $true `
@@ -339,7 +363,10 @@ Add-Comparison $comparisons "logging_and_evidence_dependencies" $(if ($loggingKn
 
 $mappedBlockers = @(
     "SECRETSTORE_RECOVERY_AUTHORITY_NOT_SEPARATELY_PROVEN",
-    "TERRAFORM_REMOTE_STATE_NOT_PROVEN"
+    "TERRAFORM_REMOTE_STATE_NOT_PROVEN",
+    "REPOSITORY_MIGRATION_HEAD_NOT_UNIQUE",
+    "LIVE_DATABASE_MIGRATION_HEAD_NOT_UNIQUE",
+    "DATABASE_MIGRATION_HEAD_DIFFERS"
 )
 $mappedUnknowns = @("LIVE_DB_MIGRATION_HEAD_NEEDS_SEPARATE_SAFE_PROBE")
 foreach ($blocker in @($inventory.reproducibility.blockers)) {

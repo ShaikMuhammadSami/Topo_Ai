@@ -21,6 +21,7 @@ INVENTORY = ROOT / "scripts/cloud/cx0/capture_reproducibility_inventory.ps1"
 COMPARATOR = ROOT / "scripts/cloud/cx0/compare_source_live_reproducibility.ps1"
 IMAGE_AUTHORITY = ROOT / "scripts/cloud/cx0/cloud_v1_1b_image_authority.json"
 OBSERVER_MANIFEST = ROOT / "infrastructure/kubernetes/golden/observer.yaml"
+DATABASE_MIGRATION_PROBE = ROOT / "scripts/cloud/cx0/prove_database_migration_head.ps1"
 SECRETSTORE_RECOVERY = ROOT / "scripts/cloud/cx0/escrow_secretstore_keyring.py"
 TERRAFORM_BACKEND_BOOTSTRAP = ROOT / "scripts/cloud/cx0/bootstrap_terraform_state_backend.py"
 TERRAFORM_STATE_MIGRATION = ROOT / "scripts/cloud/cx0/migrate_golden_terraform_state.ps1"
@@ -58,7 +59,7 @@ class Cx0Cost0ContractTests(unittest.TestCase):
     def test_required_contract_surface_exists(self) -> None:
         for path in (
             ARCHITECTURE, INVENTORY, COMPARATOR, IMAGE_AUTHORITY,
-            OBSERVER_MANIFEST, SECRETSTORE_RECOVERY,
+            OBSERVER_MANIFEST, DATABASE_MIGRATION_PROBE, SECRETSTORE_RECOVERY,
             SECRETSTORE_REQUIREMENTS, TERRAFORM_BACKEND_BOOTSTRAP,
             TERRAFORM_STATE_MIGRATION, TERRAFORM_LOCAL_STATE_INSPECTOR, SCHEMA,
             *OPERATIONS,
@@ -66,7 +67,10 @@ class Cx0Cost0ContractTests(unittest.TestCase):
             self.assertTrue(path.is_file(), path)
 
     def test_powershell_sources_parse(self) -> None:
-        for path in (INVENTORY, COMPARATOR, TERRAFORM_STATE_MIGRATION):
+        for path in (
+            INVENTORY, COMPARATOR, DATABASE_MIGRATION_PROBE,
+            TERRAFORM_STATE_MIGRATION,
+        ):
             command = (
                 "$tokens=$null;$errors=$null;"
                 "[void][System.Management.Automation.Language.Parser]::ParseFile("
@@ -381,7 +385,7 @@ class Cx0Cost0ContractTests(unittest.TestCase):
     def test_new_cx0_sources_pass_repository_secret_patterns(self) -> None:
         paths = (
             ARCHITECTURE, *OPERATIONS, INVENTORY, COMPARATOR, IMAGE_AUTHORITY,
-            OBSERVER_MANIFEST,
+            OBSERVER_MANIFEST, DATABASE_MIGRATION_PROBE,
             SECRETSTORE_RECOVERY, SECRETSTORE_REQUIREMENTS,
             TERRAFORM_BACKEND_BOOTSTRAP, TERRAFORM_STATE_MIGRATION,
             TERRAFORM_LOCAL_STATE_INSPECTOR, SCHEMA,

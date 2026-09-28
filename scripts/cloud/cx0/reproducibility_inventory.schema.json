@@ -186,7 +186,64 @@
     "acm": { "type": "object" },
     "dns": { "type": "object" },
     "rds": { "type": "object" },
-    "migrations": { "type": "object" },
+    "migrations": {
+      "type": "object",
+      "required": [
+        "source_database_migration_heads",
+        "source_database_migration_head_count",
+        "source_database_migration_head",
+        "live_database_migration_heads",
+        "live_database_migration_head_count",
+        "live_database_migration_head",
+        "database_migration_head_status",
+        "database_migration_head_probe_mode",
+        "database_migration_head_probe_completed",
+        "credential_environment_variable",
+        "driver",
+        "query_type",
+        "transaction_mode",
+        "transaction_completion",
+        "proof_receipt_path",
+        "match"
+      ],
+      "properties": {
+        "source_database_migration_heads": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "source_database_migration_head_count": { "type": "integer", "minimum": 0 },
+        "source_database_migration_head": { "type": ["string", "null"] },
+        "live_database_migration_heads": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "live_database_migration_head_count": { "type": "integer", "minimum": 0 },
+        "live_database_migration_head": { "type": ["string", "null"] },
+        "database_migration_head_status": {
+          "enum": [
+            "MATCH",
+            "DIFFERENT",
+            "UNKNOWN_REQUIRED",
+            "SOURCE_HEADS_NOT_UNIQUE",
+            "LIVE_HEADS_NOT_UNIQUE"
+          ]
+        },
+        "database_migration_head_probe_mode": {
+          "const": "KUBERNETES_EXEC_PSYCO_PG3_READ_ONLY"
+        },
+        "database_migration_head_probe_completed": { "type": "boolean" },
+        "credential_environment_variable": { "const": "TOPO_DATABASE_URL" },
+        "driver": { "const": "psycopg-v3" },
+        "query_type": { "const": "SELECT_ONLY" },
+        "transaction_mode": { "const": "READ_ONLY" },
+        "transaction_completion": { "const": "ROLLBACK" },
+        "proof_receipt_path": { "const": "artifacts/cx0/database-migration-head-proof.json" },
+        "match": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
     "secretstore_recovery": {
       "type": "object",
       "required": [

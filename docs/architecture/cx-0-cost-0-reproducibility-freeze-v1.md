@@ -24,6 +24,20 @@ The machine-readable authority is
 `DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY`, `COST_0_RETAIN`, and
 `DO_NOT_DELETE_DURING_CX_0B`; mutable tags are not authority.
 
+The accepted database schema identity is:
+
+```ini
+DATABASE_SCHEMA_AUTHORITY=0015_security_audit
+DATABASE_MIGRATION_HEAD=MATCH
+```
+
+It is proven by a separately bounded psycopg v3 query executed through a
+Running/Ready backend Pod. The query derives the Pod selector from the
+Deployment, uses `BEGIN READ ONLY`, reads only `alembic_version`, and ends in
+`ROLLBACK`. No credential value enters an inventory or receipt. Database
+schema identity remains part of final release/evaluation authority and does
+not grant teardown authority.
+
 The browser contract remains HTTPS-only at `https://app.topoai.io`, with
 same-origin `/api/*`, ALB routing, regional WAF defense in depth, and backend
 authentication, authorization, tenant isolation, and CSRF as authority. The

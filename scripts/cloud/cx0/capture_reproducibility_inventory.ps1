@@ -54,6 +54,7 @@ $SecretStoreRecoveryTool = Join-Path $PSScriptRoot "escrow_secretstore_keyring.p
 $SecretStoreRecoveryProcedure = Join-Path $RepoRoot "docs/operations/cx-0-rds-recovery-proof-plan.md"
 $TerraformBackendBootstrap = Join-Path $PSScriptRoot "bootstrap_terraform_state_backend.py"
 $TerraformMigrationReceipt = Join-Path $RepoRoot "artifacts/cx0/terraform-state-migration-receipt.json"
+$DatabaseMigrationProof = Join-Path $RepoRoot "artifacts/cx0/database-migration-head-proof.json"
 $RepositoryPython = Join-Path $RepoRoot "backend/.venv/Scripts/python.exe"
 if ([string]::IsNullOrWhiteSpace($PythonExecutable)) {
     $PythonExecutable = if (Test-Path -LiteralPath $RepositoryPython -PathType Leaf) {
@@ -644,6 +645,19 @@ function Get-RepositoryMigrationHeads {
         if ($parentMatch.Success) { [void]$parents.Add($parentMatch.Groups[1].Value) }
     }
     return @($revisions.Keys | Where-Object { -not $parents.Contains($_) } | Sort-Object)
+}
+
+function Resolve-DatabaseMigrationHeadStatus {
+    param(
+        [AllowEmptyCollection()][string[]]$SourceHeads = @(),
+        [AllowEmptyCollection()][string[]]$LiveHeads = @(),
+        [bool]$ProbeCompleted = $false
+    )
+    if (@($SourceHeads).Count -ne 1) { return "SOURCE_HEADS_NOT_UNIQUE" }
+    if (@($LiveHeads).Count -gt 1) { return "LIVE_HEADS_NOT_UNIQUE" }
+    if (@($LiveHeads).Count -eq 1 -and $SourceHeads[0] -cne $LiveHeads[0]) { return "DIFFERENT" }
+    if (-not $ProbeCompleted -or @($LiveHeads).Count -eq 0) { return "UNKNOWN_REQUIRED" }
+    return "MATCH"
 }
 
 function Assert-ReceiptShape {
@@ -1460,18 +1474,81 @@ catch {
     Add-UniqueText $unknowns "AUTHORITATIVE_DNS_READ_FAILED"
 }
 
-# Repository migration head is authoritative. Live head needs a separately designed
-# read-only database probe because the CX-0A inventory never reads DB credentials.
+# Repository migration head is authoritative. The general inventory never reads
+# database credentials; it consumes only the sanitized receipt emitted by the
+# separately bounded read-only migration-head probe.
 $repositoryHeads = @(Get-RepositoryMigrationHeads)
-$migrations = [pscustomobject]@{
-    repository_heads = $repositoryHeads
-    repository_head_count = $repositoryHeads.Count
-    live_database_revision = $null
-    live_database_status = "NEEDS_SEPARATE_SAFE_PROBE"
-    match = $null
+$migrationProof = $null
+if (Test-Path -LiteralPath $DatabaseMigrationProof -PathType Leaf) {
+    try {
+        $migrationProof = Get-Content -LiteralPath $DatabaseMigrationProof -Raw | ConvertFrom-Json -Depth 20
+    }
+    catch {
+        $migrationProof = $null
+    }
 }
-if ($repositoryHeads.Count -ne 1) { Add-UniqueText $blockers "REPOSITORY_MIGRATION_HEAD_NOT_UNIQUE" }
-Add-UniqueText $unknowns "LIVE_DB_MIGRATION_HEAD_NEEDS_SEPARATE_SAFE_PROBE"
+$liveMigrationHeads = @(
+    @(Get-PropertyValue $migrationProof "live_database_migration_heads" @()) |
+        ForEach-Object { [string]$_ }
+)
+$proofSourceHeads = @(
+    @(Get-PropertyValue $migrationProof "source_migration_heads" @()) |
+        ForEach-Object { [string]$_ }
+)
+$proofCompleted = (
+    $null -ne $migrationProof -and
+    (Get-PropertyValue $migrationProof "schema_version") -eq "cx0.database-migration-head-proof.v1" -and
+    (Get-PropertyValue $migrationProof "aws_account_id") -eq $ExpectedAccount -and
+    (Get-PropertyValue $migrationProof "aws_region") -eq $ExpectedRegion -and
+    (Get-PropertyValue $migrationProof "kube_context") -eq $ExpectedCluster -and
+    (Get-PropertyValue $migrationProof "namespace") -eq $ExpectedNamespace -and
+    (Get-PropertyValue $migrationProof "deployment") -eq "topo-backend" -and
+    (Get-PropertyValue $migrationProof "container") -eq "backend" -and
+    (Get-PropertyValue $migrationProof "selector_source") -eq "Deployment.spec.selector.matchLabels" -and
+    (Get-PropertyValue $migrationProof "credential_environment_variable") -eq "TOPO_DATABASE_URL" -and
+    (Get-PropertyValue $migrationProof "driver") -eq "psycopg-v3" -and
+    (Get-PropertyValue $migrationProof "query_type") -eq "SELECT_ONLY" -and
+    (Get-PropertyValue $migrationProof "transaction_mode") -eq "READ_ONLY" -and
+    (Get-PropertyValue $migrationProof "transaction_completion") -eq "ROLLBACK" -and
+    (Get-PropertyValue $migrationProof "database_secret_printed" $true) -eq $false -and
+    (Get-PropertyValue $migrationProof "database_secret_written_to_disk" $true) -eq $false -and
+    (Get-PropertyValue $migrationProof "aws_mutation_performed" $true) -eq $false -and
+    (Get-PropertyValue $migrationProof "kubernetes_mutation_performed" $true) -eq $false -and
+    (Get-PropertyValue $migrationProof "database_mutation_performed" $true) -eq $false -and
+    (@($proofSourceHeads) -join "|") -ceq (@($repositoryHeads) -join "|") -and
+    (Get-PropertyValue $migrationProof "source_migration_head_count" -1) -eq @($repositoryHeads).Count -and
+    (Get-PropertyValue $migrationProof "live_database_migration_head_count" -1) -eq @($liveMigrationHeads).Count -and
+    (Get-PropertyValue $migrationProof "database_migration_head_status") -eq "MATCH"
+)
+$migrationStatus = Resolve-DatabaseMigrationHeadStatus `
+    -SourceHeads $repositoryHeads -LiveHeads $liveMigrationHeads -ProbeCompleted $proofCompleted
+$migrations = [pscustomobject]@{
+    source_database_migration_heads = $repositoryHeads
+    source_database_migration_head_count = $repositoryHeads.Count
+    source_database_migration_head = if ($repositoryHeads.Count -eq 1) { $repositoryHeads[0] } else { $null }
+    live_database_migration_heads = $liveMigrationHeads
+    live_database_migration_head_count = $liveMigrationHeads.Count
+    live_database_migration_head = if ($liveMigrationHeads.Count -eq 1) { $liveMigrationHeads[0] } else { $null }
+    database_migration_head_status = $migrationStatus
+    database_migration_head_probe_mode = "KUBERNETES_EXEC_PSYCO_PG3_READ_ONLY"
+    database_migration_head_probe_completed = $proofCompleted
+    credential_environment_variable = "TOPO_DATABASE_URL"
+    driver = "psycopg-v3"
+    query_type = "SELECT_ONLY"
+    transaction_mode = "READ_ONLY"
+    transaction_completion = "ROLLBACK"
+    proof_receipt_path = "artifacts/cx0/database-migration-head-proof.json"
+    match = $migrationStatus -eq "MATCH"
+}
+if ($migrationStatus -eq "SOURCE_HEADS_NOT_UNIQUE") {
+    Add-UniqueText $blockers "REPOSITORY_MIGRATION_HEAD_NOT_UNIQUE"
+} elseif ($migrationStatus -eq "LIVE_HEADS_NOT_UNIQUE") {
+    Add-UniqueText $blockers "LIVE_DATABASE_MIGRATION_HEAD_NOT_UNIQUE"
+} elseif ($migrationStatus -eq "DIFFERENT") {
+    Add-UniqueText $blockers "DATABASE_MIGRATION_HEAD_DIFFERS"
+} elseif ($migrationStatus -eq "UNKNOWN_REQUIRED") {
+    Add-UniqueText $unknowns "LIVE_DB_MIGRATION_HEAD_NEEDS_SEPARATE_SAFE_PROBE"
+}
 
 # The general inventory remains metadata-only.  This one recovery verifier is a
 # separately bounded exception: it reads exactly the keyring and active-key ID

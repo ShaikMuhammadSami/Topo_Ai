@@ -44,6 +44,31 @@ any lifecycle policy makes retention unproven until its rules receive a
 separate fail-closed review. Recreation requires the live workload, pinned
 Kubernetes source, machine-readable authority and exact ECR digest to agree.
 
+## Database schema authority
+
+The accepted source and live database each contain exactly one Alembic head:
+
+```ini
+DATABASE_SCHEMA_AUTHORITY=0015_security_audit
+DATABASE_MIGRATION_HEAD=MATCH
+DATABASE_PROBE_DRIVER=psycopg-v3
+DATABASE_PROBE_TRANSACTION_MODE=READ_ONLY
+DATABASE_PROBE_TRANSACTION_COMPLETION=ROLLBACK
+```
+
+`scripts/cloud/cx0/prove_database_migration_head.ps1` derives the source head
+from the migration graph, derives the backend Pod selector from the live
+Deployment, and runs a bounded query using the Pod's existing
+`TOPO_DATABASE_URL` environment variable. It never emits that value. The probe
+uses `BEGIN READ ONLY`, selects only the ordered Alembic version rows, and
+always completes with `ROLLBACK`. Its sanitized receipt is consumed by the
+inventory; missing evidence remains `UNKNOWN_REQUIRED`, while different or
+non-unique heads block reconciliation.
+
+Database schema identity remains part of final release and evaluation
+authority. Matching the head proves schema identity only; it does not prove an
+RDS backup can be restored and does not authorize teardown.
+
 ## Terraform state recovery authority
 
 The golden root declares one deterministic S3 backend:
