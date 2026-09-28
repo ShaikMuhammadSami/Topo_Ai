@@ -9,8 +9,24 @@ $ErrorActionPreference = "Stop"
 
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
 $ExpectedOrigin = '["https://app.topoai.io"]'
-$ExpectedBackendImage = "297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12"
-$ExpectedFrontendImage = "297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1"
+$ImageAuthorityPath = Join-Path $PSScriptRoot "cloud_v1_1b_image_authority.json"
+$ImageAuthority = Get-Content -LiteralPath $ImageAuthorityPath -Raw | ConvertFrom-Json -Depth 20
+if (
+    $ImageAuthority.schema_version -ne "cx0.image-authority.v1" -or
+    $ImageAuthority.aws_account_id -ne "297361542190" -or
+    $ImageAuthority.region -ne "us-east-1" -or
+    $ImageAuthority.repository -ne "topo-golden/topo" -or
+    $ImageAuthority.accepted_cloud_head -ne "e676559b3daf586b4dc53041d1638a3d2191910a"
+) {
+    throw "Immutable image authority contract is invalid."
+}
+$ExpectedRepositoryUri = "$($ImageAuthority.aws_account_id).dkr.ecr.$($ImageAuthority.region).amazonaws.com/$($ImageAuthority.repository)"
+$ExpectedBackendImage = "$ExpectedRepositoryUri@$($ImageAuthority.images.backend.digest)"
+$ExpectedFrontendImage = "$ExpectedRepositoryUri@$($ImageAuthority.images.frontend.digest)"
+$ExpectedObserverImage = "$ExpectedRepositoryUri@$($ImageAuthority.images.observer.digest)"
+$ObserverManifestPath = Join-Path $RepoRoot "infrastructure/kubernetes/golden/observer.yaml"
+$RecreationAuthorityPath = Join-Path $RepoRoot "docs/operations/cx-0-recreation-authority.md"
+$TeardownPlanPath = Join-Path $RepoRoot "docs/operations/cx-0-teardown-plan.md"
 $AllowedClassifications = @(
     "MATCH", "CODIFIED_DIFFERENTLY", "LIVE_ONLY_REQUIRED",
     "INTENTIONALLY_DISPOSABLE", "UNKNOWN"
@@ -55,24 +71,6 @@ function Resolve-RepoPath {
         return [System.IO.Path]::GetFullPath($Path)
     }
     return [System.IO.Path]::GetFullPath((Join-Path $RepoRoot $Path))
-}
-
-function Test-DigestInVersionedSource {
-    param([Parameter(Mandatory = $true)][string]$Digest)
-    $extensions = @("*.md", "*.yaml", "*.yml", "*.json", "*.tf", "*.py")
-    $authorityRoots = @("docs", "infrastructure", ".github")
-    foreach ($authorityRoot in $authorityRoots) {
-        $root = Join-Path $RepoRoot $authorityRoot
-        if (-not (Test-Path -LiteralPath $root)) { continue }
-        foreach ($extension in $extensions) {
-            foreach ($file in Get-ChildItem -LiteralPath $root -Filter $extension -File -Recurse -ErrorAction Stop) {
-                if ((Get-Content -LiteralPath $file.FullName -Raw -ErrorAction Stop).Contains($Digest)) {
-                    return $true
-                }
-            }
-        }
-    }
-    return $false
 }
 
 $resolvedInventory = Resolve-RepoPath $InventoryPath
@@ -125,7 +123,7 @@ Add-Comparison $comparisons "kubernetes_workload_specs" `
     $(if ($workloadShapeMatches) { "CODIFIED_DIFFERENTLY" } else { "LIVE_ONLY_REQUIRED" }) $true `
     "infrastructure/kubernetes/golden plus immutable publication/deployment receipts" `
     $(if ($workloadShapeMatches) {
-        "Workload identities, replica shape, probes, environment references and volumes are versioned; backend/observer image placeholders are deliberately replaced by accepted immutable digests at deployment time."
+        "Workload identities, replica shape, probes, environment references, volumes and accepted immutable image references are versioned."
     } else {
         "Live workload shape cannot be reconciled with the accepted Kubernetes source contract."
     })
@@ -164,17 +162,61 @@ Add-Comparison $comparisons "backend_immutable_image" $(if ($backendImageMatch) 
 Add-Comparison $comparisons "frontend_immutable_image" $(if ($frontendImageMatch) { "MATCH" } else { "LIVE_ONLY_REQUIRED" }) $true `
     "accepted CLOUD-V1 receipt and ECR digest" $(if ($frontendImageMatch) { "Accepted frontend digest is running and recorded." } else { "Accepted frontend digest is not reproducibly present." })
 
-$observerDigest = Get-PropertyValue (Get-PropertyValue $inventory.images "observer") "digest"
-$observerCodified = (-not [string]::IsNullOrWhiteSpace([string]$observerDigest)) -and (Test-DigestInVersionedSource ([string]$observerDigest))
+$observer = Get-PropertyValue $inventory.images "observer" ([pscustomobject]@{})
+$ecrContract = Get-PropertyValue $inventory.images "ecr_repository_contract" ([pscustomobject]@{})
+$observerDigest = [string]$ImageAuthority.images.observer.digest
+$observerManifest = Get-Content -LiteralPath $ObserverManifestPath -Raw
+$recreationAuthority = Get-Content -LiteralPath $RecreationAuthorityPath -Raw
+$teardownPlan = Get-Content -LiteralPath $TeardownPlanPath -Raw
+$observerSourcePinned = $observerManifest.Contains("image: $ExpectedObserverImage")
+$observerAuthorityMatches = (
+    $inventory.images.accepted_observer -eq $ExpectedObserverImage -and
+    $inventory.images.authority.schema_version -eq "cx0.image-authority.v1" -and
+    $inventory.images.authority.repository -eq $ImageAuthority.repository -and
+    $inventory.images.authority.observer_digest -eq $observerDigest -and
+    $inventory.images.authority.authority_class -eq "DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY"
+)
+$observerLiveMatches = (
+    $observer.configured_image -eq $ExpectedObserverImage -and
+    $observer.configured_digest -eq $observerDigest -and
+    $observer.running_digest -eq $observerDigest -and
+    $observer.ready -eq $true
+)
+$observerEcrMatches = (
+    $observer.ecr_digest_exists -eq $true -and
+    @($inventory.images.ecr_images | Where-Object { $_.digest -eq $observerDigest }).Count -eq 1 -and
+    $ecrContract.registry_id -eq $ImageAuthority.aws_account_id -and
+    $ecrContract.repository_name -eq $ImageAuthority.repository
+)
+$observerRetentionSafe = (
+    $observer.retention_safe -eq $true -and
+    $ecrContract.accepted_observer_digest_retention_safe -eq $true
+)
+$observerRetentionDocumented = (
+    $recreationAuthority.Contains($ExpectedObserverImage) -and
+    $teardownPlan.Contains($ExpectedObserverImage) -and
+    $recreationAuthority.Contains("DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY") -and
+    $recreationAuthority.Contains("COST_0_RETAIN") -and
+    $recreationAuthority.Contains("DO_NOT_DELETE_DURING_CX_0B") -and
+    $teardownPlan.Contains("DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY") -and
+    $teardownPlan.Contains("COST_0_RETAIN") -and
+    $teardownPlan.Contains("DO_NOT_DELETE_DURING_CX_0B")
+)
+$observerProven = (
+    $observerAuthorityMatches -and
+    $observerLiveMatches -and
+    $observerEcrMatches -and
+    $observerSourcePinned -and
+    $observerRetentionSafe -and
+    $observerRetentionDocumented
+)
 Add-Comparison $comparisons "observer_immutable_image" `
-    $(if ($observerCodified) { "MATCH" } elseif ($observerDigest) { "LIVE_ONLY_REQUIRED" } else { "UNKNOWN" }) $true `
-    "versioned publication receipt or other durable immutable-artifact authority" `
-    $(if ($observerCodified) {
-        "The live observer digest is present in versioned authority."
-    } elseif ($observerDigest) {
-        "The live observer digest was discovered but no versioned reference was found; it must be frozen before teardown."
+    $(if ($observerProven) { "MATCH" } else { "LIVE_ONLY_REQUIRED" }) $true `
+    "scripts/cloud/cx0/cloud_v1_1b_image_authority.json, immutable Kubernetes source, exact ECR digest, retention contract and CX-0 teardown docs" `
+    $(if ($observerProven) {
+        "The ready live observer, pinned source, machine-readable authority and exact ECR digest agree; repository retention cannot automatically expire it and CX-0B must retain it."
     } else {
-        "The live observer digest could not be determined."
+        "Observer authority remains open until the ready live image ID, pinned source, exact ECR digest, retention safety and explicit CX-0B retention contract all agree."
     })
 
 $edgeMatches = (

@@ -17,8 +17,12 @@ Accepted immutable application artifacts are:
 
 - backend: `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12`
 - frontend: `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1`
-- observer: discovered by the inventory and treated as live-only until its
-  immutable digest is found in versioned or separately durable authority.
+- observer: `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3`
+
+The machine-readable authority is
+`scripts/cloud/cx0/cloud_v1_1b_image_authority.json`. Each exact digest is
+`DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY`, `COST_0_RETAIN`, and
+`DO_NOT_DELETE_DURING_CX_0B`; mutable tags are not authority.
 
 The browser contract remains HTTPS-only at `https://app.topoai.io`, with
 same-origin `/api/*`, ALB routing, regional WAF defense in depth, and backend

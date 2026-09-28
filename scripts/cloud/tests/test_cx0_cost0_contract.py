@@ -19,6 +19,8 @@ OPERATIONS = (
 )
 INVENTORY = ROOT / "scripts/cloud/cx0/capture_reproducibility_inventory.ps1"
 COMPARATOR = ROOT / "scripts/cloud/cx0/compare_source_live_reproducibility.ps1"
+IMAGE_AUTHORITY = ROOT / "scripts/cloud/cx0/cloud_v1_1b_image_authority.json"
+OBSERVER_MANIFEST = ROOT / "infrastructure/kubernetes/golden/observer.yaml"
 SECRETSTORE_RECOVERY = ROOT / "scripts/cloud/cx0/escrow_secretstore_keyring.py"
 TERRAFORM_BACKEND_BOOTSTRAP = ROOT / "scripts/cloud/cx0/bootstrap_terraform_state_backend.py"
 TERRAFORM_STATE_MIGRATION = ROOT / "scripts/cloud/cx0/migrate_golden_terraform_state.ps1"
@@ -42,6 +44,10 @@ ACCEPTED_HEAD = "e676559b3daf586b4dc53041d1638a3d2191910a"
 ACCEPTED_TREE = "c4389d7613afeb7f908e87ed5c4e6c04e599fc0c"
 ACCEPTED_ORIGIN = '["https://app.topoai.io"]'
 APPLICATION_HOST = "https://app.topoai.io"
+IMAGE_REPOSITORY = "297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo"
+BACKEND_DIGEST = "sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12"
+FRONTEND_DIGEST = "sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1"
+OBSERVER_DIGEST = "sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3"
 
 
 def text(path: Path) -> str:
@@ -51,7 +57,8 @@ def text(path: Path) -> str:
 class Cx0Cost0ContractTests(unittest.TestCase):
     def test_required_contract_surface_exists(self) -> None:
         for path in (
-            ARCHITECTURE, INVENTORY, COMPARATOR, SECRETSTORE_RECOVERY,
+            ARCHITECTURE, INVENTORY, COMPARATOR, IMAGE_AUTHORITY,
+            OBSERVER_MANIFEST, SECRETSTORE_RECOVERY,
             SECRETSTORE_REQUIREMENTS, TERRAFORM_BACKEND_BOOTSTRAP,
             TERRAFORM_STATE_MIGRATION, TERRAFORM_LOCAL_STATE_INSPECTOR, SCHEMA,
             *OPERATIONS,
@@ -163,6 +170,88 @@ class Cx0Cost0ContractTests(unittest.TestCase):
         self.assertIn(APPLICATION_HOST, combined)
         self.assertIn("accepted_predecessor_head", text(SCHEMA))
         self.assertIn("accepted_predecessor_tree", text(SCHEMA))
+
+    def test_machine_readable_image_authority_uses_exact_digests_only(self) -> None:
+        authority = json.loads(text(IMAGE_AUTHORITY))
+        self.assertEqual(authority["schema_version"], "cx0.image-authority.v1")
+        self.assertEqual(authority["aws_account_id"], "297361542190")
+        self.assertEqual(authority["region"], "us-east-1")
+        self.assertEqual(authority["repository"], "topo-golden/topo")
+        self.assertEqual(authority["accepted_cloud_head"], ACCEPTED_HEAD)
+        self.assertEqual(
+            authority["images"],
+            {
+                "backend": {"digest": BACKEND_DIGEST},
+                "frontend": {"digest": FRONTEND_DIGEST},
+                "observer": {"digest": OBSERVER_DIGEST},
+            },
+        )
+        serialized = json.dumps(authority).casefold()
+        self.assertNotIn("latest", serialized)
+        self.assertNotIn("image_tag", serialized)
+
+    def test_observer_source_is_pinned_to_exact_authority_digest(self) -> None:
+        manifest = text(OBSERVER_MANIFEST)
+        expected = f"image: {IMAGE_REPOSITORY}@{OBSERVER_DIGEST}"
+        self.assertIn(expected, manifest)
+        self.assertNotIn("example.invalid", manifest)
+        self.assertNotIn(":latest", manifest.casefold())
+
+    def test_observer_reconciliation_requires_every_authority_gate(self) -> None:
+        inventory = text(INVENTORY)
+        comparator = text(COMPARATOR)
+        for gate in (
+            "$observerAuthorityMatches",
+            "$observerLiveMatches",
+            "$observerEcrMatches",
+            "$observerSourcePinned",
+            "$observerRetentionSafe",
+            "$observerRetentionDocumented",
+        ):
+            self.assertIn(gate, comparator)
+        self.assertIn("$observer.running_digest -eq $observerDigest", comparator)
+        self.assertIn("$observer.ready -eq $true", comparator)
+        self.assertIn("$observer.ecr_digest_exists -eq $true", comparator)
+        self.assertIn("accepted_observer_digest_retention_safe", comparator)
+        self.assertNotIn("Test-DigestInVersionedSource", comparator)
+        self.assertIn('"ecr describe-repositories"', inventory)
+        self.assertIn('"ecr get-lifecycle-policy"', inventory)
+        self.assertIn("LifecyclePolicyNotFoundException", inventory)
+        self.assertIn("$observerImageRetentionSafe = -not $lifecyclePolicyExists", inventory)
+
+    def test_observer_retention_and_deletion_prohibition_are_documented(self) -> None:
+        operations = "\n".join(text(path) for path in (OPERATIONS[0], OPERATIONS[3]))
+        exact_ref = f"{IMAGE_REPOSITORY}@{OBSERVER_DIGEST}"
+        self.assertIn(exact_ref, operations)
+        for marker in (
+            "DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY",
+            "COST_0_RETAIN",
+            "DO_NOT_DELETE_DURING_CX_0B",
+        ):
+            self.assertIn(marker, text(OPERATIONS[0]))
+            self.assertIn(marker, text(OPERATIONS[3]))
+        self.assertIn("tags are discovery metadata only", text(OPERATIONS[0]))
+        teardown = " ".join(text(OPERATIONS[3]).split())
+        self.assertIn("outside CX-0B deletion authority", teardown)
+
+    def test_image_schema_requires_observer_ecr_and_retention_evidence(self) -> None:
+        schema = json.loads(text(SCHEMA))["properties"]["images"]
+        self.assertTrue(
+            {
+                "authority",
+                "accepted_observer",
+                "observer",
+                "running_pods",
+                "ecr_images",
+                "ecr_repository_contract",
+            }.issubset(schema["required"])
+        )
+        observer_required = set(schema["properties"]["observer"]["required"])
+        self.assertTrue(
+            {"running_digest", "ready", "source_pinned", "ecr_digest_exists", "retention_safe"}.issubset(
+                observer_required
+            )
+        )
 
     def test_acm_validation_record_is_durable_external_authority(self) -> None:
         combined = text(ARCHITECTURE) + "\n" + text(OPERATIONS[1]) + "\n" + text(INVENTORY)
@@ -291,7 +380,8 @@ class Cx0Cost0ContractTests(unittest.TestCase):
 
     def test_new_cx0_sources_pass_repository_secret_patterns(self) -> None:
         paths = (
-            ARCHITECTURE, *OPERATIONS, INVENTORY, COMPARATOR,
+            ARCHITECTURE, *OPERATIONS, INVENTORY, COMPARATOR, IMAGE_AUTHORITY,
+            OBSERVER_MANIFEST,
             SECRETSTORE_RECOVERY, SECRETSTORE_REQUIREMENTS,
             TERRAFORM_BACKEND_BOOTSTRAP, TERRAFORM_STATE_MIGRATION,
             TERRAFORM_LOCAL_STATE_INSPECTOR, SCHEMA,

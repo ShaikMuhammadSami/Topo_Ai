@@ -14,7 +14,7 @@ contract is written.
 | RDS instance | inventory | Terraform/RDS | only after recovery proof | conditional candidate | likely continuous | Terraform plus proven snapshot/restore | `RDS_RESTORE_PROVEN=YES` | snapshot/recovery evidence retained |
 | VPC endpoints | inventory | Terraform | after dependents | candidate | unknown until inventory | Terraform/state/source | dependency review | no required path lost |
 | Logs/alarms | inventory | Terraform/AWS | after retention review | conditional | storage/unknown | source plus retention record | evidence retention decision | required audit evidence remains |
-| ECR digests | inventory | immutable artifact | retain | retain | storage | ECR digest/receipt | none | accepted manifests still present |
+| Accepted ECR backend/frontend/observer digests | `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12`; `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1`; `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3` | `DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY` | retain before/during/after runtime teardown | retain; `COST_0_RETAIN`; `DO_NOT_DELETE_DURING_CX_0B` | storage | exact ECR digest plus `scripts/cloud/cx0/cloud_v1_1b_image_authority.json`; mutable tags are not authority | all three exact digests exist and no automatic lifecycle expiration threatens them | exact manifests remain present; no broad retention claim is made for unrelated historical images |
 | Final RDS snapshot | future proof | immutable artifact | retain | retain | storage | RDS snapshot ARN | proven restore | retained and encrypted |
 | SecretStore recovery keyring | `arn:aws:secretsmanager:us-east-1:297361542190:secret:topo/golden/recovery/secret-store-keyring-v1-Y8D1I4` | durable external authority | retain before/during/after all runtime and database actions | retain; `COST_0_RETAIN`; `DO_NOT_DELETE_DURING_CX_0B` | low/storage | exact binary keyring fingerprint plus documented recovery procedure | fingerprint and active key ID remain verified | object ARN retained and fingerprint unchanged |
 | Domain and ACM validation record | Porkbun/ACM | external authority | retain unless intentional retirement | retain | low/no runtime | domain/certificate custody | explicit certificate strategy | authoritative records verified |
@@ -31,3 +31,9 @@ CX-0B deletion authority. No lifecycle expiration is permitted by this
 contract. Migration is accepted by semantic equivalence across the source and
 destination lineage/serial transition. The zero-byte local primary must not be
 restored from `.backup`; neither local file is current state authority.
+
+The three accepted image digests listed above are likewise outside CX-0B
+deletion authority. This is a narrow retain rule for those exact digests, not
+permission or a requirement to retain every image ever published to the shared
+repository. A future ECR lifecycle policy must not be accepted until its rules
+are proven unable to expire the accepted artifacts automatically.

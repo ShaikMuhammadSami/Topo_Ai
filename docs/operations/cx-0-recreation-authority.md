@@ -16,6 +16,34 @@ current evidence; this document is the durable procedure contract.
 | SecretStore root authority | AWS Secrets Manager `topo/golden/recovery/secret-store-keyring-v1` | Exact live-keyring SHA-256 match, active key ID, stable ARN, recovery procedure, and retention classification |
 | Evidence retention | Git/ECR/S3/CloudWatch/CloudTrail as applicable | Identifiers, retention settings, and reconstruction role; no raw customer payloads |
 
+## Immutable application image authority
+
+The accepted CLOUD-V1 application artifacts are the following exact ECR
+repository-at-digest references:
+
+```ini
+BACKEND_IMAGE=297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12
+FRONTEND_IMAGE=297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1
+OBSERVER_IMAGE=297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3
+```
+
+`scripts/cloud/cx0/cloud_v1_1b_image_authority.json` is the machine-readable
+versioned authority. ECR tags are discovery metadata only and are never
+recreation authority. These three exact digests, not every historical image in
+the repository, are classified as:
+
+```text
+DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY
+COST_0_RETAIN
+DO_NOT_DELETE_DURING_CX_0B
+```
+
+At CX-0A.2C verification time the ECR repository had no lifecycle policy, so
+these digests were not exposed to automatic lifecycle expiration. Introducing
+any lifecycle policy makes retention unproven until its rules receive a
+separate fail-closed review. Recreation requires the live workload, pinned
+Kubernetes source, machine-readable authority and exact ECR digest to agree.
+
 ## Terraform state recovery authority
 
 The golden root declares one deterministic S3 backend:

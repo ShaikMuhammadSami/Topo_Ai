@@ -18,8 +18,6 @@ $ExpectedNamespace = "topo-system"
 $ExpectedBranch = "feature/cx-0-cost-0-reproducibility-freeze"
 $AcceptedHead = "e676559b3daf586b4dc53041d1638a3d2191910a"
 $AcceptedTree = "c4389d7613afeb7f908e87ed5c4e6c04e599fc0c"
-$AcceptedBackendImage = "297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12"
-$AcceptedFrontendImage = "297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1"
 $AcceptedOrigin = '["https://app.topoai.io"]'
 $AcceptedAlbArn = "arn:aws:elasticloadbalancing:us-east-1:297361542190:loadbalancer/app/topo-golden-edge/bed4a7ad18a7221c"
 $AcceptedCertificateArn = "arn:aws:acm:us-east-1:297361542190:certificate/85675e1c-205d-4fb1-98f2-f6acf8a5c12d"
@@ -28,9 +26,27 @@ $AcceptedValidationValue = "_fd79c652992203959600f955507f54f4.wzccmgtwzk.acm-val
 $AcceptedAlbSecurityGroup = "sg-039e2a36df4d18e31"
 $AcceptedWorkerSecurityGroup = "sg-071e1b40296d57288"
 $AcceptedVpc = "vpc-00dc74e72bd7f0129"
-$EcrRepository = "topo-golden/topo"
 
 $RepoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\..\.."))
+$ImageAuthorityPath = Join-Path $PSScriptRoot "cloud_v1_1b_image_authority.json"
+if (-not (Test-Path -LiteralPath $ImageAuthorityPath -PathType Leaf)) {
+    throw "STOP: immutable image authority is missing"
+}
+$ImageAuthority = Get-Content -LiteralPath $ImageAuthorityPath -Raw | ConvertFrom-Json -Depth 20
+if (
+    $ImageAuthority.schema_version -ne "cx0.image-authority.v1" -or
+    $ImageAuthority.aws_account_id -ne $ExpectedAccount -or
+    $ImageAuthority.region -ne $ExpectedRegion -or
+    $ImageAuthority.accepted_cloud_head -ne $AcceptedHead -or
+    [string]::IsNullOrWhiteSpace([string]$ImageAuthority.repository)
+) {
+    throw "STOP: immutable image authority contract is invalid"
+}
+$EcrRepository = [string]$ImageAuthority.repository
+$EcrRepositoryUri = "$ExpectedAccount.dkr.ecr.$ExpectedRegion.amazonaws.com/$EcrRepository"
+$AcceptedBackendImage = "$EcrRepositoryUri@$($ImageAuthority.images.backend.digest)"
+$AcceptedFrontendImage = "$EcrRepositoryUri@$($ImageAuthority.images.frontend.digest)"
+$AcceptedObserverImage = "$EcrRepositoryUri@$($ImageAuthority.images.observer.digest)"
 $TerraformRoot = Join-Path $RepoRoot "infrastructure/aws/golden"
 $KubernetesRoot = Join-Path $RepoRoot "infrastructure/kubernetes/golden"
 $SchemaPath = Join-Path $PSScriptRoot "reproducibility_inventory.schema.json"
@@ -72,6 +88,8 @@ $script:AwsReadOnlyOperations = @(
     "ec2 describe-vpc-endpoints",
     "ec2 describe-vpcs",
     "ecr describe-images",
+    "ecr describe-repositories",
+    "ecr get-lifecycle-policy",
     "eks describe-cluster",
     "eks describe-nodegroup",
     "eks list-nodegroups",
@@ -104,7 +122,8 @@ function Invoke-NativeCapture {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
         [Parameter(Mandatory = $true)][string[]]$ArgumentList,
-        [Parameter(Mandatory = $true)][string]$SafeDescription
+        [Parameter(Mandatory = $true)][string]$SafeDescription,
+        [string]$AllowedEmptyErrorMarker = ""
     )
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -127,6 +146,12 @@ function Invoke-NativeCapture {
         $stderr = $process.StandardError.ReadToEnd()
         $process.WaitForExit()
         if ($process.ExitCode -ne 0) {
+            if (
+                -not [string]::IsNullOrWhiteSpace($AllowedEmptyErrorMarker) -and
+                $stderr.Contains($AllowedEmptyErrorMarker, [System.StringComparison]::Ordinal)
+            ) {
+                return ""
+            }
             # Captured stderr is deliberately not echoed because provider errors can
             # contain caller/environment details that do not belong in receipts.
             throw "$SafeDescription failed with exit code $($process.ExitCode)."
@@ -142,7 +167,8 @@ function Invoke-AwsReadOnlyJson {
     param(
         [Parameter(Mandatory = $true)][string]$Service,
         [Parameter(Mandatory = $true)][string]$Operation,
-        [string[]]$Arguments = @()
+        [string[]]$Arguments = @(),
+        [string]$AllowedEmptyErrorMarker = ""
     )
 
     $key = "$Service $Operation"
@@ -154,7 +180,7 @@ function Invoke-AwsReadOnlyJson {
         "--region", $AwsRegion,
         $Service, $Operation
     ) + $Arguments + @("--output", "json", "--no-cli-pager")
-    $json = Invoke-NativeCapture -FilePath "aws" -ArgumentList $base -SafeDescription "AWS read-only $key"
+    $json = Invoke-NativeCapture -FilePath "aws" -ArgumentList $base -SafeDescription "AWS read-only $key" -AllowedEmptyErrorMarker $AllowedEmptyErrorMarker
     if ([string]::IsNullOrWhiteSpace($json)) {
         return [pscustomobject]@{}
     }
@@ -756,6 +782,7 @@ $eks = [pscustomobject]@{
 
 # Kubernetes inventory uses explicit safe projections. Secret values are never requested.
 $deploymentItems = @(Get-PropertyValue (Invoke-KubectlGetJson "deployments") "items" @())
+$podItems = @(Get-PropertyValue (Invoke-KubectlGetJson "pods") "items" @())
 $serviceItems = @(Get-PropertyValue (Invoke-KubectlGetJson "services") "items" @())
 $configMapItems = @(Get-PropertyValue (Invoke-KubectlGetJson "configmaps") "items" @())
 $serviceAccountItems = @(Get-PropertyValue (Invoke-KubectlGetJson "serviceaccounts") "items" @())
@@ -864,6 +891,35 @@ foreach ($deployment in $deployments) {
         }
     }
 }
+$podImageStatuses = @()
+foreach ($pod in $podItems) {
+    $podMetadata = Get-PropertyValue $pod "metadata" ([pscustomobject]@{})
+    $podSpec = Get-PropertyValue $pod "spec" ([pscustomobject]@{})
+    $podStatus = Get-PropertyValue $pod "status" ([pscustomobject]@{})
+    $containerStatuses = @{}
+    foreach ($status in @(Get-PropertyValue $podStatus "containerStatuses" @())) {
+        $containerStatuses[[string](Get-PropertyValue $status "name")] = $status
+    }
+    foreach ($container in @(Get-PropertyValue $podSpec "containers" @())) {
+        $containerName = [string](Get-PropertyValue $container "name")
+        $status = if ($containerStatuses.ContainsKey($containerName)) {
+            $containerStatuses[$containerName]
+        } else {
+            $null
+        }
+        $imageId = [string](Get-PropertyValue $status "imageID")
+        $podLabels = Get-PropertyValue $podMetadata "labels" ([pscustomobject]@{})
+        $podImageStatuses += [pscustomobject]@{
+            pod = Get-PropertyValue $podMetadata "name"
+            workload_name = Get-PropertyValue $podLabels "app.kubernetes.io/name"
+            container = $containerName
+            configured_image = Get-PropertyValue $container "image"
+            running_image_id = $imageId
+            running_digest = if ($imageId -match '@(sha256:[0-9a-f]{64})$') { $Matches[1] } else { $null }
+            ready = [bool](Get-PropertyValue $status "ready" $false)
+        }
+    }
+}
 $ecrResponse = Invoke-AwsReadOnlyJson "ecr" "describe-images" @("--repository-name", $EcrRepository)
 $ecrImages = @(
     @(Get-PropertyValue $ecrResponse "imageDetails" @()) | ForEach-Object {
@@ -879,25 +935,95 @@ $ecrImages = @(
         }
     } | Sort-Object digest
 )
+$ecrRepositoryResponse = Invoke-AwsReadOnlyJson "ecr" "describe-repositories" @("--repository-names", $EcrRepository)
+$ecrRepositoryDetails = @((Get-PropertyValue $ecrRepositoryResponse "repositories" @()))[0]
+$lifecycleResponse = Invoke-AwsReadOnlyJson "ecr" "get-lifecycle-policy" @(
+    "--repository-name", $EcrRepository
+) -AllowedEmptyErrorMarker "LifecyclePolicyNotFoundException"
+$lifecyclePolicyText = [string](Get-PropertyValue $lifecycleResponse "lifecyclePolicyText")
+$lifecyclePolicyExists = -not [string]::IsNullOrWhiteSpace($lifecyclePolicyText)
+$lifecyclePolicyRuleCount = 0
+if ($lifecyclePolicyExists) {
+    $lifecyclePolicy = $lifecyclePolicyText | ConvertFrom-Json -Depth 20
+    $lifecyclePolicyRuleCount = @(Get-PropertyValue $lifecyclePolicy "rules" @()).Count
+}
+# Fail closed: any lifecycle policy requires a separate rule-level retention
+# review before an accepted digest can be treated as durable authority.
+$observerImageRetentionSafe = -not $lifecyclePolicyExists
 $ecrDigests = @($ecrImages.digest)
 $backendDigest = ($AcceptedBackendImage -split "@", 2)[1]
 $frontendDigest = ($AcceptedFrontendImage -split "@", 2)[1]
+$observerDigest = ($AcceptedObserverImage -split "@", 2)[1]
 if ($runningImages.image -notcontains $AcceptedBackendImage) { Add-UniqueText $blockers "ACCEPTED_BACKEND_IMAGE_NOT_RUNNING" }
 if ($runningImages.image -notcontains $AcceptedFrontendImage) { Add-UniqueText $blockers "ACCEPTED_FRONTEND_IMAGE_NOT_RUNNING" }
 if ($ecrDigests -notcontains $backendDigest) { Add-UniqueText $blockers "ACCEPTED_BACKEND_DIGEST_MISSING_FROM_ECR" }
 if ($ecrDigests -notcontains $frontendDigest) { Add-UniqueText $blockers "ACCEPTED_FRONTEND_DIGEST_MISSING_FROM_ECR" }
-$observerImage = @($runningImages | Where-Object { $_.deployment -eq "topo-observer" -and $_.container -eq "observer" } | Select-Object -First 1)
-if ($observerImage.Count -eq 0 -or [string]::IsNullOrWhiteSpace([string]$observerImage[0].digest)) {
-    Add-UniqueText $blockers "OBSERVER_IMMUTABLE_DIGEST_NOT_DISCOVERED"
+$observerConfiguredImage = @($runningImages | Where-Object { $_.deployment -eq "topo-observer" -and $_.container -eq "observer" } | Select-Object -First 1)
+$observerPodImage = @($podImageStatuses | Where-Object { $_.workload_name -eq "topo-observer" -and $_.container -eq "observer" } | Select-Object -First 1)
+$observerSourceManifest = Join-Path $KubernetesRoot "observer.yaml"
+$observerSourcePinned = (
+    (Test-Path -LiteralPath $observerSourceManifest -PathType Leaf) -and
+    (Get-Content -LiteralPath $observerSourceManifest -Raw).Contains("image: $AcceptedObserverImage")
+)
+$observerEcrImage = @($ecrImages | Where-Object { $_.digest -eq $observerDigest } | Select-Object -First 1)
+if ($observerConfiguredImage.Count -eq 0 -or $observerConfiguredImage[0].image -ne $AcceptedObserverImage) {
+    Add-UniqueText $blockers "ACCEPTED_OBSERVER_IMAGE_NOT_CONFIGURED"
 }
+if (
+    $observerPodImage.Count -eq 0 -or
+    $observerPodImage[0].running_digest -ne $observerDigest -or
+    $observerPodImage[0].ready -ne $true
+) {
+    Add-UniqueText $blockers "ACCEPTED_OBSERVER_IMAGE_NOT_RUNNING_READY"
+}
+if ($observerEcrImage.Count -eq 0) { Add-UniqueText $blockers "ACCEPTED_OBSERVER_DIGEST_MISSING_FROM_ECR" }
+if (-not $observerSourcePinned) { Add-UniqueText $blockers "ACCEPTED_OBSERVER_IMAGE_NOT_PINNED_IN_SOURCE" }
+if (-not $observerImageRetentionSafe) { Add-UniqueText $blockers "ACCEPTED_OBSERVER_DIGEST_RETENTION_NOT_PROVEN" }
 
 $images = [pscustomobject]@{
+    authority = [pscustomobject]@{
+        schema_version = $ImageAuthority.schema_version
+        aws_account_id = $ImageAuthority.aws_account_id
+        region = $ImageAuthority.region
+        repository = $ImageAuthority.repository
+        accepted_cloud_head = $ImageAuthority.accepted_cloud_head
+        backend_digest = $ImageAuthority.images.backend.digest
+        frontend_digest = $ImageAuthority.images.frontend.digest
+        observer_digest = $ImageAuthority.images.observer.digest
+        authority_class = "DURABLE_IMMUTABLE_ARTIFACT_AUTHORITY"
+    }
     accepted_backend = $AcceptedBackendImage
     accepted_frontend = $AcceptedFrontendImage
-    observer = if ($observerImage.Count -gt 0) { $observerImage[0] } else { $null }
+    accepted_observer = $AcceptedObserverImage
+    observer = [pscustomobject]@{
+        workload = "topo-observer"
+        container = "observer"
+        configured_image = if ($observerConfiguredImage.Count -gt 0) { $observerConfiguredImage[0].image } else { $null }
+        configured_digest = if ($observerConfiguredImage.Count -gt 0) { $observerConfiguredImage[0].digest } else { $null }
+        running_image_id = if ($observerPodImage.Count -gt 0) { $observerPodImage[0].running_image_id } else { $null }
+        running_digest = if ($observerPodImage.Count -gt 0) { $observerPodImage[0].running_digest } else { $null }
+        ready = if ($observerPodImage.Count -gt 0) { $observerPodImage[0].ready } else { $false }
+        source_pinned = $observerSourcePinned
+        ecr_digest_exists = $observerEcrImage.Count -gt 0
+        retention_safe = $observerImageRetentionSafe
+    }
     running = @($runningImages | Sort-Object deployment, container)
+    running_pods = @($podImageStatuses | Sort-Object pod, container)
     ecr_repository = $EcrRepository
     ecr_images = $ecrImages
+    ecr_repository_contract = [pscustomobject]@{
+        registry_id = Get-PropertyValue $ecrRepositoryDetails "registryId"
+        repository_name = Get-PropertyValue $ecrRepositoryDetails "repositoryName"
+        repository_arn = Get-PropertyValue $ecrRepositoryDetails "repositoryArn"
+        repository_uri = Get-PropertyValue $ecrRepositoryDetails "repositoryUri"
+        tag_mutability = Get-PropertyValue $ecrRepositoryDetails "imageTagMutability"
+        scan_on_push = Get-PropertyValue (Get-PropertyValue $ecrRepositoryDetails "imageScanningConfiguration") "scanOnPush"
+        encryption_type = Get-PropertyValue (Get-PropertyValue $ecrRepositoryDetails "encryptionConfiguration") "encryptionType"
+        lifecycle_policy_exists = $lifecyclePolicyExists
+        lifecycle_policy_rule_count = $lifecyclePolicyRuleCount
+        lifecycle_policy_sha256 = if ($lifecyclePolicyExists) { Get-Sha256Text $lifecyclePolicyText } else { $null }
+        accepted_observer_digest_retention_safe = $observerImageRetentionSafe
+    }
 }
 
 # RDS is queried before security groups so its exact private boundary can be included.
