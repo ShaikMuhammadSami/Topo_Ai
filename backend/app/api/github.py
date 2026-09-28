@@ -1,9 +1,9 @@
-from app.security.tenant_context import TenantContext, require_tenant_context
-from fastapi import Depends
 from fastapi import (
     APIRouter,
+    Depends,
     HTTPException,
     Query,
+    Request,
     status,
 )
 from sqlalchemy.orm import Session
@@ -18,17 +18,27 @@ from app.models.github import (
     GitHubActionsEnrichmentResult,
     GitHubConnectionInfo,
     GitHubEnrichmentResult,
-    
 )
 from app.repositories.snapshot_repository import (
     load_snapshot,
     save_snapshot,
 )
+from app.security.tenant_context import TenantContext, require_tenant_context
+from app.services.github_actions_artifact_lineage import (
+    enrich_snapshot_with_github_actions_provider_evidence,
+)
 from app.services.github_graph import (
     augment_snapshot_with_github,
 )
-from app.services.github_actions_artifact_lineage import (
-    enrich_snapshot_with_github_actions_provider_evidence,
+from app.services.github_source_authority import (
+    REPOSITORY_AMBIGUOUS,
+    REPOSITORY_INVALID,
+    REPOSITORY_REQUIRED,
+    SOURCE_NOT_FOUND,
+    SOURCE_PROVIDER_INVALID,
+    SOURCE_UNAVAILABLE,
+    GitHubSourceAuthorityError,
+    resolve_github_source_settings,
 )
 
 router = APIRouter(
@@ -37,15 +47,14 @@ router = APIRouter(
 )
 
 
-def create_connector() -> GitHubConnector:
+def create_connector(
+    settings: GitHubSettings | None = None,
+) -> GitHubConnector:
     try:
-        settings = (
-            GitHubSettings
-            .from_environment()
-        )
+        resolved_settings = settings or GitHubSettings.from_environment()
 
         return GitHubConnector(
-            settings=settings
+            settings=resolved_settings
         )
 
     except (
@@ -56,6 +65,48 @@ def create_connector() -> GitHubConnector:
             status_code=500,
             detail=str(exc),
         ) from exc
+
+
+def _source_scoped_connector(
+    *,
+    request: Request,
+    session: Session,
+    tenant_context: TenantContext,
+    source_id: str | None,
+) -> GitHubConnector:
+    if source_id is None:
+        return create_connector()
+
+    store = getattr(request.app.state, "secret_store", None)
+    if store is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=SOURCE_UNAVAILABLE,
+        )
+    try:
+        settings = resolve_github_source_settings(
+            session,
+            tenant_id=tenant_context.tenant_id,
+            source_id=source_id,
+            secret_store=store,
+        )
+    except GitHubSourceAuthorityError as exc:
+        code = str(exc)
+        if code == SOURCE_NOT_FOUND:
+            status_code = status.HTTP_404_NOT_FOUND
+        elif code == SOURCE_UNAVAILABLE:
+            status_code = status.HTTP_409_CONFLICT
+        elif code in {
+            SOURCE_PROVIDER_INVALID,
+            REPOSITORY_REQUIRED,
+            REPOSITORY_AMBIGUOUS,
+            REPOSITORY_INVALID,
+        }:
+            status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
+        else:  # pragma: no cover - all service errors are enumerated above
+            status_code = status.HTTP_400_BAD_REQUEST
+        raise HTTPException(status_code=status_code, detail=code) from None
+    return create_connector(settings)
 
 
 @router.get(
@@ -91,7 +142,12 @@ def check_github_connection(
     status_code=status.HTTP_201_CREATED,
 )
 def enrich_snapshot_with_github(
+    request: Request,
     snapshot_id: str = Query(description=("Stored Kubernetes snapshot " "to enrich.")),
+    source_id: str | None = Query(
+        default=None,
+        description="Tenant-owned GitHub change source repository authority.",
+    ),
     commit_limit: int = Query(
         default=50,
         ge=1,
@@ -116,7 +172,12 @@ def enrich_snapshot_with_github(
             ),
         )
 
-    connector = create_connector()
+    connector = _source_scoped_connector(
+        request=request,
+        session=session,
+        tenant_context=tenant_context,
+        source_id=source_id,
+    )
 
     try:
         repository = (
@@ -188,12 +249,17 @@ def enrich_snapshot_with_github(
     status_code=status.HTTP_201_CREATED,
 )
 def enrich_snapshot_with_actions(
+    request: Request,
     snapshot_id: str = Query(
         description=(
             "GitHub-enriched snapshot that "
             "already contains repository and "
             "commit entities."
         )
+    ),
+    source_id: str | None = Query(
+        default=None,
+        description="Tenant-owned GitHub change source repository authority.",
     ),
     run_limit: int = Query(
         default=50,
@@ -219,7 +285,12 @@ def enrich_snapshot_with_actions(
             ),
         )
 
-    connector = create_connector()
+    connector = _source_scoped_connector(
+        request=request,
+        session=session,
+        tenant_context=tenant_context,
+        source_id=source_id,
+    )
 
     try:
         repository = (
