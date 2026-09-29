@@ -16,7 +16,10 @@ if (
     $ImageAuthority.aws_account_id -ne "297361542190" -or
     $ImageAuthority.region -ne "us-east-1" -or
     $ImageAuthority.repository -ne "topo-golden/topo" -or
-    $ImageAuthority.accepted_cloud_head -ne "e676559b3daf586b4dc53041d1638a3d2191910a"
+    $ImageAuthority.accepted_cloud_head -ne "e676559b3daf586b4dc53041d1638a3d2191910a" -or
+    $ImageAuthority.images.backend.publication_source_commit -ne "906513c0d9716a018bf0d5a38470fd57fd94aa45" -or
+    $ImageAuthority.images.backend.publication_source_tree -ne "5cc3651425bf8879e2af59f44545cc88401f6456" -or
+    $ImageAuthority.images.backend.repair_commit -ne "0907d5b957ada24a6cd3a53619ab1fa792707779"
 ) {
     throw "Immutable image authority contract is invalid."
 }

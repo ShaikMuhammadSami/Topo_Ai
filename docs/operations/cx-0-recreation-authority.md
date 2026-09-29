@@ -22,7 +22,10 @@ The accepted CLOUD-V1 application artifacts are the following exact ECR
 repository-at-digest references:
 
 ```ini
-BACKEND_IMAGE=297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12
+BACKEND_IMAGE=297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:825e6da3440a51be229376ad494f33dbd5269c0a1158e347325841d366967c76
+BACKEND_PUBLICATION_SOURCE_COMMIT=906513c0d9716a018bf0d5a38470fd57fd94aa45
+BACKEND_PUBLICATION_SOURCE_TREE=5cc3651425bf8879e2af59f44545cc88401f6456
+BACKEND_REPAIR_COMMIT=0907d5b957ada24a6cd3a53619ab1fa792707779
 FRONTEND_IMAGE=297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1
 OBSERVER_IMAGE=297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3
 ```

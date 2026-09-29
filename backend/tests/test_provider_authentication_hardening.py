@@ -23,6 +23,7 @@ from app.db.models import (
 )
 from app.main import create_app
 from app import main as main_module
+from app.api.change_source_webhooks import PROVIDER_WEBHOOK_MAX_BODY_BYTES
 from app.models.secret_store import SecretMaterial
 from app.security.secret_keyring import SecretKeyring, SecretStoreConfiguration
 from app.services.secret_consumer_policy import source_binding
@@ -150,6 +151,17 @@ def _github_headers(secret: str, body: bytes, delivery: str = "delivery-1"):
     }
 
 
+def _github_json_body(size: int, payload: dict | None = None) -> bytes:
+    value = dict(payload or {})
+    value["padding"] = ""
+    unpadded = json.dumps(value, separators=(",", ":")).encode("utf-8")
+    assert len(unpadded) <= size
+    value["padding"] = "x" * (size - len(unpadded))
+    body = json.dumps(value, separators=(",", ":")).encode("utf-8")
+    assert len(body) == size
+    return body
+
+
 def _row_counts(sessions) -> tuple[int, int, int]:
     with sessions() as session:
         return tuple(
@@ -253,6 +265,112 @@ def test_signature_is_authoritative_before_json_or_persistence(
     assert after_invalid == (0, 0, 0)
     assert valid.status_code == 400
     assert valid.json()["detail"] == "Webhook must contain valid JSON."
+    assert _row_counts(sessions) == (0, 0, 0)
+
+
+@pytest.mark.parametrize(
+    ("size", "event_type", "payload"),
+    (
+        (8191, "ping", {"zen": "bounded"}),
+        (
+            8969,
+            "push",
+            {
+                "after": "a" * 40,
+                "ref": "refs/heads/main",
+                "repository": {"full_name": "example/repository"},
+                "head_commit": {"id": "a" * 40, "message": "test push"},
+            },
+        ),
+        (
+            22114,
+            "workflow_run",
+            {
+                "repository": {"full_name": "example/repository"},
+                "workflow_run": {
+                    "id": 42,
+                    "status": "completed",
+                    "conclusion": "success",
+                    "head_sha": "a" * 40,
+                    "name": "test workflow",
+                },
+            },
+        ),
+        (PROVIDER_WEBHOOK_MAX_BODY_BYTES, "ping", {"zen": "boundary"}),
+    ),
+)
+def test_signed_provider_bodies_through_one_mib_reach_processing(
+    provider_app,
+    size: int,
+    event_type: str,
+    payload: dict,
+) -> None:
+    application, sessions, _, store = provider_app
+    secret = secrets.token_urlsafe(32)
+    _source(sessions, store=store, secret=secret)
+    body = _github_json_body(size, payload)
+    headers = _github_headers(secret, body, f"bounded-{size}")
+    headers["X-GitHub-Event"] = event_type
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/change-source-webhooks/source%3Agithub",
+            content=body,
+            headers=headers,
+        )
+
+    assert response.status_code == 200
+    assert response.json()["status"] in {"accepted", "ignored"}
+    assert _row_counts(sessions)[0] == 1
+
+
+def test_declared_provider_body_over_one_mib_is_rejected_before_reading(
+    provider_app,
+) -> None:
+    application, sessions, _, store = provider_app
+    secret = secrets.token_urlsafe(32)
+    _source(sessions, store=store, secret=secret)
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/change-source-webhooks/source%3Agithub",
+            content=b"{}",
+            headers={
+                **_github_headers(secret, b"{}", "declared-oversize"),
+                "Content-Length": str(PROVIDER_WEBHOOK_MAX_BODY_BYTES + 1),
+            },
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Provider webhook payload is too large."}
+    assert _row_counts(sessions) == (0, 0, 0)
+
+
+@pytest.mark.parametrize("content_length", (None, "1"))
+def test_streamed_provider_body_over_one_mib_is_rejected_even_when_length_missing_or_false(
+    provider_app,
+    content_length: str | None,
+) -> None:
+    application, sessions, _, store = provider_app
+    secret = secrets.token_urlsafe(32)
+    _source(sessions, store=store, secret=secret)
+    body = _github_json_body(PROVIDER_WEBHOOK_MAX_BODY_BYTES + 1)
+    headers = _github_headers(secret, body, f"streamed-{content_length}")
+    headers["Transfer-Encoding"] = "chunked"
+    if content_length is None:
+        headers.pop("Content-Length", None)
+    else:
+        headers["Content-Length"] = content_length
+
+    with TestClient(application) as client:
+        response = client.post(
+            "/api/v1/change-source-webhooks/source%3Agithub",
+            content=iter((body[:600000], body[600000:])),
+            headers=headers,
+        )
+
+    assert response.status_code == 413
+    assert response.json() == {"detail": "Provider webhook payload is too large."}
     assert _row_counts(sessions) == (0, 0, 0)
 
 
