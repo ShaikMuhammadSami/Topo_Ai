@@ -46,7 +46,10 @@ ACCEPTED_TREE = "c4389d7613afeb7f908e87ed5c4e6c04e599fc0c"
 ACCEPTED_ORIGIN = '["https://app.topoai.io"]'
 APPLICATION_HOST = "https://app.topoai.io"
 IMAGE_REPOSITORY = "297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo"
-BACKEND_DIGEST = "sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12"
+BACKEND_DIGEST = "sha256:825e6da3440a51be229376ad494f33dbd5269c0a1158e347325841d366967c76"
+BACKEND_PUBLICATION_SOURCE_COMMIT = "906513c0d9716a018bf0d5a38470fd57fd94aa45"
+BACKEND_PUBLICATION_SOURCE_TREE = "5cc3651425bf8879e2af59f44545cc88401f6456"
+BACKEND_REPAIR_COMMIT = "0907d5b957ada24a6cd3a53619ab1fa792707779"
 FRONTEND_DIGEST = "sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1"
 OBSERVER_DIGEST = "sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3"
 
@@ -185,7 +188,12 @@ class Cx0Cost0ContractTests(unittest.TestCase):
         self.assertEqual(
             authority["images"],
             {
-                "backend": {"digest": BACKEND_DIGEST},
+                "backend": {
+                    "digest": BACKEND_DIGEST,
+                    "publication_source_commit": BACKEND_PUBLICATION_SOURCE_COMMIT,
+                    "publication_source_tree": BACKEND_PUBLICATION_SOURCE_TREE,
+                    "repair_commit": BACKEND_REPAIR_COMMIT,
+                },
                 "frontend": {"digest": FRONTEND_DIGEST},
                 "observer": {"digest": OBSERVER_DIGEST},
             },

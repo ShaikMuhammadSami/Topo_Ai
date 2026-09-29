@@ -6,7 +6,10 @@
   "accepted_cloud_head": "e676559b3daf586b4dc53041d1638a3d2191910a",
   "images": {
     "backend": {
-      "digest": "sha256:b32a93d9c3d33d6d83a73475c00687b68ba680b6d591ff84601933af99d7ff12"
+      "digest": "sha256:825e6da3440a51be229376ad494f33dbd5269c0a1158e347325841d366967c76",
+      "publication_source_commit": "906513c0d9716a018bf0d5a38470fd57fd94aa45",
+      "publication_source_tree": "5cc3651425bf8879e2af59f44545cc88401f6456",
+      "repair_commit": "0907d5b957ada24a6cd3a53619ab1fa792707779"
     },
     "frontend": {
       "digest": "sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1"
