@@ -37,6 +37,41 @@ router = APIRouter(
 )
 
 
+PROVIDER_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024
+_PAYLOAD_TOO_LARGE_DETAIL = "Provider webhook payload is too large."
+
+
+async def _bounded_webhook_body(request: Request) -> bytes:
+    content_length = request.headers.get("content-length")
+    if content_length is not None:
+        try:
+            declared_length = int(content_length)
+        except ValueError:
+            declared_length = None
+        if (
+            declared_length is not None
+            and declared_length > PROVIDER_WEBHOOK_MAX_BODY_BYTES
+        ):
+            raise HTTPException(
+                status_code=413,
+                detail=_PAYLOAD_TOO_LARGE_DETAIL,
+            )
+
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > PROVIDER_WEBHOOK_MAX_BODY_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=_PAYLOAD_TOO_LARGE_DETAIL,
+            )
+        if chunk:
+            chunks.append(chunk)
+
+    return b"".join(chunks)
+
+
 @router.post(
     "/{source_id}",
     response_model=(
@@ -61,7 +96,7 @@ async def receive(
             detail="Change-source authentication failed.",
         )
 
-    body = await request.body()
+    body = await _bounded_webhook_body(request)
 
     headers = {
         str(key): str(value)

@@ -47,6 +47,63 @@ resource "aws_wafv2_web_acl" "edge" {
     allow {}
   }
 
+  rule {
+    name     = "BlockOversizeBodyOutsideProviderCallbacks"
+    priority = 5
+
+    action {
+      block {}
+    }
+
+    statement {
+      and_statement {
+        statement {
+          size_constraint_statement {
+            comparison_operator = "GT"
+            size                = 8192
+
+            field_to_match {
+              body {
+                oversize_handling = "MATCH"
+              }
+            }
+
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+
+        statement {
+          not_statement {
+            statement {
+              byte_match_statement {
+                positional_constraint = "STARTS_WITH"
+                search_string         = "/api/v1/change-source-webhooks/"
+
+                field_to_match {
+                  uri_path {}
+                }
+
+                text_transformation {
+                  priority = 0
+                  type     = "NONE"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "${local.name}-edge-non-provider-oversize-body"
+      sampled_requests_enabled   = false
+    }
+  }
+
   dynamic "rule" {
     for_each = local.edge_waf_managed_rule_groups
 
@@ -70,6 +127,18 @@ resource "aws_wafv2_web_acl" "edge" {
         managed_rule_group_statement {
           name        = rule.value.name
           vendor_name = "AWS"
+
+          dynamic "rule_action_override" {
+            for_each = rule.value.name == "AWSManagedRulesCommonRuleSet" ? [true] : []
+
+            content {
+              name = "SizeRestrictions_BODY"
+
+              action_to_use {
+                count {}
+              }
+            }
+          }
         }
       }
 

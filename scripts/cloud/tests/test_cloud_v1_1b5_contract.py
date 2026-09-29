@@ -119,19 +119,66 @@ class CloudV1WafPublicEdgeContractTests(unittest.TestCase):
         self.assertNotIn("FORWARDED_IP", acl)
         self.assertNotIn("X-Forwarded-For", acl)
 
+    def test_provider_callback_has_only_the_bounded_body_size_exception(self) -> None:
+        source = WAF_PATH.read_text(encoding="utf-8")
+        acl = _hcl_block(source, 'resource "aws_wafv2_web_acl" "edge"')
+        custom = _hcl_block(acl, "rule")
+        self.assertIn(
+            'name     = "BlockOversizeBodyOutsideProviderCallbacks"',
+            custom,
+        )
+
+        self.assertEqual(acl.count('dynamic "rule_action_override"'), 1)
+        self.assertEqual(acl.count('name = "SizeRestrictions_BODY"'), 1)
+        override = _hcl_block(acl, 'dynamic "rule_action_override"')
+        self.assertIn(
+            'rule.value.name == "AWSManagedRulesCommonRuleSet" ? [true] : []',
+            override,
+        )
+        self.assertRegex(override, r'action_to_use\s*\{\s*count\s*\{\}\s*\}')
+
+        self.assertIn("priority = 5", custom)
+        self.assertRegex(custom, r'action\s*\{\s*block\s*\{\}\s*\}')
+        self.assertIn('comparison_operator = "GT"', custom)
+        self.assertIn("size                = 8192", custom)
+        self.assertIn('oversize_handling = "MATCH"', custom)
+        self.assertIn('positional_constraint = "STARTS_WITH"', custom)
+        self.assertIn(
+            'search_string         = "/api/v1/change-source-webhooks/"',
+            custom,
+        )
+        self.assertIn("not_statement", custom)
+        self.assertIn("uri_path {}", custom)
+        self.assertLess(5, 10)
+        self.assertNotIn('search_string         = "/api/"', custom)
+        self.assertNotIn('search_string         = "/api/v1/"', custom)
+        self.assertNotIn("single_header", custom)
+        self.assertNotIn("host", custom.casefold())
+
+        for managed_group in (
+            "AWSManagedRulesCommonRuleSet",
+            "AWSManagedRulesKnownBadInputsRuleSet",
+            "AWSManagedRulesAmazonIpReputationList",
+        ):
+            self.assertIn(managed_group, source)
+        self.assertIn('name     = "SourceIpRateLimit"', acl)
+        self.assertIn("evaluation_window_sec = 300", acl)
+        self.assertIn("limit                 = var.edge_waf_rate_limit", acl)
+
     def test_metrics_disable_samples_for_acl_wrappers_and_rate_rule(self) -> None:
         acl = _hcl_block(
             WAF_PATH.read_text(encoding="utf-8"),
             'resource "aws_wafv2_web_acl" "edge"',
         )
-        self.assertEqual(acl.count("visibility_config {"), 3)
-        self.assertEqual(acl.count("cloudwatch_metrics_enabled = true"), 3)
-        self.assertEqual(acl.count("sampled_requests_enabled   = false"), 3)
+        self.assertEqual(acl.count("visibility_config {"), 4)
+        self.assertEqual(acl.count("cloudwatch_metrics_enabled = true"), 4)
+        self.assertEqual(acl.count("sampled_requests_enabled   = false"), 4)
         for metric in (
             "edge-common",
             "edge-known-bad-inputs",
             "edge-ip-reputation",
             "edge-source-ip-rate",
+            "edge-non-provider-oversize-body",
         ):
             self.assertIn(metric, WAF_PATH.read_text(encoding="utf-8"))
 
