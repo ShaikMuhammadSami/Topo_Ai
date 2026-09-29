@@ -15,7 +15,7 @@ The accepted predecessor is:
 
 Accepted immutable application artifacts are:
 
-- backend: `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:825e6da3440a51be229376ad494f33dbd5269c0a1158e347325841d366967c76`
+- backend: `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ef4731bc03aab04bdabd8b525a27f4c765c860e11a553aca66ac20650feeb56b`
 - frontend: `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:ba86d89733b552cd3ced4792f40b59032524f83275b806ffc20f3249b8b1bdf1`
 - observer: `297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3`
 
@@ -25,9 +25,9 @@ The machine-readable authority is
 `DO_NOT_DELETE_DURING_CX_0B`; mutable tags are not authority.
 
 The backend artifact was published by the trusted workflow from integrated
-main commit `906513c0d9716a018bf0d5a38470fd57fd94aa45`, whose tree is
-`5cc3651425bf8879e2af59f44545cc88401f6456`; repair commit
-`0907d5b957ada24a6cd3a53619ab1fa792707779` remains in that build head's
+main commit `a6aee9725bea774336704faa9a77980b73bd05cb`, whose tree is
+`8154b50bbfb8c46533acf368ba70e3329f497832`; repair commit
+`537692e7fe9e0b86e30de87ba43c8d4ca7d1c4c4` remains in that build head's
 ancestry. Frontend and observer publication authority is unchanged.
 
 The accepted database schema identity is:
