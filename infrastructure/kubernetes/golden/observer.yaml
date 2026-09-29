@@ -100,8 +100,8 @@ spec:
           type: RuntimeDefault
       containers:
         - name: observer
-          # Replace with a separately published immutable Topo Agent digest.
-          image: example.invalid/topo-agent@sha256:1111111111111111111111111111111111111111111111111111111111111111
+          # Accepted immutable observer authority; never replace with a mutable tag.
+          image: 297361542190.dkr.ecr.us-east-1.amazonaws.com/topo-golden/topo@sha256:b482df847d453ac6128348a3fc5570210d20299a3421ebc6a3e9fb7ec05348b3
           imagePullPolicy: IfNotPresent
           args:
             - run

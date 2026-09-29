@@ -1,0 +1,122 @@
+{
+  "authority_name": "topoai-cx0-golden-evaluation",
+  "artifact_integrity": {
+    "contract_version": "evaluation-artifact-integrity-v1",
+    "module_path": "evaluation/artifact_integrity.py",
+    "result_manifest_name": "artifact-integrity-v1.json"
+  },
+  "canonical_positive_rule": {
+    "diagnostic_top1_must_match_expected": false,
+    "raw_top1_must_match_expected": false,
+    "supported_top1_must_match_expected": true
+  },
+  "construction_blocked_contract": {
+    "allowed_reason_codes": [
+      "counterfactual_requires_synthetic_authority",
+      "counterfactual_would_corrupt_preserved_truth",
+      "evidence_model_nonseparable",
+      "seed_lacks_required_authoritative_observation",
+      "snapshot_identity_nonseparable"
+    ],
+    "contract_version": "cx0-construction-blocked-v1",
+    "reason_required": true,
+    "source_paths": [
+      "docs/architecture/evaluation/lineage-2b-evidence-representability-audit-v1.md",
+      "docs/architecture/evaluation/lineage-broken-immutable-lineage-v1.md"
+    ],
+    "valid_only_when": "the intended counterfactual cannot be represented truthfully by the evidence ontology without fabricating authority or corrupting protected truth"
+  },
+  "durable_accepted_receipts": {
+    "acceptance_requires_artifact_integrity_manifest": true,
+    "contract_version": "cx0-durable-evaluation-receipts-v1",
+    "g6_binding_name": "GOLDEN_EVALUATION_RECEIPT_V1",
+    "scratch_path": "evaluation/results/",
+    "tracked_release_evidence_path": "docs/architecture/evaluation/receipts/cx0/"
+  },
+  "deferred_scenario_families": [
+    "broad_terraform_cloud_faults",
+    "generic_security_group_faults",
+    "generic_dns_faults",
+    "generic_node_resource_pressure",
+    "broad_secret_configuration_faults",
+    "statistical_multi_incident_accuracy",
+    "large_corpus_percentage_claims",
+    "all_provider_parity",
+    "performance_slo_corpus"
+  ],
+  "diagnostic_projection_contract": {
+    "implementation_path": "backend/app/services/causal_hypothesis_projection.py",
+    "model_path": "backend/app/models/causal_projection.py",
+    "policy_version": "causal-hypothesis-projection-v1",
+    "purpose": "bounded causal-order diagnostic projection; membership does not establish evidence-supported causality"
+  },
+  "evaluation_harness": {
+    "contract_version": "eval-1.v1",
+    "entry_points": [
+      "evaluation/__main__.py",
+      "evaluation/runner.py"
+    ],
+    "independent_evaluator_modules": [
+      "evaluation/evaluator.py",
+      "evaluation/source_cause_match.py",
+      "evaluation/structured_cause_match.py",
+      "evaluation/lineage_evaluator.py",
+      "evaluation/lineage_distractor_robustness.py",
+      "evaluation/lineage_broken_run_image.py",
+      "evaluation/lineage_broken_image_workload.py"
+    ],
+    "live_execution_in_g0": false
+  },
+  "ground_truth": {
+    "authority_paths": [
+      "evaluation/golden/cx0/golden_ground_truth_v1.json"
+    ],
+    "contract_version": "cx0-golden-ground-truth-v1",
+    "derived_from_result_output": false
+  },
+  "live_evaluation_namespace": "topo-eval",
+  "g0r_base_head": "34e36a91798d3b52338bf96ca18a2a0b78bd149b",
+  "g0r_base_tree": "def8b5a31addde73924ae4f079c7baf18040cc3e",
+  "mandatory_pre_cx0b_scenarios": [
+    "G-POS-1",
+    "G-EPH-1",
+    "G-EPH-2",
+    "G-EPH-3",
+    "G-TIME-1",
+    "G-TIME-2",
+    "G-ADV-1",
+    "G-ADV-2",
+    "G-REC-1"
+  ],
+  "protected_control_plane": "topo-system",
+  "result_contract": {
+    "schema_path": "docs/architecture/evaluation/cx0-golden-scenario-receipt-v1.schema.json",
+    "schema_version": "cx0-golden-scenario-receipt-v1",
+    "status_values": [
+      "PASS",
+      "FAIL",
+      "CONSTRUCTION_BLOCKED",
+      "INCOMPLETE"
+    ]
+  },
+  "semantic_receipt_validator": {
+    "contract_version": "cx0-golden-receipt-validator-v1",
+    "implementation_path": "evaluation/cx0_golden_receipt.py"
+  },
+  "scenario_corpus": {
+    "contract_version": "cx0-golden-scenario-corpus-v1",
+    "scenario_definition_paths": [
+      "evaluation/golden/cx0/golden_scenario_corpus_v1.json"
+    ]
+  },
+  "schema_version": "cx0-golden-evaluation-authority-v1",
+  "source_head_at_freeze": "0e2e6b2588c7eef67315a726dbb1ee80d7562f9d",
+  "source_tree_at_freeze": "cdda46c8eace68d54607cf458f4e7c07f6fcfba6",
+  "supported_projection_contract": {
+    "implementation_path": "backend/app/services/causal_support_gate.py",
+    "policy_version": "causal-support-gate-v1",
+    "projection_implementation_path": "backend/app/services/causal_hypothesis_projection.py",
+    "projection_policy_version": "causal-hypothesis-projection-v1",
+    "purpose": "only support-qualified hypotheses may consume supported projection capacity"
+  }
+}

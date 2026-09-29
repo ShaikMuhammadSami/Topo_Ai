@@ -1,0 +1,107 @@
+{
+  "apiVersion": "v1",
+  "items": [
+    {
+      "apiVersion": "v1",
+      "kind": "Namespace",
+      "metadata": {
+        "labels": {
+          "topo.ai/evaluation": "cx0",
+          "topo.ai/managed-by": "cx0-g1a",
+          "topo.ai/scenario": "G-POS-1"
+        },
+        "name": "topo-eval"
+      }
+    },
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "labels": {
+          "app.kubernetes.io/name": "topo-golden-fixture",
+          "topo.ai/evaluation": "cx0",
+          "topo.ai/managed-by": "cx0-g1a",
+          "topo.ai/scenario": "G-POS-1"
+        },
+        "name": "topo-golden-fixture",
+        "namespace": "topo-eval"
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "topo-golden-fixture",
+            "topo.ai/scenario": "G-POS-1"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "topo-golden-fixture",
+              "topo.ai/evaluation": "cx0",
+              "topo.ai/managed-by": "cx0-g1a",
+              "topo.ai/scenario": "G-POS-1"
+            }
+          },
+          "spec": {
+            "automountServiceAccountToken": false,
+            "containers": [
+              {
+                "image": "ghcr.io/shaikmuhammadsami/topoai-golden-fixture@sha256:590587b3f8d03e4ba71ab3d515827e6047b693bdf29c227fde5bd726461d4b32",
+                "imagePullPolicy": "IfNotPresent",
+                "name": "fixture",
+                "ports": [
+                  {
+                    "containerPort": 8080,
+                    "name": "http",
+                    "protocol": "TCP"
+                  }
+                ],
+                "readinessProbe": {
+                  "failureThreshold": 3,
+                  "httpGet": {
+                    "path": "/index.html",
+                    "port": "http",
+                    "scheme": "HTTP"
+                  },
+                  "initialDelaySeconds": 1,
+                  "periodSeconds": 2,
+                  "successThreshold": 1,
+                  "timeoutSeconds": 1
+                },
+                "resources": {
+                  "limits": {
+                    "cpu": "50m",
+                    "memory": "32Mi"
+                  },
+                  "requests": {
+                    "cpu": "5m",
+                    "memory": "8Mi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  },
+                  "readOnlyRootFilesystem": true
+                }
+              }
+            ],
+            "securityContext": {
+              "runAsNonRoot": true,
+              "seccompProfile": {
+                "type": "RuntimeDefault"
+              }
+            },
+            "terminationGracePeriodSeconds": 1
+          }
+        }
+      }
+    }
+  ],
+  "kind": "List",
+  "metadata": {}
+}
