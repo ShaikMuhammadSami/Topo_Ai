@@ -429,6 +429,7 @@ foreach ($unknown in @($inventory.reproducibility.unknowns)) {
 }
 
 $ordered = @($comparisons | Sort-Object domain)
+$codifiedDifferently = @($ordered | Where-Object { $_.required_for_recreation -and $_.classification -eq "CODIFIED_DIFFERENTLY" })
 $liveOnlyRequired = @($ordered | Where-Object { $_.required_for_recreation -and $_.classification -eq "LIVE_ONLY_REQUIRED" })
 $unknownRequired = @($ordered | Where-Object { $_.required_for_recreation -and $_.classification -eq "UNKNOWN_REQUIRED" })
 $report = [pscustomobject]@{
@@ -439,11 +440,15 @@ $report = [pscustomobject]@{
     comparisons = $ordered
     summary = [pscustomobject]@{
         match_count = @($ordered | Where-Object classification -eq "MATCH").Count
-        codified_differently_count = @($ordered | Where-Object classification -eq "CODIFIED_DIFFERENTLY").Count
+        codified_differently_count = $codifiedDifferently.Count
         intentionally_disposable_count = @($ordered | Where-Object classification -eq "INTENTIONALLY_DISPOSABLE").Count
         live_only_required_count = $liveOnlyRequired.Count
         unknown_required_count = $unknownRequired.Count
-        release_freeze_ready = $liveOnlyRequired.Count -eq 0 -and $unknownRequired.Count -eq 0
+        release_freeze_ready = (
+            $codifiedDifferently.Count -eq 0 -and
+            $liveOnlyRequired.Count -eq 0 -and
+            $unknownRequired.Count -eq 0
+        )
         teardown_authorized = $false
     }
     safety = [pscustomobject]@{

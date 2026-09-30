@@ -327,6 +327,7 @@ class Cx0Cost0ContractTests(unittest.TestCase):
             self.assertIn(classification, source)
         self.assertIn("live_only_required_count", source)
         self.assertIn("unknown_required_count", source)
+        self.assertIn("$codifiedDifferently.Count -eq 0", source)
         self.assertIn("TEARDOWN_AUTHORIZED=NO", source)
         self.assertNotIn("Invoke-AwsReadOnlyJson", source)
         self.assertNotIn("Invoke-KubectlReadOnlyText", source)
