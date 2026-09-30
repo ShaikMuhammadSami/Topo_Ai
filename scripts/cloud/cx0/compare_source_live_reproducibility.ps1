@@ -30,10 +30,43 @@ $ExpectedObserverImage = "$ExpectedRepositoryUri@$($ImageAuthority.images.observ
 $ObserverManifestPath = Join-Path $RepoRoot "infrastructure/kubernetes/golden/observer.yaml"
 $RecreationAuthorityPath = Join-Path $RepoRoot "docs/operations/cx-0-recreation-authority.md"
 $TeardownPlanPath = Join-Path $RepoRoot "docs/operations/cx-0-teardown-plan.md"
+$KubernetesContractTool = Join-Path $PSScriptRoot "kubernetes_reproducibility_contract.py"
+$PythonExecutable = Join-Path $RepoRoot "backend/.venv/Scripts/python.exe"
+if (-not (Test-Path -LiteralPath $PythonExecutable -PathType Leaf)) {
+    $PythonExecutable = "python"
+}
 $AllowedClassifications = @(
     "MATCH", "CODIFIED_DIFFERENTLY", "LIVE_ONLY_REQUIRED",
-    "INTENTIONALLY_DISPOSABLE", "UNKNOWN"
+    "INTENTIONALLY_DISPOSABLE", "UNKNOWN_REQUIRED"
 )
+
+function Invoke-NativeCapture {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+        [Parameter(Mandatory = $true)][string]$SafeDescription
+    )
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    foreach ($argument in $ArgumentList) { [void]$startInfo.ArgumentList.Add($argument) }
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) { throw "Unable to start $SafeDescription." }
+        $stdout = $process.StandardOutput.ReadToEnd()
+        [void]$process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        if ($process.ExitCode -ne 0) { throw "$SafeDescription failed with exit code $($process.ExitCode)." }
+        return $stdout.Trim()
+    }
+    finally {
+        $process.Dispose()
+    }
+}
 
 function Get-PropertyValue {
     param(
@@ -113,22 +146,22 @@ Add-Comparison $comparisons "eks_version_and_node_group_shape" `
         "Live EKS/node-group shape differs from the versioned reconstruction contract."
     })
 
-$deploymentMap = @{}
-foreach ($deployment in @($inventory.kubernetes.deployments)) { $deploymentMap[$deployment.metadata.name] = $deployment }
-$serviceMap = @{}
-foreach ($service in @($inventory.kubernetes.services)) { $serviceMap[$service.metadata.name] = $service }
-$workloadShapeMatches = (
-    $deploymentMap.ContainsKey("topo-backend") -and $deploymentMap["topo-backend"].replicas -eq 2 -and
-    $deploymentMap.ContainsKey("topo-frontend") -and $deploymentMap["topo-frontend"].replicas -eq 2 -and
-    $deploymentMap.ContainsKey("topo-observer") -and $deploymentMap["topo-observer"].replicas -eq 1
-)
+$kubernetesReconciliation = (
+    Invoke-NativeCapture $PythonExecutable @(
+        $KubernetesContractTool,
+        "compare",
+        "--inventory", $resolvedInventory
+    ) "Kubernetes semantic reconciliation"
+) | ConvertFrom-Json -Depth 100
+$kubernetesClass = [string](Get-PropertyValue $kubernetesReconciliation "classification" "UNKNOWN_REQUIRED")
 Add-Comparison $comparisons "kubernetes_workload_specs" `
-    $(if ($workloadShapeMatches) { "CODIFIED_DIFFERENTLY" } else { "LIVE_ONLY_REQUIRED" }) $true `
-    "infrastructure/kubernetes/golden plus immutable publication/deployment receipts" `
-    $(if ($workloadShapeMatches) {
-        "Workload identities, replica shape, probes, environment references, volumes and accepted immutable image references are versioned."
-    } else {
-        "Live workload shape cannot be reconciled with the accepted Kubernetes source contract."
+    $kubernetesClass $true `
+    "sanitized infrastructure/kubernetes/golden source contract plus immutable image authority" `
+    $(switch ($kubernetesClass) {
+        "MATCH" { "Live Deployments and Services semantically match every reproduction-critical source-owned field; runtime-generated identity and status fields are excluded." }
+        "CODIFIED_DIFFERENTLY" { "At least one source-owned Kubernetes field materially differs from live; see safe difference paths in the inventory-derived reconciliation." }
+        "LIVE_ONLY_REQUIRED" { "A required live Kubernetes workload or service has no reconstruction authority in source." }
+        default { "A required Kubernetes reconstruction field cannot be established without inference." }
     })
 
 $nodePorts = @{}
@@ -246,12 +279,12 @@ Add-Comparison $comparisons "waf" $(if ($wafMatches) { "MATCH" } else { "LIVE_ON
     "infrastructure/aws/golden/waf.tf" $(if ($wafMatches) { "Live WebACL identity and required managed groups match source." } else { "Live WAF contract differs from source." })
 
 $acmMatches = $inventory.acm.arn -eq "arn:aws:acm:us-east-1:297361542190:certificate/85675e1c-205d-4fb1-98f2-f6acf8a5c12d" -and $inventory.acm.status -eq "ISSUED"
-Add-Comparison $comparisons "acm_certificate" $(if ($acmMatches) { "MATCH" } else { "UNKNOWN" }) $true `
+Add-Comparison $comparisons "acm_certificate" $(if ($acmMatches) { "MATCH" } else { "UNKNOWN_REQUIRED" }) $true `
     "ACM plus durable Porkbun validation record" $(if ($acmMatches) { "The exact certificate is issued and its durable validation record is captured." } else { "Issued certificate authority could not be proven." })
 
 $dnsUnknown = @($inventory.reproducibility.unknowns) -contains "AUTHORITATIVE_DNS_READ_FAILED"
 $dnsBlocker = @($inventory.reproducibility.blockers | Where-Object { $_ -like "*CNAME*" -or $_ -eq "AUTHORITATIVE_NAMESERVER_SET_DIFFERS" }).Count -gt 0
-$dnsClass = if ($dnsUnknown) { "UNKNOWN" } elseif ($dnsBlocker) { "LIVE_ONLY_REQUIRED" } else { "MATCH" }
+$dnsClass = if ($dnsUnknown) { "UNKNOWN_REQUIRED" } elseif ($dnsBlocker) { "LIVE_ONLY_REQUIRED" } else { "MATCH" }
 Add-Comparison $comparisons "porkbun_dns" $dnsClass $true "Porkbun authoritative DNS and reviewed external-authority contract" `
     $(if ($dnsClass -eq "MATCH") { "Authoritative application and ACM-validation CNAME answers match accepted external authority." } else { "Authoritative DNS evidence is missing or differs." })
 
@@ -274,21 +307,21 @@ $migrationClass = if (
 ) {
     "MATCH"
 } elseif ($migrationStatus -eq "UNKNOWN_REQUIRED") {
-    "UNKNOWN"
+    "UNKNOWN_REQUIRED"
 } else {
     "LIVE_ONLY_REQUIRED"
 }
 Add-Comparison $comparisons "database_migration_head" $migrationClass $true "backend/alembic plus a separately safe live DB revision probe" `
     $(if ($migrationClass -eq "MATCH") {
         "The single live database migration head matches the single source head under a completed psycopg v3 read-only transaction that ended in rollback."
-    } elseif ($migrationClass -eq "UNKNOWN") {
+    } elseif ($migrationClass -eq "UNKNOWN_REQUIRED") {
         "The repository head is recorded, but the live revision has not been obtained through an accepted secret-safe read-only probe."
     } else {
         "Database migration-head evidence differs or is non-unique; CX-0 authority remains blocked."
     })
 
 $iamMatches = @($inventory.iam.roles).Count -ge 2 -and @($inventory.iam.roles.name) -contains "topo-golden-eks-cluster" -and @($inventory.iam.roles.name) -contains "topo-golden-eks-nodes"
-Add-Comparison $comparisons "iam_roles_and_policies" $(if ($iamMatches) { "MATCH" } else { "UNKNOWN" }) $true `
+Add-Comparison $comparisons "iam_roles_and_policies" $(if ($iamMatches) { "MATCH" } else { "UNKNOWN_REQUIRED" }) $true `
     "infrastructure/aws/golden IAM source" $(if ($iamMatches) { "Required cluster/node roles and sanitized attachments/trust metadata are captured." } else { "Required IAM authority is incomplete." })
 
 $terraformEquivalence = $inventory.terraform.migration_semantic_equivalence
@@ -311,7 +344,16 @@ $terraformRemoteProven = (
     $inventory.terraform.bucket_configuration_matches -eq $true -and
     $inventory.terraform.state_object_exists -eq $true -and
     -not [string]::IsNullOrWhiteSpace([string]$inventory.terraform.state_object_version_id) -and
+    -not [string]::IsNullOrWhiteSpace([string]$inventory.terraform.migration_state_version_id) -and
+    -not [string]::IsNullOrWhiteSpace([string]$inventory.terraform.current_state_version_id) -and
+    $inventory.terraform.migration_version_retained -eq $true -and
+    $inventory.terraform.current_state_is_latest -eq $true -and
+    $inventory.terraform.current_remote_state_proven -eq $true -and
     $inventory.terraform.lock_object_exists -eq $false -and
+    $inventory.terraform.backend_init_succeeded -eq $true -and
+    $inventory.terraform.remote_state_readable -eq $true -and
+    $inventory.terraform.terraform_post_apply_plan_exit_code -eq 0 -and
+    $inventory.terraform.terraform_post_apply_drift -eq "NONE" -and
     $inventory.terraform.workspace -eq "default" -and
     $inventory.terraform.resource_address_count -eq 80 -and
     $inventory.terraform.representative_addresses_present -eq $true -and
@@ -340,9 +382,9 @@ $terraformRemoteProven = (
 $terraformClass = if ($terraformRemoteProven) { "MATCH" } else { "LIVE_ONLY_REQUIRED" }
 Add-Comparison $comparisons "terraform_backend_and_state_identity" $terraformClass $true `
     "Terraform source plus durable state-backend identity" $(if ($terraformClass -eq "MATCH") {
-        "The versioned native-locking S3 backend is durable authority; all 80 remote addresses and representatives are present, accepted semantic equivalence is recorded across the lineage/serial transition, the empty local primary is non-authoritative, and the retained backup is only a recovery artifact."
+        "The historical migration version is retained, the current S3 version is latest, normal Terraform initialization/state reads succeed, the post-apply plan is clean, all 80 remote addresses and representatives are present, and local artifacts remain non-authoritative."
     } else {
-        "Durable S3 authority is not accepted until its exact configuration and versioned state object, all 80 remote addresses and representatives, complete semantic-equivalence receipt, versioned use_lockfile source, and explicit local-primary/backup demotion are proven."
+        "Durable S3 authority is not accepted until the historical migration version is retained, the non-empty current head is latest, the bucket/source/lock contract passes, normal Terraform reads succeed, and a detailed-exitcode plan proves no drift."
     })
 
 $secretStoreProven = (
@@ -361,12 +403,13 @@ Add-Comparison $comparisons "secretstore_recovery_authority" $(if ($secretStoreP
     "AWS Secrets Manager recovery object plus docs/operations/cx-0-rds-recovery-proof-plan.md" $(if ($secretStoreProven) { "The exact live keyring fingerprint matches durable external recovery custody, its active key ID is recorded, and the recovery procedure exists." } else { "Kubernetes runtime delivery alone is not recovery authority; existence, exact fingerprint equality, active key identity, database-backup separation, and the documented procedure must all be proven." })
 
 $loggingKnown = @($inventory.logging.log_groups).Count -gt 0 -and @($inventory.logging.waf_destination).Count -gt 0
-Add-Comparison $comparisons "logging_and_evidence_dependencies" $(if ($loggingKnown) { "MATCH" } else { "UNKNOWN" }) $true `
+Add-Comparison $comparisons "logging_and_evidence_dependencies" $(if ($loggingKnown) { "MATCH" } else { "UNKNOWN_REQUIRED" }) $true `
     "Terraform/AWS logging metadata and evidence-retention contracts" $(if ($loggingKnown) { "Required retention metadata is captured without log payloads." } else { "Required evidence logging metadata is incomplete." })
 
 $mappedBlockers = @(
     "SECRETSTORE_RECOVERY_AUTHORITY_NOT_SEPARATELY_PROVEN",
     "TERRAFORM_REMOTE_STATE_NOT_PROVEN",
+    "TERRAFORM_POST_APPLY_DRIFT_DETECTED",
     "REPOSITORY_MIGRATION_HEAD_NOT_UNIQUE",
     "LIVE_DATABASE_MIGRATION_HEAD_NOT_UNIQUE",
     "DATABASE_MIGRATION_HEAD_DIFFERS"
@@ -380,14 +423,14 @@ foreach ($blocker in @($inventory.reproducibility.blockers)) {
 }
 foreach ($unknown in @($inventory.reproducibility.unknowns)) {
     if ($mappedUnknowns -contains $unknown) { continue }
-    if (@($comparisons | Where-Object { $_.classification -eq "UNKNOWN" -and $_.rationale -like "*$unknown*" }).Count -eq 0) {
-        Add-Comparison $comparisons "inventory_unknown:$unknown" "UNKNOWN" $true "live inventory completeness gate" "The inventory emitted unknown $unknown; no teardown decision may infer it away."
+    if (@($comparisons | Where-Object { $_.classification -eq "UNKNOWN_REQUIRED" -and $_.rationale -like "*$unknown*" }).Count -eq 0) {
+        Add-Comparison $comparisons "inventory_unknown:$unknown" "UNKNOWN_REQUIRED" $true "live inventory completeness gate" "The inventory emitted unknown $unknown; no teardown decision may infer it away."
     }
 }
 
 $ordered = @($comparisons | Sort-Object domain)
 $liveOnlyRequired = @($ordered | Where-Object { $_.required_for_recreation -and $_.classification -eq "LIVE_ONLY_REQUIRED" })
-$unknownRequired = @($ordered | Where-Object { $_.required_for_recreation -and $_.classification -eq "UNKNOWN" })
+$unknownRequired = @($ordered | Where-Object { $_.required_for_recreation -and $_.classification -eq "UNKNOWN_REQUIRED" })
 $report = [pscustomobject]@{
     schema_version = "cx0a.reconciliation.v1"
     reconciled_at_utc = [DateTimeOffset]::UtcNow.ToString("o")

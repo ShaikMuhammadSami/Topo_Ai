@@ -62,6 +62,10 @@ class Inspection:
     state_object_version_id: str | None
     state_object_etag: str | None
     state_object_size_bytes: int | None
+    current_state_version_is_latest: bool
+    migration_state_version_id: str | None
+    migration_version_retained: bool
+    current_equals_migration_version: bool
     lock_object_exists: bool
 
 
@@ -96,7 +100,42 @@ def _head_metadata(s3: Any, key: str) -> dict[str, Any] | None:
         raise ContractError(f"STOP: unable to inspect approved object metadata ({_error_code(error)})") from error
 
 
-def inspect_bucket(s3: Any) -> Inspection:
+def _state_version_history(s3: Any) -> list[dict[str, Any]]:
+    """Return metadata only for retained versions of the exact state key."""
+
+    versions: list[dict[str, Any]] = []
+    request: dict[str, Any] = {
+        "Bucket": BACKEND_BUCKET,
+        "Prefix": BACKEND_KEY,
+        "ExpectedBucketOwner": EXPECTED_ACCOUNT,
+    }
+    while True:
+        response = s3.list_object_versions(**request)
+        versions.extend(
+            item
+            for item in response.get("Versions", [])
+            if item.get("Key") == BACKEND_KEY
+        )
+        versions.extend(
+            {
+                **item,
+                "DeleteMarker": True,
+            }
+            for item in response.get("DeleteMarkers", [])
+            if item.get("Key") == BACKEND_KEY
+        )
+        if not response.get("IsTruncated"):
+            break
+        key_marker = response.get("NextKeyMarker")
+        version_marker = response.get("NextVersionIdMarker")
+        if not key_marker or not version_marker:
+            raise ContractError("STOP: truncated state version history omitted continuation markers")
+        request["KeyMarker"] = key_marker
+        request["VersionIdMarker"] = version_marker
+    return versions
+
+
+def inspect_bucket(s3: Any, migration_version_id: str | None = None) -> Inspection:
     try:
         s3.head_bucket(Bucket=BACKEND_BUCKET, ExpectedBucketOwner=EXPECTED_ACCOUNT)
     except ClientError as error:
@@ -117,6 +156,10 @@ def inspect_bucket(s3: Any) -> Inspection:
                 state_object_version_id=None,
                 state_object_etag=None,
                 state_object_size_bytes=None,
+                current_state_version_is_latest=False,
+                migration_state_version_id=migration_version_id,
+                migration_version_retained=False,
+                current_equals_migration_version=False,
                 lock_object_exists=False,
             )
         # A globally occupied bucket owned by another account normally returns
@@ -225,6 +268,27 @@ def inspect_bucket(s3: Any) -> Inspection:
     )
     state_metadata = _head_metadata(s3, BACKEND_KEY)
     lock_metadata = _head_metadata(s3, LOCK_KEY)
+    version_history = _state_version_history(s3)
+    current_version_id = (
+        str(state_metadata.get("VersionId"))
+        if state_metadata is not None and state_metadata.get("VersionId") is not None
+        else None
+    )
+    latest_versions = [item for item in version_history if item.get("IsLatest") is True]
+    current_is_latest = (
+        current_version_id is not None
+        and len(latest_versions) == 1
+        and latest_versions[0].get("DeleteMarker") is not True
+        and str(latest_versions[0].get("VersionId", "")) == current_version_id
+    )
+    migration_retained = (
+        bool(migration_version_id)
+        and any(
+            item.get("DeleteMarker") is not True
+            and str(item.get("VersionId", "")) == migration_version_id
+            for item in version_history
+        )
+    )
     return Inspection(
         bucket=BACKEND_BUCKET,
         region=location,
@@ -238,11 +302,7 @@ def inspect_bucket(s3: Any) -> Inspection:
         lifecycle_expiration_absent=no_expiration,
         required_tags_match=tags_match,
         state_object_exists=state_metadata is not None,
-        state_object_version_id=(
-            str(state_metadata.get("VersionId"))
-            if state_metadata is not None and state_metadata.get("VersionId") is not None
-            else None
-        ),
+        state_object_version_id=current_version_id,
         state_object_etag=(
             str(state_metadata.get("ETag"))
             if state_metadata is not None and state_metadata.get("ETag") is not None
@@ -252,6 +312,14 @@ def inspect_bucket(s3: Any) -> Inspection:
             int(state_metadata.get("ContentLength"))
             if state_metadata is not None and state_metadata.get("ContentLength") is not None
             else None
+        ),
+        current_state_version_is_latest=current_is_latest,
+        migration_state_version_id=migration_version_id,
+        migration_version_retained=migration_retained,
+        current_equals_migration_version=(
+            current_version_id is not None
+            and bool(migration_version_id)
+            and current_version_id == migration_version_id
         ),
         lock_object_exists=lock_metadata is not None,
     )
@@ -325,6 +393,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--mode", choices=("PRECHECK", "EXECUTE"), default="PRECHECK")
     parser.add_argument("--confirmation", default="")
     parser.add_argument("--profile", default="")
+    parser.add_argument("--migration-version-id", default="")
     return parser.parse_args(argv)
 
 
@@ -342,7 +411,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             if args.confirmation:
                 raise ContractError("STOP: PRECHECK does not accept a mutation confirmation")
-            result = inspect_bucket(s3)
+            result = inspect_bucket(s3, args.migration_version_id or None)
         print(json.dumps(asdict(result), indent=2, sort_keys=True))
         return 0
     except ContractError as error:

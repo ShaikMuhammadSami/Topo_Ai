@@ -100,7 +100,19 @@ def accepted_migration_receipt() -> dict[str, object]:
         "backend_type": "s3",
         "backend_bucket": BUCKET,
         "backend_key": KEY,
+        "backend_region": "us-east-1",
+        "locking_model": "S3_NATIVE_USE_LOCKFILE",
         "remote_state_authority": "DURABLE_EXTERNAL_AUTHORITY",
+        "workspace": "default",
+        "resource_address_count": 80,
+        "representative_addresses": [
+            "aws_vpc.golden",
+            "aws_eks_cluster.golden",
+            "aws_db_instance.postgres",
+            "aws_lb.edge",
+            "aws_ecr_repository.topo",
+        ],
+        "state_object_version_id": "migration-version",
         "state_object_encryption": "AES256",
         "source_state_lineage": "13c78cf7-912f-cacc-74eb-15c7ee33112f",
         "source_state_serial": 97,
@@ -154,8 +166,24 @@ Test-TerraformMigrationReceiptContract $receipt | ConvertTo-Json -Compress
 
 
 class ExactBucket:
-    def __init__(self, *, configured: bool = True) -> None:
+    def __init__(
+        self,
+        *,
+        configured: bool = True,
+        state_exists: bool = False,
+        current_version: str | None = "current-version",
+        migration_version: str = "migration-version",
+        retain_migration: bool = True,
+        current_latest: bool = True,
+        lock_exists: bool = False,
+    ) -> None:
         self.configured = configured
+        self.state_exists = state_exists
+        self.current_version = current_version
+        self.migration_version = migration_version
+        self.retain_migration = retain_migration
+        self.current_latest = current_latest
+        self.lock_exists = lock_exists
         self.mutations: list[str] = []
 
     def head_bucket(self, **kwargs):
@@ -195,7 +223,41 @@ class ExactBucket:
         }
 
     def head_object(self, **kwargs):
-        raise client_error("404", "HeadObject")
+        if kwargs["Key"] == BACKEND.LOCK_KEY:
+            if self.lock_exists:
+                return {"VersionId": "lock-version", "ContentLength": 1}
+            raise client_error("404", "HeadObject")
+        if not self.state_exists:
+            raise client_error("404", "HeadObject")
+        return {
+            "VersionId": self.current_version,
+            "ETag": '"safe-etag"',
+            "ContentLength": 10,
+        }
+
+    def list_object_versions(self, **kwargs):
+        versions = []
+        if self.state_exists and self.current_version is not None:
+            versions.append(
+                {
+                    "Key": KEY,
+                    "VersionId": self.current_version,
+                    "IsLatest": self.current_latest,
+                }
+            )
+        if (
+            self.state_exists
+            and self.retain_migration
+            and self.migration_version != self.current_version
+        ):
+            versions.append(
+                {
+                    "Key": KEY,
+                    "VersionId": self.migration_version,
+                    "IsLatest": not self.current_latest,
+                }
+            )
+        return {"Versions": versions, "IsTruncated": False}
 
     def __getattr__(self, name: str):
         if name.startswith("put_") or name == "create_bucket":
@@ -257,6 +319,88 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
         self.assertNotIn("put_bucket_lifecycle", source)
         self.assertNotIn("delete_bucket", source)
         self.assertNotIn("put_object", source)
+
+    def test_migration_version_equal_to_current_passes_history_contract(self) -> None:
+        s3 = ExactBucket(
+            state_exists=True,
+            current_version="migration-version",
+            migration_version="migration-version",
+        )
+        result = BACKEND.inspect_bucket(s3, "migration-version")
+        self.assertTrue(result.migration_version_retained)
+        self.assertTrue(result.current_state_version_is_latest)
+        self.assertTrue(result.current_equals_migration_version)
+
+    def test_new_current_version_passes_when_migration_anchor_is_retained(self) -> None:
+        result = BACKEND.inspect_bucket(
+            ExactBucket(state_exists=True),
+            "migration-version",
+        )
+        self.assertTrue(result.migration_version_retained)
+        self.assertTrue(result.current_state_version_is_latest)
+        self.assertFalse(result.current_equals_migration_version)
+
+    def test_missing_migration_version_fails_history_contract(self) -> None:
+        result = BACKEND.inspect_bucket(
+            ExactBucket(state_exists=True, retain_migration=False),
+            "migration-version",
+        )
+        self.assertFalse(result.migration_version_retained)
+
+    def test_empty_current_version_and_non_latest_head_fail_closed(self) -> None:
+        empty = BACKEND.inspect_bucket(
+            ExactBucket(state_exists=True, current_version=None),
+            "migration-version",
+        )
+        stale = BACKEND.inspect_bucket(
+            ExactBucket(state_exists=True, current_latest=False),
+            "migration-version",
+        )
+        self.assertIsNone(empty.state_object_version_id)
+        self.assertFalse(empty.current_state_version_is_latest)
+        self.assertFalse(stale.current_state_version_is_latest)
+
+    def test_versioning_disabled_and_unexpected_lock_fail_remote_contract(self) -> None:
+        suspended = BACKEND.inspect_bucket(
+            ExactBucket(configured=False, state_exists=True),
+            "migration-version",
+        )
+        locked = BACKEND.inspect_bucket(
+            ExactBucket(state_exists=True, lock_exists=True),
+            "migration-version",
+        )
+        self.assertFalse(suspended.versioning_enabled)
+        self.assertFalse(suspended.configuration_matches)
+        self.assertTrue(locked.lock_object_exists)
+
+    def test_wrong_receipt_bucket_key_or_region_is_rejected(self) -> None:
+        for field, value in (
+            ("backend_bucket", "wrong-bucket"),
+            ("backend_key", "wrong.tfstate"),
+            ("backend_region", "us-west-2"),
+        ):
+            receipt = accepted_migration_receipt()
+            receipt[field] = value
+            self.assertFalse(receipt_contract_result(receipt), field)
+
+    def test_post_apply_plan_drift_is_a_remote_authority_failure(self) -> None:
+        source = text(INVENTORY)
+        remote_gate = re.search(
+            r"\$remoteStateProven\s*=\s*\((.*?)\n\)",
+            source,
+            re.DOTALL,
+        )
+        self.assertIsNotNone(remote_gate)
+        gate = remote_gate.group(1)
+        self.assertIn("$terraformPostApplyPlanExitCode -eq 0", gate)
+        self.assertIn('$terraformPostApplyDrift -eq "NONE"', gate)
+        self.assertIn('"-detailed-exitcode"', source)
+        self.assertIn('"TERRAFORM_POST_APPLY_DRIFT_DETECTED"', source)
+
+    def test_inventory_never_mutates_historical_migration_receipt(self) -> None:
+        source = text(INVENTORY)
+        self.assertNotRegex(source, r"Set-Content[^\n]*TerraformMigrationReceipt")
+        self.assertNotRegex(source, r"Out-File[^\n]*TerraformMigrationReceipt")
 
     def test_migration_is_default_precheck_and_execute_is_doubly_guarded(self) -> None:
         source = text(MIGRATION)
@@ -453,6 +597,13 @@ class TerraformBackendMigrationContractTests(unittest.TestCase):
             "bucket_configuration_matches",
             "state_object_exists",
             "state_object_version_id",
+            "migration_state_version_id",
+            "current_state_version_id",
+            "migration_version_retained",
+            "current_state_is_latest",
+            "current_remote_state_proven",
+            "terraform_post_apply_plan_exit_code",
+            "terraform_post_apply_drift",
             "resource_address_count -eq 80",
             "use_lockfile",
             "NON_AUTHORITATIVE_EMPTY_PRIMARY",

@@ -53,6 +53,7 @@ $SchemaPath = Join-Path $PSScriptRoot "reproducibility_inventory.schema.json"
 $SecretStoreRecoveryTool = Join-Path $PSScriptRoot "escrow_secretstore_keyring.py"
 $SecretStoreRecoveryProcedure = Join-Path $RepoRoot "docs/operations/cx-0-rds-recovery-proof-plan.md"
 $TerraformBackendBootstrap = Join-Path $PSScriptRoot "bootstrap_terraform_state_backend.py"
+$KubernetesContractTool = Join-Path $PSScriptRoot "kubernetes_reproducibility_contract.py"
 $TerraformMigrationReceipt = Join-Path $RepoRoot "artifacts/cx0/terraform-state-migration-receipt.json"
 $DatabaseMigrationProof = Join-Path $RepoRoot "artifacts/cx0/database-migration-head-proof.json"
 $RepositoryPython = Join-Path $RepoRoot "backend/.venv/Scripts/python.exe"
@@ -124,7 +125,8 @@ function Invoke-NativeCapture {
         [Parameter(Mandatory = $true)][string]$FilePath,
         [Parameter(Mandatory = $true)][string[]]$ArgumentList,
         [Parameter(Mandatory = $true)][string]$SafeDescription,
-        [string]$AllowedEmptyErrorMarker = ""
+        [string]$AllowedEmptyErrorMarker = "",
+        [hashtable]$Environment = @{}
     )
 
     $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
@@ -135,6 +137,9 @@ function Invoke-NativeCapture {
     $startInfo.CreateNoWindow = $true
     foreach ($argument in $ArgumentList) {
         [void]$startInfo.ArgumentList.Add($argument)
+    }
+    foreach ($name in $Environment.Keys) {
+        $startInfo.Environment[[string]$name] = [string]$Environment[$name]
     }
 
     $process = [System.Diagnostics.Process]::new()
@@ -158,6 +163,45 @@ function Invoke-NativeCapture {
             throw "$SafeDescription failed with exit code $($process.ExitCode)."
         }
         return $stdout.Trim()
+    }
+    finally {
+        $process.Dispose()
+    }
+}
+
+function Invoke-NativeStatus {
+    param(
+        [Parameter(Mandatory = $true)][string]$FilePath,
+        [Parameter(Mandatory = $true)][string[]]$ArgumentList,
+        [Parameter(Mandatory = $true)][string]$SafeDescription,
+        [hashtable]$Environment = @{}
+    )
+
+    $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+    $startInfo.FileName = $FilePath
+    $startInfo.UseShellExecute = $false
+    $startInfo.RedirectStandardOutput = $true
+    $startInfo.RedirectStandardError = $true
+    $startInfo.CreateNoWindow = $true
+    foreach ($argument in $ArgumentList) {
+        [void]$startInfo.ArgumentList.Add($argument)
+    }
+    foreach ($name in $Environment.Keys) {
+        $startInfo.Environment[[string]$name] = [string]$Environment[$name]
+    }
+
+    $process = [System.Diagnostics.Process]::new()
+    $process.StartInfo = $startInfo
+    try {
+        if (-not $process.Start()) {
+            throw "Unable to start $SafeDescription."
+        }
+        # Output is consumed but deliberately not emitted or persisted. Terraform
+        # diagnostics can contain environment-specific details.
+        [void]$process.StandardOutput.ReadToEnd()
+        [void]$process.StandardError.ReadToEnd()
+        $process.WaitForExit()
+        return $process.ExitCode
     }
     finally {
         $process.Dispose()
@@ -234,12 +278,22 @@ function Test-TerraformMigrationReceiptContract {
     $destinationKinds = Get-PropertyValue $semantic "check_results_kinds_destination"
     $sourceStatuses = Get-PropertyValue $semantic "check_results_statuses_source"
     $destinationStatuses = Get-PropertyValue $semantic "check_results_statuses_destination"
+    $representatives = @(Get-PropertyValue $Receipt "representative_addresses" @())
     return (
         (Get-PropertyValue $Receipt "schema_version") -eq "cx0a.terraform-migration-receipt.v2" -and
         (Get-PropertyValue $Receipt "backend_type") -eq "s3" -and
         (Get-PropertyValue $Receipt "backend_bucket") -eq "topo-tfstate-297361542190-us-east-1" -and
         (Get-PropertyValue $Receipt "backend_key") -eq "golden/terraform.tfstate" -and
+        (Get-PropertyValue $Receipt "backend_region") -eq "us-east-1" -and
+        (Get-PropertyValue $Receipt "locking_model") -eq "S3_NATIVE_USE_LOCKFILE" -and
         (Get-PropertyValue $Receipt "remote_state_authority") -eq "DURABLE_EXTERNAL_AUTHORITY" -and
+        (Get-PropertyValue $Receipt "workspace") -eq "default" -and
+        (Get-PropertyValue $Receipt "resource_address_count" -1) -eq 80 -and
+        @($representatives | Where-Object { $_ -in @(
+            "aws_vpc.golden", "aws_eks_cluster.golden", "aws_db_instance.postgres",
+            "aws_lb.edge", "aws_ecr_repository.topo"
+        ) }).Count -eq 5 -and
+        -not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue $Receipt "state_object_version_id")) -and
         (Get-PropertyValue $Receipt "state_object_encryption") -eq "AES256" -and
         (Get-PropertyValue $Receipt "source_state_lineage") -eq "13c78cf7-912f-cacc-74eb-15c7ee33112f" -and
         (Get-PropertyValue $Receipt "source_state_serial" -1) -eq 97 -and
@@ -843,12 +897,27 @@ foreach ($item in $configMapItems) {
 
 $deployments = @($deploymentItems | ForEach-Object { Convert-DeploymentContract $_ } | Sort-Object { $_.metadata.name })
 $services = @($serviceItems | ForEach-Object { Convert-ServiceContract $_ } | Sort-Object { $_.metadata.name })
+$kubernetesSourceContract = (
+    Invoke-NativeCapture $PythonExecutable @(
+        $KubernetesContractTool,
+        "source",
+        "--manifest-root", $KubernetesRoot,
+        "--backend-image", $AcceptedBackendImage
+    ) "Kubernetes source reconstruction contract"
+) | ConvertFrom-Json -Depth 100
+if (
+    (Get-PropertyValue $kubernetesSourceContract "schema_version") -ne "cx0.kubernetes-source-contract.v1" -or
+    (Get-PropertyValue $kubernetesSourceContract "secret_values_emitted" $true) -ne $false
+) {
+    throw "Kubernetes source reconstruction contract is invalid."
+}
 $kubernetes = [pscustomobject]@{
     context = $kubeContext
     server = $kubeServer
     namespace = $Namespace
     deployments = $deployments
     services = $services
+    source_contract = $kubernetesSourceContract
     config_maps = @($configMaps | Sort-Object { $_.metadata.name })
     secrets = @(Get-SecretMetadataContracts)
     service_accounts = @($serviceAccountItems | ForEach-Object { Get-SafeMetadata (Get-PropertyValue $_ "metadata") } | Sort-Object name)
@@ -1602,24 +1671,17 @@ catch {
     Add-UniqueText $blockers "SECRETSTORE_RECOVERY_AUTHORITY_NOT_SEPARATELY_PROVEN"
 }
 
-# Terraform inspection never reads state values or bulk outputs.
+# Terraform inspection never reads state values or bulk outputs. The historical
+# migration receipt is loaded before S3 inspection so its immutable VersionId can
+# be checked for retention independently of the current state head.
 $terraformVersion = $null
 $terraformProviders = $null
 $terraformWorkspace = $null
 $terraformAddresses = @()
-try {
-    $terraformVersion = (Invoke-NativeCapture "terraform" @("-chdir=$TerraformRoot", "version", "-json") "Terraform version read") | ConvertFrom-Json -Depth 20
-    $terraformProviders = Invoke-NativeCapture "terraform" @("-chdir=$TerraformRoot", "providers") "Terraform provider read"
-    $terraformWorkspace = Invoke-NativeCapture "terraform" @("-chdir=$TerraformRoot", "workspace", "show") "Terraform workspace read"
-    $terraformAddresses = @(
-        (Invoke-NativeCapture "terraform" @("-chdir=$TerraformRoot", "state", "list") "Terraform resource-address read") -split "`r?`n" |
-            Where-Object { $_ } |
-            Sort-Object
-    )
-}
-catch {
-    Add-UniqueText $unknowns "TERRAFORM_STATE_IDENTITY_READ_FAILED"
-}
+$terraformBackendInitSucceeded = $false
+$terraformRemoteStateReadable = $false
+$terraformPostApplyPlanExitCode = $null
+$terraformPostApplyDrift = "UNKNOWN"
 $versionsSource = Get-Content -LiteralPath (Join-Path $TerraformRoot "versions.tf") -Raw
 $backendMatch = [regex]::Match($versionsSource, 'backend\s+"([^"]+)"')
 $backendType = if ($backendMatch.Success) { $backendMatch.Groups[1].Value } else { "local" }
@@ -1656,22 +1718,6 @@ catch {
     Add-UniqueText $unknowns "TERRAFORM_BACKEND_SOURCE_NOT_VERSIONED"
 }
 
-$backendInspection = $null
-if ($backendType -eq "s3" -and (Test-Path -LiteralPath $TerraformBackendBootstrap -PathType Leaf)) {
-    try {
-        $backendInspection = (
-            Invoke-NativeCapture $PythonExecutable @(
-                $TerraformBackendBootstrap,
-                "--mode", "PRECHECK",
-                "--profile", $AwsProfile
-            ) "Terraform backend metadata inspection"
-        ) | ConvertFrom-Json -Depth 30
-    }
-    catch {
-        Add-UniqueText $unknowns "TERRAFORM_BACKEND_METADATA_READ_FAILED"
-    }
-}
-
 $migrationReceipt = $null
 if (Test-Path -LiteralPath $TerraformMigrationReceipt -PathType Leaf) {
     try {
@@ -1683,6 +1729,78 @@ if (Test-Path -LiteralPath $TerraformMigrationReceipt -PathType Leaf) {
 }
 $semanticEquivalence = Get-PropertyValue $migrationReceipt "migration_semantic_equivalence"
 $receiptContractProven = Test-TerraformMigrationReceiptContract $migrationReceipt
+$migrationStateVersionId = Get-PropertyValue $migrationReceipt "state_object_version_id"
+
+$backendInspection = $null
+if ($backendType -eq "s3" -and (Test-Path -LiteralPath $TerraformBackendBootstrap -PathType Leaf)) {
+    try {
+        $backendInspection = (
+            Invoke-NativeCapture $PythonExecutable @(
+                $TerraformBackendBootstrap,
+                "--mode", "PRECHECK",
+                "--profile", $AwsProfile,
+                "--migration-version-id", ([string]$migrationStateVersionId)
+            ) "Terraform backend metadata inspection"
+        ) | ConvertFrom-Json -Depth 30
+    }
+    catch {
+        Add-UniqueText $unknowns "TERRAFORM_BACKEND_METADATA_READ_FAILED"
+    }
+}
+
+$terraformEnvironment = @{
+    AWS_PROFILE = $AwsProfile
+    AWS_REGION = $AwsRegion
+    AWS_DEFAULT_REGION = $AwsRegion
+}
+try {
+    $terraformVersion = (
+        Invoke-NativeCapture "terraform" @("-chdir=$TerraformRoot", "version", "-json") `
+            "Terraform version read" -Environment $terraformEnvironment
+    ) | ConvertFrom-Json -Depth 20
+    $initExitCode = Invoke-NativeStatus "terraform" @(
+        "-chdir=$TerraformRoot", "init", "-input=false", "-no-color"
+    ) "Terraform remote backend initialization" -Environment $terraformEnvironment
+    $terraformBackendInitSucceeded = $initExitCode -eq 0
+    if (-not $terraformBackendInitSucceeded) {
+        throw "Terraform remote backend initialization failed."
+    }
+    $terraformProviders = Invoke-NativeCapture "terraform" @(
+        "-chdir=$TerraformRoot", "providers"
+    ) "Terraform provider read" -Environment $terraformEnvironment
+    $terraformWorkspace = Invoke-NativeCapture "terraform" @(
+        "-chdir=$TerraformRoot", "workspace", "show"
+    ) "Terraform workspace read" -Environment $terraformEnvironment
+    $terraformAddresses = @(
+        (Invoke-NativeCapture "terraform" @(
+            "-chdir=$TerraformRoot", "state", "list"
+        ) "Terraform resource-address read" -Environment $terraformEnvironment) -split "`r?`n" |
+            Where-Object { $_ } |
+            Sort-Object
+    )
+    $terraformRemoteStateReadable = $terraformWorkspace -eq "default" -and $terraformAddresses.Count -gt 0
+    $terraformPostApplyPlanExitCode = Invoke-NativeStatus "terraform" @(
+        "-chdir=$TerraformRoot",
+        "plan",
+        "-detailed-exitcode",
+        "-input=false",
+        "-no-color",
+        "-var=edge_https_enabled=true",
+        "-var=edge_waf_enabled=true",
+        "-var=edge_waf_mode=block",
+        "-var=edge_public_ingress_enabled=true"
+    ) "Terraform post-apply continuity plan" -Environment $terraformEnvironment
+    $terraformPostApplyDrift = if ($terraformPostApplyPlanExitCode -eq 0) {
+        "NONE"
+    } elseif ($terraformPostApplyPlanExitCode -eq 2) {
+        "DETECTED"
+    } else {
+        "UNKNOWN"
+    }
+}
+catch {
+    Add-UniqueText $unknowns "TERRAFORM_STATE_IDENTITY_READ_FAILED"
+}
 $localPrimaryReceipt = Get-PropertyValue $migrationReceipt "local_primary"
 $localBackupReceipt = Get-PropertyValue $migrationReceipt "local_backup"
 $localPrimaryExists = Test-Path -LiteralPath $localStatePath -PathType Leaf
@@ -1715,19 +1833,44 @@ $representativeAddresses = @(
 $representativeAddressesPresent = @(
     $representativeAddresses | Where-Object { $terraformAddresses -contains $_ }
 ).Count -eq $representativeAddresses.Count
+$currentStateVersionId = if ($null -ne $backendInspection) {
+    Get-PropertyValue $backendInspection "state_object_version_id"
+} else {
+    $null
+}
+$migrationVersionRetained = (
+    $null -ne $backendInspection -and
+    (Get-PropertyValue $backendInspection "migration_version_retained" $false) -eq $true
+)
+$currentStateIsLatest = (
+    $null -ne $backendInspection -and
+    (Get-PropertyValue $backendInspection "current_state_version_is_latest" $false) -eq $true
+)
+$currentEqualsMigrationVersion = (
+    -not [string]::IsNullOrWhiteSpace([string]$currentStateVersionId) -and
+    -not [string]::IsNullOrWhiteSpace([string]$migrationStateVersionId) -and
+    $currentStateVersionId -eq $migrationStateVersionId
+)
 $remoteStateProven = (
+    $receiptContractProven -and
     $backendSourceContract -and
     $backendSourceVersioned -and
     $null -ne $backendInspection -and
     (Get-PropertyValue $backendInspection "exists" $false) -eq $true -and
     (Get-PropertyValue $backendInspection "configuration_matches" $false) -eq $true -and
+    (Get-PropertyValue $backendInspection "versioning_enabled" $false) -eq $true -and
     (Get-PropertyValue $backendInspection "state_object_exists" $false) -eq $true -and
-    -not [string]::IsNullOrWhiteSpace([string](Get-PropertyValue $backendInspection "state_object_version_id")) -and
-    (Get-PropertyValue $migrationReceipt "state_object_version_id") -eq (Get-PropertyValue $backendInspection "state_object_version_id") -and
+    -not [string]::IsNullOrWhiteSpace([string]$currentStateVersionId) -and
+    $migrationVersionRetained -and
+    $currentStateIsLatest -and
     (Get-PropertyValue $backendInspection "lock_object_exists" $true) -eq $false -and
+    $terraformBackendInitSucceeded -and
+    $terraformRemoteStateReadable -and
     $terraformWorkspace -eq "default" -and
     $terraformAddresses.Count -eq 80 -and
     $representativeAddressesPresent -and
+    $terraformPostApplyPlanExitCode -eq 0 -and
+    $terraformPostApplyDrift -eq "NONE" -and
     $localStateNonAuthoritative
 )
 $terraform = [pscustomobject]@{
@@ -1749,8 +1892,18 @@ $terraform = [pscustomobject]@{
     bucket_exists = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "exists" $false } else { $false }
     bucket_configuration_matches = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "configuration_matches" $false } else { $false }
     state_object_exists = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "state_object_exists" $false } else { $false }
-    state_object_version_id = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "state_object_version_id" } else { $null }
+    state_object_version_id = $currentStateVersionId
+    migration_state_version_id = $migrationStateVersionId
+    current_state_version_id = $currentStateVersionId
+    current_equals_migration_version = $currentEqualsMigrationVersion
+    migration_version_retained = $migrationVersionRetained
+    current_state_is_latest = $currentStateIsLatest
+    current_remote_state_proven = $remoteStateProven
     lock_object_exists = if ($null -ne $backendInspection) { Get-PropertyValue $backendInspection "lock_object_exists" $false } else { $false }
+    backend_init_succeeded = $terraformBackendInitSucceeded
+    remote_state_readable = $terraformRemoteStateReadable
+    terraform_post_apply_plan_exit_code = $terraformPostApplyPlanExitCode
+    terraform_post_apply_drift = $terraformPostApplyDrift
     local_state_file_present = $localPrimaryExists
     local_state_authority_class = if ($localStateNonAuthoritative) { "NON_AUTHORITATIVE_EMPTY_PRIMARY" } else { "UNRECONCILED_LOCAL_AUTHORITY" }
     local_state_sha256 = $localPrimarySha256
@@ -1772,6 +1925,10 @@ $terraform = [pscustomobject]@{
     source = $source.terraform
 }
 if ($terraformAddresses.Count -eq 0) { Add-UniqueText $unknowns "TERRAFORM_RESOURCE_ADDRESS_LIST_EMPTY_OR_UNAVAILABLE" }
+if ($terraformPostApplyPlanExitCode -eq 2) { Add-UniqueText $blockers "TERRAFORM_POST_APPLY_DRIFT_DETECTED" }
+if ($null -ne $terraformPostApplyPlanExitCode -and $terraformPostApplyPlanExitCode -notin @(0, 2)) {
+    Add-UniqueText $unknowns "TERRAFORM_POST_APPLY_PLAN_FAILED"
+}
 if (-not $remoteStateProven) { Add-UniqueText $blockers "TERRAFORM_REMOTE_STATE_NOT_PROVEN" }
 
 # Topo-owned IAM roles. Condition values are omitted from trust-policy projection.

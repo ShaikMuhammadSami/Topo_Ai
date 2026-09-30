@@ -26,6 +26,7 @@ SECRETSTORE_RECOVERY = ROOT / "scripts/cloud/cx0/escrow_secretstore_keyring.py"
 TERRAFORM_BACKEND_BOOTSTRAP = ROOT / "scripts/cloud/cx0/bootstrap_terraform_state_backend.py"
 TERRAFORM_STATE_MIGRATION = ROOT / "scripts/cloud/cx0/migrate_golden_terraform_state.ps1"
 TERRAFORM_LOCAL_STATE_INSPECTOR = ROOT / "scripts/cloud/cx0/inspect_local_terraform_state.py"
+KUBERNETES_RECONCILIATION = ROOT / "scripts/cloud/cx0/kubernetes_reproducibility_contract.py"
 SECRETSTORE_REQUIREMENTS = ROOT / "scripts/cloud/cx0/requirements.txt"
 SCHEMA = ROOT / "scripts/cloud/cx0/reproducibility_inventory.schema.json"
 GITIGNORE = ROOT / ".gitignore"
@@ -65,6 +66,7 @@ class Cx0Cost0ContractTests(unittest.TestCase):
             OBSERVER_MANIFEST, DATABASE_MIGRATION_PROBE, SECRETSTORE_RECOVERY,
             SECRETSTORE_REQUIREMENTS, TERRAFORM_BACKEND_BOOTSTRAP,
             TERRAFORM_STATE_MIGRATION, TERRAFORM_LOCAL_STATE_INSPECTOR, SCHEMA,
+            KUBERNETES_RECONCILIATION,
             *OPERATIONS,
         ):
             self.assertTrue(path.is_file(), path)
@@ -118,6 +120,12 @@ class Cx0Cost0ContractTests(unittest.TestCase):
         self.assertIn('"state", "list"', inventory)
         self.assertIn('"providers"', inventory)
         self.assertIn('"workspace", "show"', inventory)
+        self.assertIn('"init", "-input=false", "-no-color"', inventory)
+        self.assertIn('"plan"', inventory)
+        self.assertIn('"-detailed-exitcode"', inventory)
+        self.assertNotIn('"-lock=false"', inventory)
+        self.assertNotIn('"-force-copy"', inventory)
+        self.assertNotIn('"-migrate-state"', inventory)
         self.assertNotIn('"state", "pull"', combined)
         self.assertNotIn('"show", "-json"', combined)
         self.assertNotIn('"output", "-json"', combined)
@@ -314,7 +322,7 @@ class Cx0Cost0ContractTests(unittest.TestCase):
         source = text(COMPARATOR)
         for classification in (
             "MATCH", "CODIFIED_DIFFERENTLY", "LIVE_ONLY_REQUIRED",
-            "INTENTIONALLY_DISPOSABLE", "UNKNOWN",
+            "INTENTIONALLY_DISPOSABLE", "UNKNOWN_REQUIRED",
         ):
             self.assertIn(classification, source)
         self.assertIn("live_only_required_count", source)
@@ -396,7 +404,7 @@ class Cx0Cost0ContractTests(unittest.TestCase):
             OBSERVER_MANIFEST, DATABASE_MIGRATION_PROBE,
             SECRETSTORE_RECOVERY, SECRETSTORE_REQUIREMENTS,
             TERRAFORM_BACKEND_BOOTSTRAP, TERRAFORM_STATE_MIGRATION,
-            TERRAFORM_LOCAL_STATE_INSPECTOR, SCHEMA,
+            TERRAFORM_LOCAL_STATE_INSPECTOR, KUBERNETES_RECONCILIATION, SCHEMA,
         )
         findings = []
         for path in paths:

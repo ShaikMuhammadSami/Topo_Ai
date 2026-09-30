@@ -74,7 +74,35 @@
     },
     "source": { "type": "object" },
     "eks": { "type": "object" },
-    "kubernetes": { "type": "object" },
+    "kubernetes": {
+      "type": "object",
+      "required": ["deployments", "services", "source_contract"],
+      "properties": {
+        "deployments": { "type": "array" },
+        "services": { "type": "array" },
+        "source_contract": {
+          "type": "object",
+          "required": [
+            "schema_version",
+            "deployments",
+            "services",
+            "runtime_generated_fields_excluded",
+            "reproduction_critical_fields_compared",
+            "secret_values_emitted"
+          ],
+          "properties": {
+            "schema_version": { "const": "cx0.kubernetes-source-contract.v1" },
+            "deployments": { "type": "array" },
+            "services": { "type": "array" },
+            "runtime_generated_fields_excluded": { "type": "array", "items": { "type": "string" } },
+            "reproduction_critical_fields_compared": { "type": "array", "items": { "type": "string" } },
+            "secret_values_emitted": { "const": false }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
     "images": {
       "type": "object",
       "required": [
@@ -299,7 +327,17 @@
         "bucket_configuration_matches",
         "state_object_exists",
         "state_object_version_id",
+        "migration_state_version_id",
+        "current_state_version_id",
+        "current_equals_migration_version",
+        "migration_version_retained",
+        "current_state_is_latest",
+        "current_remote_state_proven",
         "lock_object_exists",
+        "backend_init_succeeded",
+        "remote_state_readable",
+        "terraform_post_apply_plan_exit_code",
+        "terraform_post_apply_drift",
         "remote_state_authority_class",
         "local_state_authority_class",
         "local_state_sha256",
@@ -330,7 +368,17 @@
         "bucket_configuration_matches": { "type": "boolean" },
         "state_object_exists": { "type": "boolean" },
         "state_object_version_id": { "type": ["string", "null"] },
+        "migration_state_version_id": { "type": ["string", "null"] },
+        "current_state_version_id": { "type": ["string", "null"] },
+        "current_equals_migration_version": { "type": "boolean" },
+        "migration_version_retained": { "type": "boolean" },
+        "current_state_is_latest": { "type": "boolean" },
+        "current_remote_state_proven": { "type": "boolean" },
         "lock_object_exists": { "type": "boolean" },
+        "backend_init_succeeded": { "type": "boolean" },
+        "remote_state_readable": { "type": "boolean" },
+        "terraform_post_apply_plan_exit_code": { "type": ["integer", "null"] },
+        "terraform_post_apply_drift": { "enum": ["NONE", "DETECTED", "UNKNOWN"] },
         "remote_state_authority_class": {
           "enum": ["UNPROVEN_REMOTE_AUTHORITY", "DURABLE_EXTERNAL_AUTHORITY"]
         },
