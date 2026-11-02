@@ -150,5 +150,5 @@ The agent stores its credential using the host operating system's secure credent
 - The Compose ports bind to 127.0.0.1. Do not expose them while TOPO_AUTH_MODE=development-disabled is enabled.
 - Development-disabled authentication is accepted only with SQLite and is not suitable for shared or production use.
 - Do not use or copy credentials found in repository history. If GitHub reports a historical secret finding, verify that the credential is revoked before proceeding.
-- This repository is governed by the [Topo AI Evaluation-Only License](LICENSE). It permits private, local, non-production evaluation only; it does not grant open-source reuse or commercial-use rights. GitHub's public-repository terms may still allow platform-level viewing and forking; the license is not technical copy protection.
+- This repository is governed by the [Topo AI Evaluation-Only License](LICENSE). It permits private, local, non-commercial, non-production evaluation only; it does not grant open-source reuse or commercial-use rights. GitHub's public-repository terms may still allow platform-level viewing and forking; the license is not technical copy protection.
 - When reporting a problem, use the **Local demo feedback** issue template. Remove tokens, credentials, customer data, and private URLs from logs before posting.
