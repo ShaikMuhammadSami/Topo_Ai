@@ -1,0 +1,79 @@
+name: Refresh frontend dependency lock
+
+on:
+  push:
+    branches:
+      - feat/local-demo-quickstart
+    paths:
+      - ".github/workflows/refresh-frontend-dependency-lock.yml"
+      - "frontend/package.json"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  refresh-lock:
+    name: Refresh and validate patched frontend dependencies
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@v6
+        with:
+          ref: feat/local-demo-quickstart
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Regenerate lockfile for the patched Next.js version
+        run: npm install --package-lock-only --ignore-scripts
+
+      - name: Apply non-breaking security fixes
+        run: npm audit fix --ignore-scripts
+
+      - name: Verify clean install
+        run: npm ci
+
+      - name: Reject high or critical production dependency findings
+        run: npm audit --omit=dev --audit-level=high
+
+      - name: Verify patched package versions
+        run: |
+          npm ls next eslint-config-next sharp source-map-js
+          node -e "const p=require('./node_modules/next/package.json'); if (p.version !== '16.4.4') process.exit(1); console.log('Next.js', p.version)"
+
+      - name: Commit lockfile and remove this temporary workflow
+        shell: bash
+        working-directory: .
+        run: |
+          set -euo pipefail
+          git diff --check
+          test -s frontend/package-lock.json
+          if [[ -z "$(git status --porcelain -- frontend/package-lock.json)" ]]; then
+            echo "Expected package-lock.json to change, but it did not." >&2
+            exit 1
+          fi
+          git rm .github/workflows/refresh-frontend-dependency-lock.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add frontend/package-lock.json
+          git commit -m "fix(frontend): refresh vulnerable production dependencies"
+          git push origin HEAD:feat/local-demo-quickstart
+
+      - name: Trigger PR validation on the final branch head
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run topo-golden-frontend-image.yml --ref feat/local-demo-quickstart -f confirm=NO_PUBLISH
+          gh workflow run local-demo-smoke.yml --ref feat/local-demo-quickstart
