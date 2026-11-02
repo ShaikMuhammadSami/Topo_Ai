@@ -118,7 +118,7 @@ kubectl get nodes
 Install the observer agent from this repository:
 
 ~~~powershell
-py -m pip install -e .\\agent
+py -m pip install -e .\agent
 ~~~
 
 Create a short-lived, single-use enrollment token for the local demo tenant:
