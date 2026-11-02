@@ -40,7 +40,7 @@ jobs:
         run: npm install --package-lock-only --ignore-scripts
 
       - name: Apply non-breaking security fixes
-        run: npm audit fix --ignore-scripts
+        run: npm audit fix --ignore-scripts --audit-level=high
 
       - name: Verify clean install
         run: npm ci
