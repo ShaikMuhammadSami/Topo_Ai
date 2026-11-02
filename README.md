@@ -108,6 +108,8 @@ In PowerShell, configure and verify your AWS and Kubernetes access:
 
 ~~~powershell
 $env:AWS_PROFILE = "your-aws-profile"
+$env:TOPO_AWS_PROFILE = $env:AWS_PROFILE
+$env:TOPO_AWS_REGIONS = "your-region"
 aws sts get-caller-identity
 aws eks update-kubeconfig --region your-region --name your-eks-cluster
 kubectl get nodes
