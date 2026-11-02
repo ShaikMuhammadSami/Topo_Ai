@@ -1,0 +1,53 @@
+name: topo-ai-local
+
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      TOPO_AUTH_MODE: ${TOPO_AUTH_MODE:-development-disabled}
+      TOPO_DATABASE_URL: ${TOPO_DATABASE_URL:-sqlite:////opt/topo/data/topo.db}
+      TOPO_SECRET_STORE_BACKEND: ${TOPO_SECRET_STORE_BACKEND:-disabled}
+      TOPO_GITHUB_OWNER: ${TOPO_GITHUB_OWNER:-}
+      TOPO_GITHUB_REPO: ${TOPO_GITHUB_REPO:-}
+      TOPO_GITHUB_API_URL: ${TOPO_GITHUB_API_URL:-https://api.github.com}
+    volumes:
+      - topo-data:/opt/topo/data
+    ports:
+      - "127.0.0.1:${TOPO_BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=3)"
+      interval: 10s
+      timeout: 4s
+      retries: 12
+      start_period: 20s
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        TOPO_BACKEND_URL: ${TOPO_BACKEND_URL:-http://backend:8000}
+    ports:
+      - "127.0.0.1:${TOPO_FRONTEND_PORT:-3000}:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "fetch('http://127.0.0.1:3000/').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"
+      interval: 10s
+      timeout: 4s
+      retries: 12
+      start_period: 20s
+
+volumes:
+  topo-data:

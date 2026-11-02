@@ -17,9 +17,10 @@ FROM base AS builder
 COPY --from=dependencies /opt/topo-frontend/node_modules ./node_modules
 COPY . .
 
+ARG TOPO_BACKEND_URL=http://backend:8000
 ENV NODE_ENV=production
 
-RUN npm run build
+RUN TOPO_BACKEND_URL="$TOPO_BACKEND_URL" npm run build
 
 FROM base AS runtime
 

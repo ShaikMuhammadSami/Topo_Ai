@@ -1,0 +1,43 @@
+# Topo AI Evaluation-Only License
+
+Copyright (c) 2026 Shaik Muhammad Sami. All rights reserved.
+
+This license applies to the software, source code, documentation, and other materials in this repository (collectively, the "Software"), except for third-party components that are identified as being subject to separate license terms. Those third-party terms continue to apply.
+
+## 1. Limited evaluation permission
+
+Subject to the terms below, the copyright holder grants you a limited, non-exclusive, non-transferable, non-sublicensable permission to download, clone, inspect, compile, execute, and modify the Software solely for your own non-commercial, non-production evaluation and testing of its functionality and suitability.
+
+This permission includes running the Software on systems you control and making private, local modifications reasonably necessary for that evaluation. You may share feedback, bug reports, and evaluation results, provided you do not disclose copies of the Software, private modifications, credentials, or confidential information.
+
+## 2. Restrictions
+
+You may not:
+
+- use the Software in production, operational, customer-facing, hosted, or revenue-generating environments;
+- use the Software, or any part of it, to provide a product or service to another person or organization;
+- publish, distribute, sublicense, sell, rent, transfer, or otherwise make copies of the Software or modified versions available outside your private evaluation environment;
+- incorporate the Software or any portion of it into another product, service, or codebase;
+- remove or alter copyright, license, or other proprietary notices.
+
+Because this repository is public on GitHub, GitHub's Terms of Service may permit users to view and fork it on the platform. This license does not withdraw those platform-level permissions or grant any additional rights to use, publish, or redistribute the Software beyond them. Any other use remains limited to the private evaluation permission stated in this license.
+
+## 3. Ownership and reservation of rights
+
+The Software is licensed, not sold. The copyright holder retains all rights not expressly granted by this license. No patent, trademark, or other intellectual-property rights are granted except for the limited copyright permission stated above.
+
+## 4. Termination
+
+This permission terminates automatically if you violate this license. Upon termination, you must stop using the Software and delete copies and private modifications in your possession or control.
+
+## 5. Disclaimer of warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT, TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW.
+
+## 6. Limitation of liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE COPYRIGHT HOLDER WILL NOT BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE, INCLUDING DIRECT, INDIRECT, INCIDENTAL, SPECIAL, OR CONSEQUENTIAL DAMAGES.
+
+## 7. Questions and additional permissions
+
+For permissions beyond evaluation, contact the copyright holder before using, copying, modifying, or distributing the Software for any other purpose.
