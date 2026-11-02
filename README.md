@@ -118,7 +118,7 @@ kubectl get nodes
 Install the observer agent from this repository:
 
 ~~~powershell
-py -m pip install -e .\agent
+py -m pip install -e .\\agent
 ~~~
 
 Create a short-lived, single-use enrollment token for the local demo tenant:
@@ -149,6 +149,6 @@ The agent stores its credential using the host operating system's secure credent
 
 - The Compose ports bind to 127.0.0.1. Do not expose them while TOPO_AUTH_MODE=development-disabled is enabled.
 - Development-disabled authentication is accepted only with SQLite and is not suitable for shared or production use.
-- Previously committed GitHub credential findings still need owner verification that the credentials have been revoked or are invalid. Do not use or copy credentials from repository history; resolve that check before inviting external testers.
-- A root LICENSE file is not included yet. Do not assume this repository grants open-source reuse rights.
+- Do not use or copy credentials found in repository history. If GitHub reports a historical secret finding, verify that the credential is revoked before proceeding.
+- This repository is governed by the [Topo AI Evaluation-Only License](LICENSE). It permits private, local, non-production evaluation only; it does not grant open-source reuse or commercial-use rights.
 - When reporting a problem, use the **Local demo feedback** issue template. Remove tokens, credentials, customer data, and private URLs from logs before posting.
