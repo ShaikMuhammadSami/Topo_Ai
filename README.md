@@ -37,12 +37,23 @@ python scripts/smoke/local_demo.py
 
 Open **http://localhost:3000/app**. The API is at **http://localhost:8000** and the local API documentation is at **http://localhost:8000/docs**.
 
-The seed is safe to rerun. It creates one local demo workspace with:
-- A baseline Kubernetes topology snapshot
-- A second snapshot containing a synthetic CrashLoopBackOff state
-- The change derived between those snapshots
-- A failure signal and its incident record
+The seed creates a local demo workspace with a synthetic, evidence-backed Kubernetes incident scenario:
 
+1. **Baseline:** A healthy `payment-service` Deployment running image `payment-service:v1`.
+2. **Deployment change:** The Deployment image changes from `payment-service:v1` to `payment-service:v2`. Topo detects and persists this change.
+3. **Runtime failure:** One minute later, the `payment-service` Pod enters `CrashLoopBackOff`, generating a failure signal and incident.
+
+Topo uses the recorded change, timestamps, and Kubernetes topology relationships to investigate the incident automatically.
+
+To explore the demo:
+
+- **Signals & Changes:** Review the deployment change and subsequent runtime failure.
+- **Topology:** Inspect the Deployment, Pod, and their relationships.
+- **Incidents:** Open the CrashLoopBackOff incident to view the leading evidence-backed causal hypothesis, causal topology path, blast radius, and read-only response guidance.
+
+The deployment change is presented as a supported causal hypothesis, not a proven root cause. This scenario uses synthetic evidence and does not require a real Kubernetes cluster, cloud credentials, or an LLM.
+
+The seed can be rerun without intentionally duplicating existing demo incidents. However, it preserves existing records rather than resetting the database. For a clean walkthrough after updating the demo scenario, use a fresh local database volume.
 The app selects the demo workspace automatically when it is the only workspace. If your local database contains other workspaces, select **Topo AI Local Demo** from the tenant selector.
 
 ### Useful commands

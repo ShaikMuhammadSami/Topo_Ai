@@ -34,8 +34,15 @@ from app.services.topology_checkpoint import persist_topology_checkpoint
 
 DEMO_TENANT_NAME = "Topo AI Local Demo"
 BASELINE_SNAPSHOT_ID = "snapshot:demo-cluster:local-demo-baseline-v1"
+DEPLOYMENT_CHANGE_SNAPSHOT_ID = (
+    "snapshot:demo-cluster:local-demo-deployment-change-v1"
+)
 FAILURE_SNAPSHOT_ID = "snapshot:demo-cluster:local-demo-failure-v1"
+PAYMENT_DEPLOYMENT_ID = (
+    "k8s:demo-cluster:deployment:payments:payment-service"
+)
 PAYMENT_POD_ID = "k8s:demo-cluster:pod:payments:payment-service-7c9f8"
+DEMO_SNAPSHOT_INTERVAL = timedelta(minutes=1)
 
 
 def _demo_tenant_id(session, principal) -> str:
@@ -82,13 +89,43 @@ def _retime_snapshot(snapshot: GraphSnapshot, collected_at) -> GraphSnapshot:
     )
 
 
-def _failure_snapshot(baseline: GraphSnapshot) -> GraphSnapshot:
-    snapshot = build_sample_snapshot()
-    if snapshot.collected_at <= baseline.collected_at:
-        snapshot = _retime_snapshot(
-            snapshot,
-            baseline.collected_at + timedelta(seconds=1),
+def _deployment_change_snapshot(baseline: GraphSnapshot) -> GraphSnapshot:
+    snapshot = _retime_snapshot(
+        baseline,
+        baseline.collected_at + DEMO_SNAPSHOT_INTERVAL,
+    )
+
+    entities = []
+    for entity in snapshot.entities:
+        if entity.id == PAYMENT_DEPLOYMENT_ID:
+            properties = dict(entity.properties)
+            properties["containers"] = [
+                {
+                    "name": "payment-service",
+                    "image": "payment-service:v2",
+                }
+            ]
+            entity = entity.model_copy(update={"properties": properties})
+        entities.append(entity)
+
+    if not any(entity.id == PAYMENT_DEPLOYMENT_ID for entity in entities):
+        raise RuntimeError(
+            "The built-in sample topology no longer contains the payment deployment."
         )
+
+    return snapshot.model_copy(
+        update={
+            "snapshot_id": DEPLOYMENT_CHANGE_SNAPSHOT_ID,
+            "entities": entities,
+        }
+    )
+
+
+def _failure_snapshot(deployment_change: GraphSnapshot) -> GraphSnapshot:
+    snapshot = _retime_snapshot(
+        deployment_change,
+        deployment_change.collected_at + DEMO_SNAPSHOT_INTERVAL,
+    )
 
     entities = []
     for entity in snapshot.entities:
@@ -167,9 +204,28 @@ def main() -> None:
             if baseline is None:
                 raise RuntimeError("The local baseline snapshot was not saved.")
 
+            deployment_checkpoint = persist_topology_checkpoint(
+                session,
+                snapshot=_deployment_change_snapshot(baseline),
+                reason=TopologyCheckpointReason.MANUAL,
+                derive_changes=True,
+                force=True,
+                tenant_id=tenant_id,
+                authorization_context=authorization_context,
+            )
+            deployment_change = load_snapshot(
+                session,
+                DEPLOYMENT_CHANGE_SNAPSHOT_ID,
+                tenant_id=tenant_id,
+            )
+            if deployment_change is None:
+                raise RuntimeError(
+                    "The local deployment-change snapshot was not saved."
+                )
+
             failure_checkpoint = persist_topology_checkpoint(
                 session,
-                snapshot=_failure_snapshot(baseline),
+                snapshot=_failure_snapshot(deployment_change),
                 reason=TopologyCheckpointReason.MANUAL,
                 derive_changes=True,
                 force=True,
@@ -224,14 +280,19 @@ def main() -> None:
             print(f"Workspace: {DEMO_TENANT_NAME}")
             print(f"Tenant ID: {tenant_id}")
             print(f"Baseline snapshot: {baseline.snapshot_id}")
+            print(f"Deployment-change snapshot: {deployment_change.snapshot_id}")
             print(f"Failure snapshot: {failure.snapshot_id}")
-            if failure_checkpoint.detected_change_count:
+            derived_change_count = (
+                deployment_checkpoint.detected_change_count
+                + failure_checkpoint.detected_change_count
+            )
+            if derived_change_count:
                 print(
                     "Changes derived on this run: "
-                    f"{failure_checkpoint.detected_change_count}"
+                    f"{derived_change_count}"
                 )
-            elif failure_checkpoint.reused:
-                print("Existing failure snapshot reused.")
+            elif deployment_checkpoint.reused and failure_checkpoint.reused:
+                print("Existing deployment-change and failure snapshots reused.")
             if batch is None:
                 print("Existing failure signal and incident reused.")
             else:
