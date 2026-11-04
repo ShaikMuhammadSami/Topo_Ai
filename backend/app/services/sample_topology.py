@@ -60,6 +60,12 @@ def build_sample_snapshot() -> GraphSnapshot:
                 "namespace": "payments",
                 "desired_replicas": 1,
                 "ready_replicas": 1,
+                "containers": [
+                    {
+                        "name": "payment-service",
+                        "image": "payment-service:v1",
+                    }
+                ],
             },
         ),
         Entity(
