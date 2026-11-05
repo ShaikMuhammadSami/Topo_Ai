@@ -2,6 +2,10 @@
 
 Topo AI connects infrastructure topology, code and deployment changes, operational signals, and incident investigations with traceable evidence.
 
+<p align="center">
+  <img src="docs/images/readme/web-incident.png" width="900" alt="Topo AI incident workspace for the demo CrashLoopBackOff incident: the leading causal hypothesis (Deployment configuration changed), what changed before the failure, the causal failure path and the blast radius">
+</p>
+
 The full product repository is **[ShaikMuhammadSami/Topo_Ai](https://github.com/ShaikMuhammadSami/Topo_Ai)** (underscore). The similarly named TopoAi and Topo-Ai repositories are separate frontend prototypes, not the full backend and observer-agent product.
 
 > **Local preview only.** This quickstart uses synthetic data, SQLite, and explicitly unauthenticated development mode. It does not provision AWS resources or connect to a Kubernetes cluster. Keep the services bound to localhost. Do not use these settings for a shared, internet-facing, or production deployment.
@@ -37,7 +41,7 @@ python scripts/smoke/local_demo.py
 
 Open **http://localhost:3000/app**. The API is at **http://localhost:8000** and the local API documentation is at **http://localhost:8000/docs**.
 
-The seed creates a local demo workspace with a synthetic, evidence-backed Kubernetes incident scenario:
+The seed creates a local demo tenant, **Topo AI Local Demo**, with a synthetic, evidence-backed Kubernetes incident scenario:
 
 1. **Baseline:** A healthy `payment-service` Deployment running image `payment-service:v1`.
 2. **Deployment change:** The Deployment image changes from `payment-service:v1` to `payment-service:v2`. Topo detects and persists this change.
@@ -54,7 +58,7 @@ To explore the demo:
 The deployment change is presented as a supported causal hypothesis, not a proven root cause. This scenario uses synthetic evidence and does not require a real Kubernetes cluster, cloud credentials, or an LLM.
 
 The seed can be rerun without intentionally duplicating existing demo incidents. However, it preserves existing records rather than resetting the database. For a clean walkthrough after updating the demo scenario, use a fresh local database volume.
-The app selects the demo workspace automatically when it is the only workspace. If your local database contains other workspaces, select **Topo AI Local Demo** from the tenant selector.
+The app selects the demo tenant automatically when it is the only tenant. If your local database contains other tenants, select **Topo AI Local Demo** from the **Tenant** selector.
 
 ### Useful commands
 
@@ -77,11 +81,67 @@ docker compose exec backend python -m app.demo_seed
 
 If ports 8000 or 3000 are already in use, change TOPO_BACKEND_PORT or TOPO_FRONTEND_PORT in .env. Pass the matching URLs to the smoke script with --backend-url and --frontend-url.
 
+## Tour of the demo
+
+The screenshots below come from the seeded demo on `main`. Terms such as *tenant*, *signal* and *causal hypothesis* are defined in [GLOSSARY.md](GLOSSARY.md).
+
+### Web app
+
+**Incident workspace** (shown at the top of this page). Open the CrashLoopBackOff incident from **Incidents**. Topo shows the leading causal hypothesis, *Deployment configuration changed*, together with the change that preceded the failure, the causal path from that change to the failing Pod, and the blast radius. The 75.9 / 100 value is a heuristic ranking score, not a probability.
+
+**Changes** lists signals and changes newest first: the CrashLoopBackOff signal, the Pod update, and one minute earlier the `payment-service` Deployment change (high importance).
+
+<p align="center">
+  <img src="docs/images/readme/web-signals-changes.png" width="900" alt="Signals and changes page: the CrashLoopBackOff signal, the Pod update and the Deployment configuration change, newest first">
+</p>
+
+**Topology** compares two snapshots of the cluster and highlights what changed between them.
+
+<p align="center">
+  <img src="docs/images/readme/web-topology.png" width="900" alt="Topology page comparing two demo snapshots, with the payment-service Pod highlighted as changed">
+</p>
+
+### CLI
+
+The `topo` CLI reads the same data. It connects to `http://127.0.0.1:8000` by default, so only the tenant has to be passed:
+
+~~~bash
+python -m pip install -e ./cli
+TENANT=$(curl -s http://localhost:8000/api/v1/tenants | python -c "import json,sys; print(next(t['tenant_id'] for t in json.load(sys.stdin) if t['display_name']=='Topo AI Local Demo'))")
+topo --tenant "$TENANT" incidents list
+INCIDENT=$(topo --tenant "$TENANT" -o json incidents list | python -c "import json,sys; print(json.load(sys.stdin)[0]['incident_id'])")
+topo --tenant "$TENANT" causal-rca latest "$INCIDENT"
+topo --tenant "$TENANT" incidents blast-radius "$INCIDENT"
+~~~
+
+In PowerShell, set the two variables with:
+
+~~~powershell
+$TENANT = ((Invoke-RestMethod http://localhost:8000/api/v1/tenants) | Where-Object display_name -eq "Topo AI Local Demo").tenant_id
+$INCIDENT = (topo --tenant $TENANT -o json incidents list | Out-String | ConvertFrom-Json)[0].incident_id
+~~~
+
+<p align="center">
+  <img src="docs/images/readme/cli-incidents.png" width="800" alt="topo incidents list showing the CrashLoopBackOff incident on payment-service, status investigating">
+</p>
+
+`causal-rca latest` shows the stored analysis: one hypothesis, with evidence state `supported_under_current_model`, an uncalibrated ranking score, and the causal chain from the Deployment change to the incident.
+
+<p align="center">
+  <img src="docs/images/readme/cli-causal-rca.png" width="800" alt="topo causal-rca latest: one supported causal hypothesis, Deployment configuration changed, with its causal chain">
+</p>
+
+`incidents blast-radius` lists the entities affected by the failing Pod.
+
+<p align="center">
+  <img src="docs/images/readme/cli-blast-radius.png" width="800" alt="topo incidents blast-radius: the failing Pod (direct) and the payment-service Service (dependent)">
+</p>
+
 ## What is live and what is illustrative
 
 The local seed exercises the persisted topology, snapshot diff/change, signal, and incident APIs. The GitHub connector and AWS/Kubernetes observer plugins can be tested separately using the steps below.
 
-The Ask Topo answer panel, CLI simulator, and example Slack/PagerDuty integration tiles are illustrative UI areas; they do not represent live provider connections. The sample seed does not call an LLM, AWS, or Kubernetes.
+The Ask Topo answer panel, the in-browser CLI simulator, and the **Demo context** block at the bottom of the sidebar (cluster `prod-eu-west-1`, "collector connected") are illustrative UI areas with fixed sample values; they do not reflect your tenant or a live connection. The **Integrations** page shows real webhook endpoint configuration. The sample seed does not call an LLM, AWS, or Kubernetes.
 
 ## Optional: test GitHub with a public repository
 
