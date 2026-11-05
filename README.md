@@ -10,6 +10,8 @@ The full product repository is **[ShaikMuhammadSami/Topo_Ai](https://github.com/
 
 > **Local preview only.** This quickstart uses synthetic data, SQLite, and explicitly unauthenticated development mode. It does not provision AWS resources or connect to a Kubernetes cluster. Keep the services bound to localhost. Do not use these settings for a shared, internet-facing, or production deployment.
 
+> **Independent evaluation:** Follow the concise [Local Evaluation Guide](docs/LOCAL_EVALUATION.md) to run the Docker demo, investigate it with the real CLI, and optionally test a disposable Docker Desktop Kubernetes workload with the Topo Agent.
+
 ## Run the local demo
 
 Requirements:
