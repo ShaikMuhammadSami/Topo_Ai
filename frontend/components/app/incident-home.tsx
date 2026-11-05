@@ -9,6 +9,7 @@ import {
 import {
   AlertCircle,
   ArrowUpRight,
+  CheckCircle2,
   Clock3,
   History,
   LoaderCircle,
@@ -16,6 +17,7 @@ import {
   Search,
   SlidersHorizontal,
 } from "lucide-react"
+import { useSearchParams } from "next/navigation"
 
 import { Button } from "@/components/ui/button"
 import {
@@ -48,6 +50,9 @@ const statusStyles: Record<
 }
 
 export function IncidentHome() {
+  const searchParams = useSearchParams()
+  const resolvedIncidentId =
+    searchParams.get("resolved_incident")
   const [incidents, setIncidents] = useState<
     IncidentRecordSummary[]
   >([])
@@ -110,6 +115,23 @@ export function IncidentHome() {
 
   return (
     <main className="mx-auto w-full max-w-[1450px] px-4 py-5 sm:px-6 lg:py-7">
+      {resolvedIncidentId && (
+        <div
+          role="status"
+          className="mb-4 flex items-start gap-3 rounded-md border border-ok/35 bg-ok/10 p-4 text-ok"
+        >
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <div>
+            <p className="text-sm font-semibold">
+              Incident marked resolved
+            </p>
+            <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">
+              {resolvedIncidentId}
+            </p>
+          </div>
+        </div>
+      )}
+
       <header className="flex flex-wrap items-end justify-between gap-4 border-b border-border pb-5">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">

@@ -31,7 +31,7 @@ APP = Path(__file__).resolve().parents[1] / "app"
 EXPECTED_ROUTE_COUNTS = {
     I.PUBLIC: 3,
     I.AUTHENTICATION_SELF_SERVICE: 7,
-    I.TENANT_PERMISSION: 109,
+    I.TENANT_PERMISSION: 111,
     I.INSTALLATION_PERMISSION: 2,
     I.AGENT_FIXED_PURPOSE: 8,
     I.PROVIDER_FIXED_PURPOSE: 1,
@@ -78,11 +78,11 @@ def test_every_live_production_route_has_one_explicit_plan(required_auth_app):
         for route in _registered_routes(required_auth_app)
         for method in route.methods
     ]
-    assert len(live) == len(set(live)) == 144
+    assert len(live) == len(set(live)) == 146
     assert set(live) == set(ROUTE_AUTHORIZATION_PLAN)
     assert Counter(plan.authority.intent for plan in ROUTE_AUTHORIZATION_PLAN.values()) == EXPECTED_ROUTE_COUNTS
     assert Counter(classify_tenant_route(*key).value for key in live) == {
-        "PH3D_TENANT_REQUIRED": 116,
+        "PH3D_TENANT_REQUIRED": 118,
         "MACHINE_BOUND": 9,
         "TENANT_CONTROL": 7,
         "SECURITY_GLOBAL": 9,
@@ -246,6 +246,7 @@ def test_mutation_mapping_preserves_viewer_read_boundaries():
         ("POST", "/api/v1/incidents/{incident_id}/reports"): "incident.respond",
         ("PATCH", "/api/v1/recommendations/{recommendation_id}/status"): "incident.respond",
         ("POST", "/api/v1/recovery/verify"): "incident.respond",
+        ("POST", "/api/v1/incident-records/{incident_id}/resolution-check"): "incident.respond",
         ("POST", "/api/v1/topology/validate"): "topology.read",
         ("POST", "/api/v1/kubernetes/discover"): "topology.read",
     }

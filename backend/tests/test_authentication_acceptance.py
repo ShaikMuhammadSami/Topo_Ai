@@ -209,16 +209,16 @@ def test_route_domain_inventory_is_complete_and_production_docs_are_absent(
         for method in route.methods
     ]
 
-    assert len(production_routes) == 144
-    assert len(production_pairs) == 144
-    assert sum(path.startswith("/api/") for _, path, _ in production_pairs) == 141
+    assert len(production_routes) == 146
+    assert len(production_pairs) == 146
+    assert sum(path.startswith("/api/") for _, path, _ in production_pairs) == 143
     assert Counter(
         domain for _, _, domain in production_pairs
     ) == Counter(
         {
             RouteAuthDomain.PUBLIC_LIVENESS: 2,
             RouteAuthDomain.PUBLIC_READINESS_MINIMAL: 1,
-            RouteAuthDomain.USER_AUTHENTICATED: 132,
+            RouteAuthDomain.USER_AUTHENTICATED: 134,
             RouteAuthDomain.AGENT_AUTHENTICATED: 8,
             RouteAuthDomain.PROVIDER_CALLBACK_AUTHENTICATED: 1,
         }
@@ -246,8 +246,8 @@ def test_route_domain_inventory_is_complete_and_production_docs_are_absent(
         for route in _registered_routes(development)
         for method in route.methods
     ]
-    assert len(_registered_routes(development)) == 148
-    assert len(development_pairs) == 152
+    assert len(_registered_routes(development)) == 150
+    assert len(development_pairs) == 154
     assert sum(
         domain is RouteAuthDomain.DISABLED_PRODUCTION
         for _, _, domain in development_pairs

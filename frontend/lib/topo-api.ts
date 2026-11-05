@@ -29,6 +29,8 @@ import type {
   IncidentSeverity,
   IncidentStatus,
   IncidentStatusUpdate,
+  IncidentResolutionPlan,
+  IncidentResolutionCheckResult,
   BlastRadiusResponse,
   PreDeploymentImpactRequest,
   PreDeploymentImpactResponse,
@@ -854,6 +856,36 @@ export function updateIncidentRecordStatus(
         "Content-Type": "application/json",
       },
       body: JSON.stringify(request),
+    },
+  )
+}
+
+export function getIncidentResolutionPlan(
+  incidentId: string,
+): Promise<IncidentResolutionPlan> {
+  return apiRequest<IncidentResolutionPlan>(
+    `/api/v1/incident-records/${encodeURIComponent(
+      incidentId,
+    )}/resolution-check`,
+  )
+}
+
+export function checkIncidentResolution(
+  incidentId: string,
+  snapshotId: string,
+): Promise<IncidentResolutionCheckResult> {
+  return apiRequest<IncidentResolutionCheckResult>(
+    `/api/v1/incident-records/${encodeURIComponent(
+      incidentId,
+    )}/resolution-check`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        snapshot_id: snapshotId,
+      }),
     },
   )
 }

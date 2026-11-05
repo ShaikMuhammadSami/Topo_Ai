@@ -153,6 +153,31 @@ def list_snapshots(
     )
 
 
+def load_recent_snapshots_for_cluster(
+    session: Session,
+    *,
+    cluster_name: str,
+    limit: int = 100,
+    tenant_id: DomainTenant,
+) -> list[GraphSnapshot]:
+    """Load a bounded, tenant-scoped set of current recovery candidates."""
+    statement = (
+        select(SnapshotRecord)
+        .where(tenant_predicate(SnapshotRecord, tenant_id))
+        .where(SnapshotRecord.cluster_name == cluster_name)
+        .order_by(SnapshotRecord.collected_at.desc())
+        .limit(limit)
+    )
+    records = list(session.scalars(statement).all())
+    return [
+        snapshot_from_owned_record(
+            record,
+            tenant_id=tenant_id,
+        )
+        for record in records
+    ]
+
+
 def get_snapshot_record(
     session: Session,
     snapshot_id: str,

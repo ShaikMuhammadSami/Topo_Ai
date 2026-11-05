@@ -18,6 +18,11 @@ from app.models.incident_records import (
     IncidentStatus,
     IncidentStatusUpdate,
 )
+from app.models.incident_resolution import (
+    IncidentResolutionCheckRequest,
+    IncidentResolutionCheckResult,
+    IncidentResolutionPlan,
+)
 from app.repositories.incident_record_repository import (
     list_incident_records,
     load_incident_record,
@@ -25,6 +30,15 @@ from app.repositories.incident_record_repository import (
 )
 from app.repositories.signal_repository import (
     list_signals_by_incident_fingerprint,
+)
+from app.repositories.snapshot_repository import (
+    load_recent_snapshots_for_cluster,
+    load_snapshot,
+)
+from app.services.incident_resolution import (
+    build_incident_resolution_plan,
+    evaluate_incident_resolution,
+    select_resolution_snapshot,
 )
 from app.models.webhooks import (
     IncidentStatusChangedWebhookPayload,
@@ -39,6 +53,112 @@ router = APIRouter(
     prefix="/api/v1/incident-records",
     tags=["incident-records"],
 )
+
+
+def _incident_or_404(
+    *,
+    session: Session,
+    incident_id: str,
+    tenant_context: TenantContext,
+):
+    incident = load_incident_record(
+        session=session,
+        incident_id=incident_id,
+        tenant_id=tenant_context.tenant_id,
+    )
+    if incident is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Incident not found: {incident_id}",
+        )
+    return incident
+
+
+@router.get(
+    "/{incident_id}/resolution-check",
+    response_model=IncidentResolutionPlan,
+)
+def get_incident_resolution_plan(
+    incident_id: str,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> IncidentResolutionPlan:
+    incident = _incident_or_404(
+        session=session,
+        incident_id=incident_id,
+        tenant_context=tenant_context,
+    )
+    pinned = (
+        load_snapshot(
+            session=session,
+            snapshot_id=incident.topology_snapshot_id,
+            tenant_id=tenant_context.tenant_id,
+        )
+        if incident.topology_snapshot_id
+        else None
+    )
+    snapshots = load_recent_snapshots_for_cluster(
+        session=session,
+        cluster_name=incident.cluster_name,
+        tenant_id=tenant_context.tenant_id,
+    )
+    candidate = select_resolution_snapshot(
+        incident=incident,
+        snapshots=snapshots,
+    )
+    return build_incident_resolution_plan(
+        tenant_id=tenant_context.tenant_id,
+        incident=incident,
+        pinned_snapshot=pinned,
+        candidate_snapshot=candidate,
+    )
+
+
+@router.post(
+    "/{incident_id}/resolution-check",
+    response_model=IncidentResolutionCheckResult,
+)
+def check_incident_resolution(
+    incident_id: str,
+    request: IncidentResolutionCheckRequest,
+    session: Session = Depends(get_session),
+    *,
+    tenant_context: TenantContext = Depends(require_tenant_context),
+) -> IncidentResolutionCheckResult:
+    incident = _incident_or_404(
+        session=session,
+        incident_id=incident_id,
+        tenant_context=tenant_context,
+    )
+    pinned = (
+        load_snapshot(
+            session=session,
+            snapshot_id=incident.topology_snapshot_id,
+            tenant_id=tenant_context.tenant_id,
+        )
+        if incident.topology_snapshot_id
+        else None
+    )
+    candidate = load_snapshot(
+        session=session,
+        snapshot_id=request.snapshot_id,
+        tenant_id=tenant_context.tenant_id,
+    )
+    if candidate is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                "Resolution-check snapshot not found: "
+                f"{request.snapshot_id}"
+            ),
+        )
+    return evaluate_incident_resolution(
+        tenant_id=tenant_context.tenant_id,
+        incident=incident,
+        pinned_snapshot=pinned,
+        candidate_snapshot=candidate,
+    )
 
 
 @router.get(

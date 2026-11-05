@@ -134,6 +134,7 @@ POST /api/v1/incidents/{incident_id}/execution-intents/{execution_id}/cancel
     *_routes(I.TENANT_PERMISSION, "incident.read", """
 GET /api/v1/incident-records
 GET /api/v1/incident-records/{incident_id}
+GET /api/v1/incident-records/{incident_id}/resolution-check
 GET /api/v1/incidents
 GET /api/v1/incidents/{analysis_id}
 GET /api/v1/incidents/{incident_id}/lifecycle-status
@@ -156,6 +157,7 @@ GET /api/v1/recovery/{verification_id}
 """, "Read incident intelligence and responder history within the selected tenant."),
     *_routes(I.TENANT_PERMISSION, "incident.respond", """
 PATCH /api/v1/incident-records/{incident_id}/status
+POST /api/v1/incident-records/{incident_id}/resolution-check
 POST /api/v1/incidents/analyze
 POST /api/v1/incidents/{incident_id}/causal-rca
 POST /api/v1/incidents/{incident_id}/copilot/sessions

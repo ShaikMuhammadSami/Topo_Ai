@@ -4,8 +4,10 @@ import Link from "next/link"
 import {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react"
+import { useRouter } from "next/navigation"
 import {
   AlertCircle,
   ExternalLink,
@@ -31,6 +33,9 @@ import type {
 import {
   incidentWorkspaceHref,
 } from "@/lib/incident-briefing"
+import {
+  submitIncidentStatus,
+} from "@/lib/incident-resolution"
 import {
   IncidentOwnershipImpactPanel,
 } from "@/components/app/incident-ownership-impact"
@@ -80,6 +85,8 @@ export function IncidentInbox({
   onSelectIncident,
   onOpenAnalysis,
 }: IncidentInboxProps) {
+  const router = useRouter()
+  const statusSubmissionGate = useRef(false)
   const [incidents, setIncidents] =
     useState<IncidentRecordSummary[]>([])
 
@@ -215,7 +222,11 @@ export function IncidentInbox({
   async function handleStatusUpdate(
     nextStatus: IncidentStatus,
   ) {
-    if (!incident) {
+    if (
+      !incident ||
+      updating ||
+      statusSubmissionGate.current
+    ) {
       return
     }
 
@@ -223,23 +234,31 @@ export function IncidentInbox({
     setError(null)
 
     try {
-      const updated =
-        await updateIncidentRecordStatus(
-          incident.incident_id,
-          {
-            status: nextStatus,
-            note:
-              statusNote.trim() ||
-              null,
-          },
-        )
+      const result = await submitIncidentStatus({
+        incidentId: incident.incident_id,
+        status: nextStatus,
+        note: statusNote.trim() || null,
+        gate: statusSubmissionGate,
+        updateStatus:
+          updateIncidentRecordStatus,
+        navigate: (href) =>
+          router.push(href),
+      })
+
+      if (result.outcome === "duplicate") {
+        return
+      }
+
+      const updated = result.incident
 
       setIncident(updated)
       setStatusNote(
         updated.status_note ?? "",
       )
 
-      await refreshIncidents()
+      if (nextStatus !== "resolved") {
+        await refreshIncidents()
+      }
     } catch (requestError) {
       setError(errorMessage(requestError))
     } finally {
