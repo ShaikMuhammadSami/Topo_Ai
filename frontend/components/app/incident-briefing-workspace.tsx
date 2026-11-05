@@ -17,6 +17,7 @@ import {
 import { BusinessOverview } from "@/components/app/incident-briefing-business"
 import { TechnicalWorkspace } from "@/components/app/incident-briefing-technical"
 import { StatusBadge } from "@/components/app/incident-briefing-ui"
+import { IncidentCheckResolve } from "@/components/app/incident-check-resolve"
 import { Button } from "@/components/ui/button"
 import {
   formatBriefingDuration,
@@ -191,6 +192,9 @@ export function IncidentBriefingWorkspace({
         briefing={briefing}
         mode={mode}
         onSelectMode={selectMode}
+      />
+      <IncidentCheckResolve
+        incident={briefing.incident}
       />
       {mode === "technical" ? (
         <TechnicalWorkspace briefing={briefing} />

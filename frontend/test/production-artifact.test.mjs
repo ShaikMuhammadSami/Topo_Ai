@@ -77,11 +77,11 @@ test("production dependency security patches are exact in package and lock", asy
   const packageManifest = JSON.parse(await source("package.json"))
   const lockManifest = JSON.parse(await source("package-lock.json"))
 
-  assert.equal(packageManifest.dependencies.next, "16.3.3")
+  assert.equal(packageManifest.dependencies.next, "16.4.4")
   assert.equal(packageManifest.devDependencies.postcss, "8.5.28")
-  assert.equal(lockManifest.packages[""].dependencies.next, "16.3.3")
+  assert.equal(lockManifest.packages[""].dependencies.next, "16.4.4")
   assert.equal(lockManifest.packages[""].devDependencies.postcss, "8.5.28")
-  assert.equal(lockManifest.packages["node_modules/next"].version, "16.3.3")
+  assert.equal(lockManifest.packages["node_modules/next"].version, "16.4.4")
   assert.equal(lockManifest.packages["node_modules/postcss"].version, "8.5.28")
   assert.equal(packageManifest.dependencies.nodemon, undefined)
   assert.equal(packageManifest.dependencies.shadcn, undefined)
@@ -93,7 +93,7 @@ test("production dependency security patches are exact in package and lock", asy
   assert.equal(lockManifest.packages[""].devDependencies.shadcn, "^4.8.0")
   assert.equal(lockManifest.packages["node_modules/nodemon"].version, "3.1.14")
   assert.equal(lockManifest.packages["node_modules/nodemon"].dev, true)
-  assert.equal(lockManifest.packages["node_modules/shadcn"].version, "4.11.0")
+  assert.equal(lockManifest.packages["node_modules/shadcn"].version, "4.23.0")
   assert.equal(lockManifest.packages["node_modules/shadcn"].dev, true)
   assert.equal(packageManifest.dependencies["baseline-browser-mapping"], undefined)
   assert.equal(
@@ -102,6 +102,6 @@ test("production dependency security patches are exact in package and lock", asy
   )
   assert.equal(
     lockManifest.packages["node_modules/baseline-browser-mapping"].version,
-    "2.11.25",
+    "2.11.34",
   )
 })

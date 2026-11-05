@@ -111,7 +111,7 @@ def test_route_accounting_and_real_dependency_graph(tenant_app):
                 assert _has_tenant_dependency(route.dependant)
     assert deferred == set(MACHINE_AUTHORITY_ROUTES)
     assert counts == {
-        TenantRouteDomain.PH3D_TENANT_REQUIRED: 116,
+        TenantRouteDomain.PH3D_TENANT_REQUIRED: 118,
         TenantRouteDomain.MACHINE_BOUND: 9,
         TenantRouteDomain.TENANT_CONTROL: 7,
         TenantRouteDomain.SECURITY_GLOBAL: 9,

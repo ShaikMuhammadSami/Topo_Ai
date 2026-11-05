@@ -688,6 +688,75 @@ export type RecoveryVerificationSummary = {
   unknown_count: number
 }
 
+export type IncidentResolutionTarget = {
+  tenant_id: string
+  cluster_name: string
+  namespace: string | null
+  workload_entity_id: string | null
+  workload_kind: string | null
+  workload_name: string | null
+}
+
+export type IncidentResolutionEvidence = {
+  snapshot_id: string
+  collected_at: string
+  collector_name: string
+  collector_version: string
+  max_age_seconds: number
+  collection_mode: "persisted_snapshot"
+  live_collection_requested: false
+}
+
+export type IncidentResolutionPlannedCheck = {
+  code: string
+  title: string
+  description: string
+  required: boolean
+}
+
+export type IncidentResolutionCheck = {
+  code: string
+  title: string
+  status: RecoveryCheckStatus
+  summary: string
+  required: boolean
+  expected: string | null
+  observed: string | null
+  source_type: string
+  source_id: string
+  checked_at: string
+  evidence_references: string[]
+}
+
+export type IncidentResolutionPlan = {
+  incident_id: string
+  incident_status: string
+  target: IncidentResolutionTarget
+  evidence: IncidentResolutionEvidence | null
+  checks: IncidentResolutionPlannedCheck[]
+  kubectl_commands: string[]
+  can_check: boolean
+  limitation: string | null
+  infrastructure_mutation: false
+}
+
+export type IncidentResolutionCheckResult = {
+  check_id: string
+  incident_id: string
+  generated_at: string
+  status: RecoveryStatus
+  summary: string
+  target: IncidentResolutionTarget
+  evidence: IncidentResolutionEvidence
+  checks: IncidentResolutionCheck[]
+  passed_count: number
+  failed_count: number
+  unknown_count: number
+  eligible_to_resolve: boolean
+  resolution_note: string | null
+  infrastructure_mutation: false
+}
+
 export type IncidentStatus =
   | "open"
   | "investigating"
