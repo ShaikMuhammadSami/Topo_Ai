@@ -1218,6 +1218,186 @@ def test_real_agent_checkpoint_to_briefing_pipeline() -> None:
     )
 
 
+def test_image_change_remains_root_after_prior_deployment_creation() -> None:
+    session = _session()
+    agent = _agent(session)
+    agent_authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
+
+    empty = _agent_submission(
+        "submission:empty-before-deployment",
+        collected_at=NOW - timedelta(minutes=4),
+        image="nginx:1.27-alpine",
+        pod_uid="unused-pod",
+        pod_name="unused-pod",
+        replica_uid="unused-rs",
+    )
+    empty.inventory["deployments"] = []
+    empty.inventory["replicasets"] = []
+    empty.inventory["pods"] = []
+    persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=empty,
+        authorization_context=agent_authorization,
+    )
+
+    persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:healthy-deployment-created",
+            collected_at=NOW - timedelta(minutes=3),
+            image="nginx:1.27-alpine",
+            pod_uid="pod-old",
+            pod_name="payment-api-old",
+            replica_uid="rs-old",
+        ),
+        authorization_context=agent_authorization,
+    )
+
+    image_change = _agent_submission(
+        "submission:deployment-image-changed",
+        collected_at=NOW - timedelta(minutes=2),
+        image="nginx:topo-invalid",
+        pod_uid="pod-old",
+        pod_name="payment-api-old",
+        replica_uid="rs-old",
+    )
+    # The old Pod remains healthy on v1 while the Deployment template has
+    # changed. This isolates the initiating mutation from the later symptom.
+    image_change.inventory["pods"][0]["container_statuses"][0]["image"] = (
+        "nginx:1.27-alpine"
+    )
+    persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=image_change,
+        authorization_context=agent_authorization,
+    )
+
+    signal_id = "signal:kubernetes-event:err-image-pull"
+    failure = persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:new-pod-err-image-pull",
+            collected_at=NOW,
+            image="nginx:topo-invalid",
+            pod_uid="pod-new",
+            pod_name="payment-api-new",
+            replica_uid="rs-new",
+            failure_reason="ErrImagePull",
+            checkpoint_reason="incident_boundary",
+            trigger_signal_ids=[signal_id],
+        ),
+        authorization_context=agent_authorization,
+    )
+    result = ingest_failure_signal_batch(
+        session,
+        signals=[
+            _signal(
+                signal_id,
+                reason="ErrImagePull",
+                pod_name="payment-api-new",
+                pod_uid="pod-new",
+                snapshot_id=failure.snapshot_id,
+                severity=SignalSeverity.ERROR,
+            ).model_copy(
+                update={"category": SignalCategory.IMAGE}
+            )
+        ],
+        tenant_id=TEST_TENANT,
+    )
+    incident_id = result.results[0].incident_id
+    assert incident_id is not None
+
+    deployment_changes = list(
+        session.scalars(
+            select(ChangeRecord)
+            .where(
+                ChangeRecord.entity_id
+                == "k8s:production:deployment:deployment-payment"
+            )
+            .order_by(ChangeRecord.detected_at)
+        ).all()
+    )
+    creation = next(
+        change
+        for change in deployment_changes
+        if change.change_type == "entity_added"
+    )
+    configuration = next(
+        change
+        for change in deployment_changes
+        if change.change_type == "entity_updated"
+    )
+    creation_event = session.scalar(
+        select(ChangeEventRecord).where(
+            ChangeEventRecord.origin_change_id
+            == creation.change_id
+        )
+    )
+    configuration_event = session.scalar(
+        select(ChangeEventRecord).where(
+            ChangeEventRecord.origin_change_id
+            == configuration.change_id
+        )
+    )
+    analysis = latest_causal_analysis(
+        session,
+        incident_id=incident_id,
+        tenant_id=TEST_TENANT,
+    )
+
+    assert creation_event is not None
+    assert configuration_event is not None
+    assert analysis is not None
+    assert analysis.top_hypothesis is not None
+    assert analysis.top_hypothesis.target_event_id == (
+        configuration_event.event_id
+    )
+    assert analysis.top_hypothesis.root_event_id == (
+        configuration_event.event_id
+    )
+    assert analysis.top_hypothesis.root_title == (
+        "Deployment configuration changed"
+    )
+    # Root presentation changes, not the established scoring heuristic or
+    # the contextual event-lineage evidence retained in the causal graph.
+    assert analysis.top_hypothesis.score == 68.98
+    assert any(
+        edge.source_node_id
+        == f"event|{creation_event.event_id}"
+        and edge.target_node_id
+        == f"event|{configuration_event.event_id}"
+        and edge.relation.value == "precedes"
+        and round(edge.confidence, 2) == 0.65
+        for edge in analysis.edges
+    )
+    assert analysis.top_hypothesis.support_gate is not None
+    assert (
+        analysis.top_hypothesis.support_gate.support_state.value
+        == "supported_under_current_model"
+    )
+    assert [
+        step.label
+        for step in analysis.top_hypothesis.chain
+        if step.node_type.value == "change_event"
+    ] == ["Deployment configuration changed"]
+    assert creation_event.event_id != (
+        analysis.top_hypothesis.root_event_id
+    )
+    assert any(
+        hypothesis.root_event_id
+        == creation_event.event_id
+        for hypothesis in analysis.hypotheses
+    )
+
+
 def test_no_hypothesis_has_controlled_terminal_lifecycle_state() -> None:
     session = _session()
     snapshot = _snapshot("snapshot:no-hypothesis")

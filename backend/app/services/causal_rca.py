@@ -55,12 +55,14 @@ from app.models.confidence_semantics import CONFIDENCE_SEMANTICS_VERSION
 from app.models.change_events import (
     IncidentChangeCandidate,
 )
+from app.models.changes import ChangeType
 from app.models.topology import (
     GraphSnapshot,
 )
 from app.repositories.causal_analysis_repository import (
     save_causal_analysis,
 )
+from app.repositories.change_repository import load_change
 from app.repositories.signal_repository import load_signal
 from app.services.causal_evidence_ledger import (
     build_hypothesis_evidence_ledger,
@@ -627,6 +629,64 @@ def _event_chain_confidence(
         score,
         0.98,
     ), reasons
+
+
+def _has_immutable_lineage_anchor(
+    earlier: IncidentChangeCandidate,
+    later: IncidentChangeCandidate,
+) -> bool:
+    """Return whether two events share provider-authentic lineage identity."""
+
+    return bool(
+        (
+            earlier.event.commit_sha
+            and later.event.commit_sha
+            and earlier.event.commit_sha
+            == later.event.commit_sha
+        )
+        or (
+            earlier.event.release_version
+            and later.event.release_version
+            and earlier.event.release_version
+            == later.event.release_version
+        )
+    )
+
+
+def _is_contextual_entity_creation_predecessor(
+    earlier: IncidentChangeCandidate,
+    later: IncidentChangeCandidate,
+    *,
+    earlier_change_type: ChangeType | None,
+    later_change_type: ChangeType | None,
+) -> bool:
+    """Keep unproven creation context from replacing a later mutation root."""
+
+    if (
+        _enum_value(earlier.event.source)
+        != "topology_diff"
+        or _enum_value(later.event.source)
+        != "topology_diff"
+        or earlier_change_type
+        != ChangeType.ENTITY_ADDED
+        or later_change_type
+        != ChangeType.ENTITY_UPDATED
+    ):
+        return False
+
+    if not (
+        _candidate_link_ids(earlier)
+        & _candidate_link_ids(later)
+    ):
+        return False
+
+    # Shared entity/scope/time is contextual correlation. An immutable
+    # provider identity is stronger evidence that the earlier event belongs
+    # at the root of the same delivery lineage.
+    return not _has_immutable_lineage_anchor(
+        earlier,
+        later,
+    )
 
 
 def _kind_prior(
@@ -1592,6 +1652,34 @@ def analyze_causal_rca(
                 [],
             ).append(edge)
 
+    origin_change_type_cache: dict[
+        str,
+        ChangeType | None,
+    ] = {}
+
+    def origin_change_type(
+        event_id: str,
+    ) -> ChangeType | None:
+        event = candidate_by_event[event_id].event
+        change_id = event.origin_change_id
+
+        if not change_id:
+            return None
+
+        if change_id not in origin_change_type_cache:
+            change = load_change(
+                session,
+                change_id,
+                tenant_id=tenant_id,
+            )
+            origin_change_type_cache[change_id] = (
+                change.change_type
+                if change is not None
+                else None
+            )
+
+        return origin_change_type_cache[change_id]
+
     def best_event_chain(
         target_event_id: str,
         *,
@@ -1639,6 +1727,18 @@ def analyze_causal_rca(
                 )
 
                 if predecessor in visited:
+                    continue
+
+                if _is_contextual_entity_creation_predecessor(
+                    candidate_by_event[predecessor],
+                    candidate_by_event[current],
+                    earlier_change_type=(
+                        origin_change_type(predecessor)
+                    ),
+                    later_change_type=(
+                        origin_change_type(current)
+                    ),
+                ):
                     continue
 
                 selected = predecessor
