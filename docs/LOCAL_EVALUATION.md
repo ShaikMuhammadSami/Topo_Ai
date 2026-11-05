@@ -208,8 +208,10 @@ The final `collect` is the healthy baseline.
 Bash:
 
 ```bash
+kubectl --context "$CTX" --namespace "$NS" rollout pause deployment/payment-service
 kubectl --context "$CTX" --namespace "$NS" set image deployment/payment-service payment-service=nginx:topo-ai-invalid-evaluation
 topo-agent collect --plugin kubernetes
+kubectl --context "$CTX" --namespace "$NS" rollout resume deployment/payment-service
 kubectl --context "$CTX" --namespace "$NS" get pods
 topo-agent collect --plugin kubernetes
 ```
@@ -217,18 +219,23 @@ topo-agent collect --plugin kubernetes
 Windows PowerShell:
 
 ```powershell
+kubectl --context $Context --namespace $Namespace rollout pause deployment/payment-service
 kubectl --context $Context --namespace $Namespace set image deployment/payment-service payment-service=nginx:topo-ai-invalid-evaluation
 topo-agent collect --plugin kubernetes
+kubectl --context $Context --namespace $Namespace rollout resume deployment/payment-service
 kubectl --context $Context --namespace $Namespace get pods
 topo-agent collect --plugin kubernetes
 ```
 
-The first collection records the Deployment mutation. Wait until the new Pod
-shows `ErrImagePull` or `ImagePullBackOff`; repeat only the read-only `get pods`
-command if necessary, then perform the second collection. Kubernetes can fail
-very quickly, so the agent may observe the mutation and symptom in the same
-collection; Topo must still rely on recorded timestamps and relationships
-rather than assuming that the newest event caused the failure.
+Pausing the rollout first lets the agent record the Deployment template
+mutation while the existing healthy Pod remains running, before a new Pod is
+created. After the first collection, resume the rollout and wait for the new
+Pod to show `ErrImagePull` or `ImagePullBackOff`; repeat only the read-only
+`get pods` command if necessary, then perform the second collection.
+If you stop the test mid-sequence, resume the paused rollout before restoring
+the valid image. These explicit checkpoints make the causal demonstration
+more reproducible, but Topo must still rely on observed evidence rather than
+assuming the newest event caused the failure.
 
 ### 4. Investigate, restore, verify, and resolve
 
