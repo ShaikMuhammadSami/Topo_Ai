@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from threading import Lock
@@ -72,6 +73,7 @@ from app.services.auth_api_credential_service import (
     has_active_human_admin_credential,
 )
 from app.repositories.tenant_scope import TenantResourceNotFound
+from app.models.secret_store import SecretStoreError
 from app.security.secret_keyring import load_secret_store_configuration
 from app.security.secret_redaction import (
     install_logging_redaction,
@@ -85,6 +87,32 @@ from app.services.secret_runtime import configure_runtime_secret_store
 from app.services.runtime_health import build_database_readiness_checker
 
 LOGGER = logging.getLogger(__name__)
+
+_STARTUP_FAILURE_CODE = re.compile(r"[A-Z][A-Z0-9_]{2,63}")
+
+
+def _startup_failure_code(error: BaseException) -> str:
+    """Return a code-owned, bounded failure code that is safe to log.
+
+    Exception messages are never logged: only fixed codes owned by Topo's
+    own error types, so operators can see why startup failed without
+    exposing configuration values.
+    """
+    if isinstance(error, AuthConfigurationError):
+        return error.category.value
+    if isinstance(error, SecretStoreError):
+        code = str(error)
+        if _STARTUP_FAILURE_CODE.fullmatch(code):
+            return code
+    return "UNCLASSIFIED"
+
+
+def _log_startup_failure(error: BaseException) -> None:
+    LOGGER.error(
+        "Startup failed: %s (%s).",
+        type(error).__name__,
+        _startup_failure_code(error),
+    )
 
 
 load_dotenv()
@@ -142,8 +170,9 @@ def _retry_deferred_startup(application: FastAPI) -> bool:
             _complete_database_dependent_startup(application)
         except SQLAlchemyError:
             return False
-        except Exception:
+        except Exception as error:
             application.state.startup_terminal_failure = True
+            _log_startup_failure(error)
             LOGGER.error(
                 "Deferred runtime initialization reached a non-transient "
                 "failure; readiness remains unavailable."
@@ -163,6 +192,9 @@ async def lifespan(application: FastAPI):
             "Database unavailable during startup; liveness remains available "
             "and readiness will retry without exposing connection details."
         )
+    except Exception as error:
+        _log_startup_failure(error)
+        raise
     application.state.ready = (
         application.state.startup_complete
         and _database_ready(application)

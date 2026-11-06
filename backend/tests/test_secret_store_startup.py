@@ -117,3 +117,25 @@ def test_symlink_reparse_policy_refuses_before_open(tmp_path, monkeypatch):
     monkeypatch.setattr(type(path), "lstat", lambda p: SimpleNamespace(st_mode=0o120777, st_file_attributes=0x400))
     with pytest.raises(SecretStoreError, match="^SECRET_KEYRING_INVALID$"):
         load_keyring(str(path), "synthetic")
+
+
+def test_startup_failure_logs_type_and_code_without_message(context, monkeypatch, caplog):
+    engine, store, _, _ = context
+    import app.main as main
+    if engine.dialect.name != "sqlite":
+        pytest.skip("SQLite development-mode HTTP fixture")
+    factory = sessionmaker(engine)
+    put(context)  # a disabled store must refuse to start once secrets exist
+    monkeypatch.setattr(main, "load_secret_store_configuration", SecretStoreConfiguration)
+    application = main.create_app(session_factory=factory, database_initializer=lambda: None)
+    with pytest.raises(SecretStoreError):
+        with TestClient(application): pass
+    assert "Startup failed: SecretStoreError (SECRET_STORE_DISABLED)." in caplog.text
+
+    caplog.clear()
+    def schema_failure(): raise RuntimeError("synthetic detail must not be logged")
+    application = main.create_app(session_factory=factory, database_initializer=schema_failure)
+    with pytest.raises(RuntimeError):
+        with TestClient(application): pass
+    assert "Startup failed: RuntimeError (UNCLASSIFIED)." in caplog.text
+    assert "synthetic detail" not in caplog.text
