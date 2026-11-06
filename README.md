@@ -41,6 +41,8 @@ docker compose exec backend python -m app.demo_seed
 python scripts/smoke/local_demo.py
 ~~~
 
+On Linux and macOS, use `python3` where these instructions say `python` if your system has no `python` command.
+
 Open **http://localhost:3000/app**. The API is at **http://localhost:8000** and the local API documentation is at **http://localhost:8000/docs**.
 
 The seed creates a local demo tenant, **Topo AI Local Demo**, with a synthetic, evidence-backed Kubernetes incident scenario:
@@ -163,7 +165,7 @@ docker compose up -d --force-recreate backend
 Then, from PowerShell, check the connection and enrich the sample failure snapshot:
 
 ~~~powershell
-$tenant = (Invoke-RestMethod http://localhost:8000/api/v1/tenants | Where-Object display_name -eq "Topo AI Local Demo").tenant_id
+$tenant = ((Invoke-RestMethod http://localhost:8000/api/v1/tenants) | Where-Object display_name -eq "Topo AI Local Demo").tenant_id
 $headers = @{ "X-Topo-Tenant-ID" = $tenant }
 Invoke-RestMethod -Headers $headers http://localhost:8000/api/v1/github/connection
 $snapshotId = "snapshot:demo-cluster:local-demo-failure-v1"
@@ -197,7 +199,7 @@ py -m pip install -e .\agent
 Create a short-lived, single-use enrollment token for the local demo tenant:
 
 ~~~powershell
-$tenant = (Invoke-RestMethod http://localhost:8000/api/v1/tenants | Where-Object display_name -eq "Topo AI Local Demo").tenant_id
+$tenant = ((Invoke-RestMethod http://localhost:8000/api/v1/tenants) | Where-Object display_name -eq "Topo AI Local Demo").tenant_id
 $headers = @{ "X-Topo-Tenant-ID" = $tenant }
 $body = @{ label = "local-eks-demo"; expires_in_minutes = 30; max_uses = 1 } | ConvertTo-Json
 $enrollment = Invoke-RestMethod -Method Post -Uri http://localhost:8000/api/v1/agents/enrollment-tokens -Headers $headers -ContentType "application/json" -Body $body
@@ -216,7 +218,7 @@ topo-agent plugins doctor --plugin aws --plugin kubernetes
 topo-agent collect --plugin aws --plugin kubernetes
 ~~~
 
-The agent stores its credential using the host operating system's secure credential storage. Collection reads AWS and Kubernetes inventory and submits it to your local Topo AI backend; it does not provision cloud resources. Use a least-privilege identity and review your organization's access policy before testing against a production cluster.
+The agent stores its credential in `credentials.json` in its home directory, readable only by your user account (mode 0600 on Linux and macOS, an owner-only ACL on Windows). Collection reads AWS and Kubernetes inventory and submits it to your local Topo AI backend; it does not provision cloud resources. Use a least-privilege identity and review your organization's access policy before testing against a production cluster.
 
 ## Security and project status
 
