@@ -79,6 +79,54 @@ def _namespace(
     )
 
 
+def _endpoint_slice_counts(
+    properties: dict,
+) -> tuple[int, int]:
+    """Return (ready, total) endpoint counts for an EndpointSlice.
+
+    Enricher-built entities carry precomputed counters. Agent-submitted
+    EndpointSlices carry the raw ``endpoints`` list instead; there, a
+    missing ``ready`` condition means ready, as in the Kubernetes API.
+    """
+
+    if (
+        "ready_endpoint_count" in properties
+        or "total_endpoint_count" in properties
+    ):
+        return (
+            int(
+                properties.get(
+                    "ready_endpoint_count",
+                    0,
+                )
+            ),
+            int(
+                properties.get(
+                    "total_endpoint_count",
+                    0,
+                )
+            ),
+        )
+
+    endpoints = [
+        endpoint
+        for endpoint in (
+            properties.get("endpoints")
+            or []
+        )
+        if isinstance(endpoint, dict)
+    ]
+
+    ready = sum(
+        1
+        for endpoint in endpoints
+        if endpoint.get("ready")
+        is not False
+    )
+
+    return ready, len(endpoints)
+
+
 def _entity_type_value(
     entity,
 ) -> str:
@@ -246,6 +294,27 @@ def analyze_network_dependencies(
         == "KubernetesService"
     }
 
+    services_with_ready_slices = {
+        (
+            _namespace(entity),
+            str(
+                entity.properties.get(
+                    "service_name"
+                )
+            ),
+        )
+        for entity in network_entities
+        if entity.kind
+        == "KubernetesEndpointSlice"
+        and entity.properties.get(
+            "service_name"
+        )
+        and _endpoint_slice_counts(
+            entity.properties
+        )[0]
+        > 0
+    }
+
     outgoing_by_entity: dict[
         str,
         list,
@@ -353,6 +422,12 @@ def analyze_network_dependencies(
                 }
                 for relationship
                 in relationships
+            ) or (
+                (
+                    _namespace(entity),
+                    entity.name,
+                )
+                in services_with_ready_slices
             )
 
             if not has_backends:
@@ -392,17 +467,9 @@ def analyze_network_dependencies(
             entity.kind
             == "KubernetesEndpointSlice"
         ):
-            ready = int(
-                entity.properties.get(
-                    "ready_endpoint_count",
-                    0,
-                )
-            )
-
-            total = int(
-                entity.properties.get(
-                    "total_endpoint_count",
-                    0,
+            ready, total = (
+                _endpoint_slice_counts(
+                    entity.properties
                 )
             )
 
