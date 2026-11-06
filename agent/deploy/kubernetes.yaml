@@ -1,23 +1,90 @@
+# Topo agent: in-cluster Kubernetes observer (optional evaluation example).
+#
+# Access granted: the ClusterRoleBinding below gives the topo-agent service
+# account read-only access (get, list, watch) to namespaces, nodes, pods,
+# services, endpoints, events, deployments, replicasets, ingresses and
+# endpointslices in every namespace of the cluster. It grants no write access
+# and no access to Secrets or ConfigMaps. The `namespaces` value in the
+# ConfigMap limits what the agent collects, not what the service account is
+# allowed to read.
+#
+# Backend address: the agent pod must reach the Topo backend at `backend-url`.
+# The value below, http://host.docker.internal:8000, is a Docker Desktop
+# example: it reaches a backend published on the host from Docker Desktop
+# Kubernetes. Other clusters cannot assume it resolves; set an address that
+# pods in that cluster can reach. The local Compose demo runs with
+# authentication disabled and binds its API to localhost; do not publish it on
+# a shared or public address to make it reachable from a cluster.
+#
+# Before applying:
+#   1. Build the image and make it available to the cluster under the tag below:
+#        docker build -t topo-agent:0.7.0 agent/
+#   2. Enroll the agent once from a workstation. The values passed to
+#      `topo-agent enroll` (--name, --cluster, --environment, --namespace)
+#      must match the topo-agent-config ConfigMap below, otherwise the backend
+#      rejects the agent's submissions.
+#   3. Create the credentials Secret from the enrollment result.
+#      `topo-agent doctor` shows `agent_id` and `credentials_file`; the token
+#      is `agent_token` in that file. Pipe the token into kubectl so it is
+#      never copied to another file:
+#        kubectl create namespace topo-system
+#        python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["agent_token"], end="")' \
+#            <CREDENTIALS_FILE> \
+#          | kubectl -n topo-system create secret generic topo-agent-credentials \
+#              --from-literal=agent-id=<AGENT_ID> \
+#              --from-file=agent-token=/dev/stdin
+#      If you write the token to a file for --from-file instead, create it
+#      readable only by you (umask 077), outside any repository, and delete it
+#      as soon as the Secret exists. If the workstation will not run the agent
+#      itself, delete the workstation credentials file as well.
+#   4. Set `namespaces` (required) and the other ConfigMap values, then check
+#      and apply the manifest:
+#        kubectl apply --dry-run=client -f agent/deploy/kubernetes.yaml
+#        kubectl apply --dry-run=server -f agent/deploy/kubernetes.yaml
+#        kubectl apply -f agent/deploy/kubernetes.yaml
+#      The server dry-run needs the topo-system namespace from step 3.
+#      With `namespaces` empty, the agent container exits with an error.
+#      After changing the ConfigMap of a running agent, restart it:
+#        kubectl -n topo-system rollout restart deployment/topo-agent
 apiVersion: v1
 kind: Namespace
 metadata:
   name: topo-system
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: topo-agent-config
+  namespace: topo-system
+  labels:
+    app.kubernetes.io/name: topo-agent
+data:
+  # Topo backend URL as reachable from pods in this cluster. Docker Desktop
+  # example; see "Backend address" above for other clusters.
+  backend-url: http://host.docker.internal:8000
+  # Must match the --name, --cluster and --environment used at enrollment.
+  agent-name: docker-desktop-agent
+  cluster-name: docker-desktop
+  environment: development
+  # Required: comma-separated namespaces to observe, for example "payments"
+  # or "payments,checkout". Must match the --namespace values used at
+  # enrollment. The agent container refuses to start while this is empty.
+  namespaces: ""
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: topo-agent
   namespace: topo-system
-  annotations:
-    eks.amazonaws.com/role-arn: >-
-      arn:aws:iam::474668381122:role/TopoAwsDiscoveryRole
-    azure.workload.identity/client-id: "<AZURE_CLIENT_ID>"
-    azure.workload.identity/tenant-id: "<AZURE_TENANT_ID>"
+  labels:
+    app.kubernetes.io/name: topo-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: topo-agent-readonly
+  labels:
+    app.kubernetes.io/name: topo-agent
 rules:
   - apiGroups:
       - ""
@@ -27,11 +94,11 @@ rules:
       - pods
       - services
       - endpoints
+      - events
     verbs:
       - get
       - list
       - watch
-
   - apiGroups:
       - apps
     resources:
@@ -41,7 +108,6 @@ rules:
       - get
       - list
       - watch
-
   - apiGroups:
       - networking.k8s.io
     resources:
@@ -50,7 +116,6 @@ rules:
       - get
       - list
       - watch
-
   - apiGroups:
       - discovery.k8s.io
     resources:
@@ -64,6 +129,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: topo-agent-readonly
+  labels:
+    app.kubernetes.io/name: topo-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -78,22 +145,22 @@ kind: Deployment
 metadata:
   name: topo-agent
   namespace: topo-system
+  labels:
+    app.kubernetes.io/name: topo-agent
 spec:
   replicas: 1
-
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: topo-agent
-
   template:
     metadata:
       labels:
         app.kubernetes.io/name: topo-agent
-        azure.workload.identity/use: "true"
-
     spec:
       serviceAccountName: topo-agent
-
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -101,132 +168,95 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
-
       containers:
         - name: topo-agent
-          image: topo-agent:0.1.0
+          image: topo-agent:0.7.0
           imagePullPolicy: IfNotPresent
-
-          args:
-            - run
-
+          command:
+            - /bin/sh
+            - -c
+            - |
+              if [ -z "$(printf '%s' "$TOPO_NAMESPACES" | tr -d ' ,')" ]; then
+                echo "topo-agent: set 'namespaces' in the topo-agent-config ConfigMap" >&2
+                exit 64
+              fi
+              exec python -m topo_agent run
           env:
             - name: TOPO_BACKEND_URL
-              value: http://host.docker.internal:8000
-
-            - name: TOPO_AGENT_TOKEN
               valueFrom:
-                secretKeyRef:
-                  name: topo-agent-credentials
-                  key: agent-token
-                  
-            - name: TOPO_ENABLED_PLUGINS
-              value: kubernetes,aws,azure
-            
-            - name: TOPO_ENABLED_PLUGINS
-              value: kubernetes,aws,azure,gcp
-
-            - name: TOPO_AWS_REGIONS
-              value: us-east-1,us-west-2
-
-            - name: TOPO_AWS_CACHE_TTL
-              value: "300"
-
-            - name: TOPO_AWS_API_MAX_ATTEMPTS
-              value: "5"
-
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: backend-url
             - name: TOPO_AGENT_ID
               valueFrom:
                 secretKeyRef:
                   name: topo-agent-credentials
                   key: agent-id
-
+            - name: TOPO_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: topo-agent-credentials
+                  key: agent-token
             - name: TOPO_AGENT_NAME
-              value: docker-desktop-agent
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: agent-name
             - name: TOPO_CLUSTER_NAME
-              value: docker-desktop
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: cluster-name
             - name: TOPO_ENVIRONMENT
-              value: development
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: environment
             - name: TOPO_NAMESPACES
-              value: dedupe-demo
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: namespaces
+            - name: TOPO_ENABLED_PLUGINS
+              value: kubernetes
+            - name: TOPO_CHANGE_WATCH_KUBERNETES
+              value: "true"
+            - name: TOPO_CHANGE_WATCH_AWS
+              value: "false"
+            - name: TOPO_CHANGE_WATCH_AZURE
+              value: "false"
+            - name: TOPO_CHANGE_WATCH_GCP
+              value: "false"
             - name: TOPO_COLLECTION_INTERVAL
               value: "300"
-
+            - name: TOPO_CHANGE_WATCH_INTERVAL
+              value: "30"
             - name: TOPO_HEARTBEAT_INTERVAL
               value: "30"
-
-            - name: TOPO_VERIFY_TLS
-              value: "false"
-            
-            - name: TOPO_AZURE_AUTH_MODE
-              value: default
-
-            - name: TOPO_AZURE_TENANT_ID
-              value: "<AZURE_TENANT_ID>"
-
-            - name: TOPO_AZURE_CLIENT_ID
-              value: "<AZURE_CLIENT_ID>"
-
-            - name: TOPO_AZURE_SUBSCRIPTIONS
-              value: "<SUBSCRIPTION_ID>"
-
-            - name: TOPO_AZURE_LOCATIONS
-              value: eastus,eastus2,centralus
-
-            - name: TOPO_AZURE_CACHE_TTL
-              value: "300"
-
-            - name: TOPO_AZURE_QUERY_PAGE_SIZE
-              value: "1000"
-
-            - name: TOPO_AZURE_API_MAX_ATTEMPTS
-              value: "5"
-            
-            - name: TOPO_GCP_PROJECTS
-              value: "<GCP_PROJECT_ID>"
-
-            - name: TOPO_GCP_LOCATIONS
-              value: us-central1,us-east1
-
-            - name: TOPO_GCP_QUOTA_PROJECT
-              value: "<GCP_PROJECT_ID>"
-
-            - name: TOPO_GCP_INCLUDE_HIERARCHY
-              value: "true"
-
-            - name: TOPO_GCP_CACHE_TTL
-              value: "300"
-
-            - name: TOPO_GCP_ASSET_PAGE_SIZE
-              value: "500"
-
-            - name: TOPO_GCP_API_MAX_ATTEMPTS
-              value: "5"
-
+            - name: TOPO_AGENT_HOME
+              value: /var/lib/topo-agent
+            - name: TMPDIR
+              value: /tmp
           volumeMounts:
             - name: state
               mountPath: /var/lib/topo-agent
-
+            - name: temporary
+              mountPath: /tmp
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
-
           resources:
             requests:
               cpu: 50m
               memory: 128Mi
-
             limits:
               cpu: 500m
               memory: 512Mi
-
       volumes:
         - name: state
+          emptyDir: {}
+        - name: temporary
           emptyDir: {}
