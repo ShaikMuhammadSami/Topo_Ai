@@ -93,6 +93,20 @@ def test_cli_rejects_known_insecure_keyring_and_preserves_env_precedence(
     assert profile_token(profile, "test") == "environment-token"
 
 
+def test_cli_without_usable_keyring_reads_no_stored_token(monkeypatch):
+    class FailKeyring:
+        def get_password(self, *_):
+            raise AssertionError("an unusable backend must not be queried")
+
+    FailKeyring.__module__ = "keyring.backends.fail"
+    monkeypatch.setattr("topo_cli.config.keyring.get_keyring", lambda: FailKeyring())
+    monkeypatch.delenv("TOPO_TEST_TOKEN", raising=False)
+    profile = Profile(token_env="TOPO_TEST_TOKEN")
+    assert profile_token(profile, "test") is None
+    with pytest.raises(FileOperationFailure, match="not suitable"):
+        store_profile_token("test", "topo_api_" + "SYNTHETIC_KEYRING_1234567890")
+
+
 def test_agent_enrollment_token_is_metadata_only_without_explicit_stdout(
     monkeypatch,
 ):

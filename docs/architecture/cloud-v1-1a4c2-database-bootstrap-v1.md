@@ -273,6 +273,27 @@ clean, reviewed checkout containing accepted immutable backend reference
    the approved secret-material retention procedure. Only after all checks pass
    may the backend Deployment be considered for a separate deployment block.
 
+## Initial installation operator grant
+
+The bootstrap token authenticates as an admin principal, but creating the first
+tenant also requires the `installation.bootstrap` permission, which only an
+installation operator assignment grants. Without it, `POST /api/v1/tenants`
+returns `403 PERMISSION_DENIED` with `required_permissions:
+["installation.bootstrap"]`. After the backend Deployment is ready:
+
+1. Read the bootstrap principal ID with the bootstrap token:
+   `GET /api/v1/system/whoami` returns it as `principal_id`.
+2. Grant the assignment from inside the backend Deployment, which already has
+   the application database URL:
+
+   ```bash
+   kubectl -n topo-system exec deploy/topo-backend -- \
+     python -m app.installation_operator_admin grant <principal_id>
+   ```
+
+   `status` and `disable` take the same argument (PH-5B).
+3. Create the first tenant with `POST /api/v1/tenants`.
+
 ## Retry, rollback, and remaining validation
 
 Bootstrap has convergence semantics, not transactional rollback across role

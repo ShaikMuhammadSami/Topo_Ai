@@ -326,8 +326,12 @@ def profile_token(
         )
      if environment_value:
         return environment_value
+     if not _keyring_is_usable():
+        # No token can have been stored in an unusable backend, so continue
+        # without one instead of failing every command (headless Linux, WSL).
+        # Storing a token still fails closed in store_profile_token.
+        return None
      try:
-        _require_usable_keyring()
         return keyring.get_password(
             KEYRING_SERVICE,
             profile_name,
@@ -338,10 +342,17 @@ def profile_token(
         ) from None
 
 
-def _require_usable_keyring() -> None:
+def _keyring_is_usable() -> bool:
     backend = keyring.get_keyring()
     identity = f"{type(backend).__module__}.{type(backend).__name__}".lower()
-    if any(marker in identity for marker in ("backends.fail", "backends.null", "plaintext")):
+    return not any(
+        marker in identity
+        for marker in ("backends.fail", "backends.null", "plaintext")
+    )
+
+
+def _require_usable_keyring() -> None:
+    if not _keyring_is_usable():
         raise FileOperationFailure(
             "The configured keyring backend is not suitable for credential storage."
         )
