@@ -57,6 +57,7 @@ from app.repositories.incident_record_repository import (
     update_incident_status,
 )
 from app.repositories.signal_repository import load_signal
+from app.repositories.snapshot_repository import load_snapshot
 from app.services.continuous_lifecycle import (
     failure_signals_from_snapshot,
     ingest_failure_signal_batch,
@@ -818,17 +819,23 @@ def test_automation_status_endpoint_uses_standard_authentication(
     assert incident_response.status_code == 401
 
 
-def _agent(session: Session) -> TopoAgentRecord:
+def _agent(
+    session: Session,
+    *,
+    agent_id: str = "agent:lifecycle-integration",
+    name: str = "lifecycle-integration",
+    token_hash: str = "a" * 64,
+) -> TopoAgentRecord:
     now = utc_now_iso()
     record = TopoAgentRecord(
         tenant_id=TEST_TENANT,
-        agent_id="agent:lifecycle-integration",
-        name="lifecycle-integration",
+        agent_id=agent_id,
+        name=name,
         agent_type="kubernetes",
         cluster_name="production",
         environment="production",
         version="1.0",
-        token_hash="a" * 64,
+        token_hash=token_hash,
         token_hint="test",
         status="online",
         collection_interval_seconds=300,
@@ -861,12 +868,13 @@ def _agent_submission(
     trigger_signal_ids: list[str] | None = None,
     pod_template_fingerprint: str | None = None,
     last_terminated_reason: str | None = None,
+    environment: str = "production",
 ) -> AgentSnapshotSubmission:
     return AgentSnapshotSubmission(
         submission_id=submission_id,
         collected_at=collected_at.isoformat(),
         cluster_name="production",
-        environment="production",
+        environment=environment,
         namespace_scope=["payments"],
         collector_version="1.0",
         inventory={
@@ -1820,6 +1828,234 @@ def test_identical_template_fingerprint_creates_no_deployment_change() -> None:
     )
 
     assert _count(session, ChangeRecord) == before_count
+
+
+def test_agent_environment_switches_are_not_material_changes() -> None:
+    session = _session()
+    agent = _agent(session)
+    authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
+
+    baseline = persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:environment-baseline",
+            collected_at=NOW - timedelta(minutes=3),
+            image="nginx:1.27-alpine",
+            pod_uid="pod-environment-stable",
+            pod_name="payment-api-environment-stable",
+            replica_uid="rs-environment-stable",
+            environment="development",
+        ),
+        authorization_context=authorization,
+    )
+
+    for index, environment in enumerate(
+        ("development", "golden", "development"),
+        start=1,
+    ):
+        receipt = persist_agent_snapshot(
+            session,
+            agent=agent,
+            submission=_agent_submission(
+                f"submission:environment-{index}",
+                collected_at=(NOW - timedelta(minutes=3 - index)),
+                image="nginx:1.27-alpine",
+                pod_uid="pod-environment-stable",
+                pod_name="payment-api-environment-stable",
+                replica_uid="rs-environment-stable",
+                environment=environment,
+            ),
+            authorization_context=authorization,
+        )
+
+        assert receipt.snapshot_id == baseline.snapshot_id
+        assert receipt.checkpoint_reused is True
+        assert receipt.detected_change_count == 0
+
+    stored = load_snapshot(
+        session,
+        baseline.snapshot_id,
+        tenant_id=TEST_TENANT,
+    )
+    assert stored is not None
+    assert all(
+        entity.environment == "development"
+        for entity in stored.entities
+        if entity.source_system == "kubernetes"
+    )
+    assert stored.metadata["agent_id"] == agent.agent_id
+    assert stored.metadata["agent_name"] == agent.name
+    assert _count(session, SnapshotRecord) == 1
+    assert _count(session, ChangeRecord) == 0
+    assert _count(session, ChangeEventRecord) == 0
+
+
+def test_alternating_agents_do_not_create_reporting_metadata_changes() -> None:
+    session = _session()
+    first_agent = _agent(session)
+    second_agent = _agent(
+        session,
+        agent_id="agent:lifecycle-alternate",
+        name="lifecycle-alternate",
+        token_hash="b" * 64,
+    )
+    authorizations = {
+        agent.agent_id: authorize_agent_fixed_purpose(
+            session,
+            agent=agent,
+            fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+        )
+        for agent in (first_agent, second_agent)
+    }
+
+    receipts = []
+    for index, agent in enumerate(
+        (first_agent, second_agent, first_agent)
+    ):
+        receipts.append(
+            persist_agent_snapshot(
+                session,
+                agent=agent,
+                submission=_agent_submission(
+                    f"submission:alternating-agent-{index}",
+                    collected_at=NOW + timedelta(seconds=index),
+                    image="nginx:1.27-alpine",
+                    pod_uid="pod-agent-stable",
+                    pod_name="payment-api-agent-stable",
+                    replica_uid="rs-agent-stable",
+                ),
+                authorization_context=authorizations[agent.agent_id],
+            )
+        )
+
+    assert receipts[0].checkpoint_created is True
+    assert all(
+        receipt.snapshot_id == receipts[0].snapshot_id
+        for receipt in receipts[1:]
+    )
+    assert all(
+        receipt.checkpoint_reused is True
+        and receipt.detected_change_count == 0
+        for receipt in receipts[1:]
+    )
+    assert _count(session, SnapshotRecord) == 1
+    assert _count(session, ChangeRecord) == 0
+    assert _count(session, ChangeEventRecord) == 0
+
+
+def test_real_kubernetes_change_survives_reporting_metadata_switch() -> None:
+    session = _session()
+    first_agent = _agent(session)
+    second_agent = _agent(
+        session,
+        agent_id="agent:lifecycle-material",
+        name="lifecycle-material",
+        token_hash="c" * 64,
+    )
+    first_authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=first_agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
+    second_authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=second_agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
+    baseline = _agent_submission(
+        "submission:material-baseline",
+        collected_at=NOW - timedelta(minutes=1),
+        image="nginx:1.27-alpine",
+        pod_uid="pod-material-stable",
+        pod_name="payment-api-material-stable",
+        replica_uid="rs-material-stable",
+        pod_template_fingerprint="sha256:" + "1" * 64,
+        environment="development",
+    )
+    baseline.inventory["deployments"][0]["desired_replicas"] = 1
+    persist_agent_snapshot(
+        session,
+        agent=first_agent,
+        submission=baseline,
+        authorization_context=first_authorization,
+    )
+
+    changed = _agent_submission(
+        "submission:material-change",
+        collected_at=NOW,
+        image="nginx:1.28-alpine",
+        pod_uid="pod-material-stable",
+        pod_name="payment-api-material-stable",
+        replica_uid="rs-material-stable",
+        pod_template_fingerprint="sha256:" + "2" * 64,
+        environment="golden",
+    )
+    changed.inventory["deployments"][0]["desired_replicas"] = 2
+    receipt = persist_agent_snapshot(
+        session,
+        agent=second_agent,
+        submission=changed,
+        authorization_context=second_authorization,
+    )
+
+    deployment_record = session.scalar(
+        select(ChangeRecord).where(
+            ChangeRecord.entity_id
+            == "k8s:production:deployment:deployment-payment"
+        )
+    )
+    assert receipt.checkpoint_created is True
+    assert receipt.detected_change_count > 0
+    assert deployment_record is not None
+    payload = json.loads(deployment_record.payload_json)
+    assert set(payload["changed_fields"]) == {
+        "properties.containers",
+        "properties.desired_replicas",
+        "properties.pod_template_fingerprint",
+    }
+    assert "environment" not in payload["changed_fields"]
+    assert not any(
+        field.endswith("agent_id") or field.endswith("agent_name")
+        for field in payload["changed_fields"]
+    )
+
+    stored = load_snapshot(
+        session,
+        receipt.snapshot_id,
+        tenant_id=TEST_TENANT,
+    )
+    assert stored is not None
+    assert stored.metadata["agent_id"] == second_agent.agent_id
+    assert stored.metadata["agent_name"] == second_agent.name
+    assert all(
+        entity.environment == "golden"
+        for entity in stored.entities
+        if entity.source_system == "kubernetes"
+    )
+    cluster = next(
+        entity
+        for entity in stored.entities
+        if entity.kind == "KubernetesCluster"
+    )
+    assert cluster.properties == {
+        "agent_id": second_agent.agent_id,
+        "agent_name": second_agent.name,
+    }
+    assert stored.relationships
+    assert all(
+        relationship.provenance is not None
+        for relationship in stored.relationships
+    )
+    assert load_snapshot(
+        session,
+        receipt.snapshot_id,
+        tenant_id="tenant:eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee",
+    ) is None
 
 
 def test_no_hypothesis_has_controlled_terminal_lifecycle_state() -> None:
