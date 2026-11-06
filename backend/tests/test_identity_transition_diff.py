@@ -237,6 +237,58 @@ def test_material_update_survives_legacy_to_v1_alignment() -> None:
     )
 
 
+def test_non_kubernetes_environment_change_remains_material() -> None:
+    before_entity = Entity(
+        id="entity:aws:database:payments",
+        entity_type=EntityType.CLOUD_RESOURCE,
+        kind="AwsRdsInstance",
+        name="payments",
+        source_system="aws",
+        external_id="arn:aws:rds:us-east-1:123456789012:db:payments",
+        environment="development",
+        observed_at=NOW,
+        properties={"status": "available"},
+    )
+    after_entity = before_entity.model_copy(
+        update={
+            "environment": "production",
+            "observed_at": NOW + timedelta(minutes=1),
+        }
+    )
+    before = GraphSnapshot(
+        snapshot_id="snapshot:aws-environment-before",
+        collected_at=NOW,
+        collector_name="aws-test",
+        collector_version="1.0",
+        entities=[before_entity],
+    )
+    after = GraphSnapshot(
+        snapshot_id="snapshot:aws-environment-after",
+        collected_at=NOW + timedelta(minutes=1),
+        collector_name="aws-test",
+        collector_version="1.0",
+        entities=[after_entity],
+    )
+
+    result = compare_snapshots(before, after)
+    changes = normalize_snapshot_changes(before, after)
+
+    assert len(result.changed_entities) == 1
+    assert result.changed_entities[0].changed_fields == {
+        "environment": {
+            "before": "development",
+            "after": "production",
+        }
+    }
+    assert len(changes) == 1
+    assert changes[0].changed_fields == {
+        "environment": {
+            "before": "development",
+            "after": "production",
+        }
+    }
+
+
 def test_genuine_entity_creation_and_removal_are_preserved() -> None:
     removed = compare_snapshots(
         _snapshot(

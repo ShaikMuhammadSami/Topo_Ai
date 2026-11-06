@@ -41,6 +41,9 @@ from app.services.change_normalizer import (
 from app.services.temporal_semantics import (
     safe_snapshot_record_at_or_before,
 )
+from app.services.snapshot_diff import (
+    entity_state_without_reporting_metadata,
+)
 
 CHECKPOINT_DEBOUNCE_SECONDS = max(
     int(
@@ -87,9 +90,12 @@ def is_topology_affecting_change_event(
 
 
 def _canonical_entity(entity) -> dict[str, Any]:
-    return entity.model_dump(
-        mode="json",
-        exclude={"observed_at", "temporal"},
+    return entity_state_without_reporting_metadata(
+        entity,
+        entity.model_dump(
+            mode="json",
+            exclude={"observed_at", "temporal"},
+        ),
     )
 
 

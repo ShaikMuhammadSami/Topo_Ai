@@ -30,6 +30,43 @@ IDENTITY_REPRESENTATION_FIELDS = {
     "temporal",
 }
 
+KUBERNETES_REPORTING_PROPERTY_FIELDS = {
+    "agent_id",
+    "agent_name",
+}
+
+
+def entity_state_without_reporting_metadata(
+    entity: Entity,
+    data: dict[str, Any],
+) -> dict[str, Any]:
+    """Exclude collector labels from Kubernetes state comparisons.
+
+    Agent environment and identity describe who reported a Kubernetes
+    resource, not a mutation of that resource.  Keep those fields on the
+    stored entity while omitting them from material diff and checkpoint
+    projections.  Other source systems retain their environment semantics.
+    """
+
+    if entity.source_system.lower() != "kubernetes":
+        return data
+
+    result = dict(data)
+    result.pop("environment", None)
+
+    properties = result.get("properties")
+    if (
+        entity.kind == "KubernetesCluster"
+        and isinstance(properties, dict)
+    ):
+        result["properties"] = {
+            key: value
+            for key, value in properties.items()
+            if key not in KUBERNETES_REPORTING_PROPERTY_FIELDS
+        }
+
+    return result
+
 
 @dataclass(frozen=True)
 class SnapshotIdentityAlignment:
@@ -73,9 +110,12 @@ def entity_material_data(
 ) -> dict[str, Any]:
     """Return customer-observable entity state, excluding identity form."""
 
-    return entity.model_dump(
-        mode="json",
-        exclude=IDENTITY_REPRESENTATION_FIELDS,
+    return entity_state_without_reporting_metadata(
+        entity,
+        entity.model_dump(
+            mode="json",
+            exclude=IDENTITY_REPRESENTATION_FIELDS,
+        ),
     )
 
 
