@@ -1,23 +1,56 @@
+# Topo agent: in-cluster Kubernetes observer.
+#
+# Before applying:
+#   1. Build the image and make it available to the cluster under the tag below:
+#        docker build -t topo-agent:0.7.0 agent/
+#   2. Enroll the agent once from a workstation. The values passed to
+#      `topo-agent enroll` (--server, --name, --cluster, --environment,
+#      --namespace) must match the topo-agent-config ConfigMap below,
+#      otherwise the backend rejects the agent's submissions.
+#   3. Create the credentials Secret from the enrollment result
+#      (`topo-agent status` shows the agent ID):
+#        kubectl -n topo-system create secret generic topo-agent-credentials \
+#          --from-literal=agent-id=<AGENT_ID> \
+#          --from-file=agent-token=<FILE_CONTAINING_AGENT_TOKEN>
+#   4. Edit the ConfigMap values, then: kubectl apply -f agent/deploy/kubernetes.yaml
 apiVersion: v1
 kind: Namespace
 metadata:
   name: topo-system
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: topo-agent-config
+  namespace: topo-system
+  labels:
+    app.kubernetes.io/name: topo-agent
+data:
+  # Topo backend URL as reachable from inside the cluster. The default
+  # reaches a backend on the host from Docker Desktop Kubernetes.
+  backend-url: http://host.docker.internal:8000
+  # Must match the --name, --cluster and --environment used at enrollment.
+  agent-name: docker-desktop-agent
+  cluster-name: docker-desktop
+  environment: development
+  # Comma-separated namespaces to observe; empty observes all namespaces.
+  # Must match the --namespace values used at enrollment.
+  namespaces: ""
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: topo-agent
   namespace: topo-system
-  annotations:
-    eks.amazonaws.com/role-arn: >-
-      arn:aws:iam::474668381122:role/TopoAwsDiscoveryRole
-    azure.workload.identity/client-id: "<AZURE_CLIENT_ID>"
-    azure.workload.identity/tenant-id: "<AZURE_TENANT_ID>"
+  labels:
+    app.kubernetes.io/name: topo-agent
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: topo-agent-readonly
+  labels:
+    app.kubernetes.io/name: topo-agent
 rules:
   - apiGroups:
       - ""
@@ -27,11 +60,11 @@ rules:
       - pods
       - services
       - endpoints
+      - events
     verbs:
       - get
       - list
       - watch
-
   - apiGroups:
       - apps
     resources:
@@ -41,7 +74,6 @@ rules:
       - get
       - list
       - watch
-
   - apiGroups:
       - networking.k8s.io
     resources:
@@ -50,7 +82,6 @@ rules:
       - get
       - list
       - watch
-
   - apiGroups:
       - discovery.k8s.io
     resources:
@@ -64,6 +95,8 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
   name: topo-agent-readonly
+  labels:
+    app.kubernetes.io/name: topo-agent
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -78,22 +111,22 @@ kind: Deployment
 metadata:
   name: topo-agent
   namespace: topo-system
+  labels:
+    app.kubernetes.io/name: topo-agent
 spec:
   replicas: 1
-
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app.kubernetes.io/name: topo-agent
-
   template:
     metadata:
       labels:
         app.kubernetes.io/name: topo-agent
-        azure.workload.identity/use: "true"
-
     spec:
       serviceAccountName: topo-agent
-
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
@@ -101,132 +134,88 @@ spec:
         fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
-
       containers:
         - name: topo-agent
-          image: topo-agent:0.1.0
+          image: topo-agent:0.7.0
           imagePullPolicy: IfNotPresent
-
           args:
             - run
-
           env:
             - name: TOPO_BACKEND_URL
-              value: http://host.docker.internal:8000
-
-            - name: TOPO_AGENT_TOKEN
               valueFrom:
-                secretKeyRef:
-                  name: topo-agent-credentials
-                  key: agent-token
-                  
-            - name: TOPO_ENABLED_PLUGINS
-              value: kubernetes,aws,azure
-            
-            - name: TOPO_ENABLED_PLUGINS
-              value: kubernetes,aws,azure,gcp
-
-            - name: TOPO_AWS_REGIONS
-              value: us-east-1,us-west-2
-
-            - name: TOPO_AWS_CACHE_TTL
-              value: "300"
-
-            - name: TOPO_AWS_API_MAX_ATTEMPTS
-              value: "5"
-
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: backend-url
             - name: TOPO_AGENT_ID
               valueFrom:
                 secretKeyRef:
                   name: topo-agent-credentials
                   key: agent-id
-
+            - name: TOPO_AGENT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: topo-agent-credentials
+                  key: agent-token
             - name: TOPO_AGENT_NAME
-              value: docker-desktop-agent
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: agent-name
             - name: TOPO_CLUSTER_NAME
-              value: docker-desktop
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: cluster-name
             - name: TOPO_ENVIRONMENT
-              value: development
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: environment
             - name: TOPO_NAMESPACES
-              value: dedupe-demo
-
+              valueFrom:
+                configMapKeyRef:
+                  name: topo-agent-config
+                  key: namespaces
+            - name: TOPO_ENABLED_PLUGINS
+              value: kubernetes
+            - name: TOPO_CHANGE_WATCH_KUBERNETES
+              value: "true"
+            - name: TOPO_CHANGE_WATCH_AWS
+              value: "false"
+            - name: TOPO_CHANGE_WATCH_AZURE
+              value: "false"
+            - name: TOPO_CHANGE_WATCH_GCP
+              value: "false"
             - name: TOPO_COLLECTION_INTERVAL
               value: "300"
-
+            - name: TOPO_CHANGE_WATCH_INTERVAL
+              value: "30"
             - name: TOPO_HEARTBEAT_INTERVAL
               value: "30"
-
-            - name: TOPO_VERIFY_TLS
-              value: "false"
-            
-            - name: TOPO_AZURE_AUTH_MODE
-              value: default
-
-            - name: TOPO_AZURE_TENANT_ID
-              value: "<AZURE_TENANT_ID>"
-
-            - name: TOPO_AZURE_CLIENT_ID
-              value: "<AZURE_CLIENT_ID>"
-
-            - name: TOPO_AZURE_SUBSCRIPTIONS
-              value: "<SUBSCRIPTION_ID>"
-
-            - name: TOPO_AZURE_LOCATIONS
-              value: eastus,eastus2,centralus
-
-            - name: TOPO_AZURE_CACHE_TTL
-              value: "300"
-
-            - name: TOPO_AZURE_QUERY_PAGE_SIZE
-              value: "1000"
-
-            - name: TOPO_AZURE_API_MAX_ATTEMPTS
-              value: "5"
-            
-            - name: TOPO_GCP_PROJECTS
-              value: "<GCP_PROJECT_ID>"
-
-            - name: TOPO_GCP_LOCATIONS
-              value: us-central1,us-east1
-
-            - name: TOPO_GCP_QUOTA_PROJECT
-              value: "<GCP_PROJECT_ID>"
-
-            - name: TOPO_GCP_INCLUDE_HIERARCHY
-              value: "true"
-
-            - name: TOPO_GCP_CACHE_TTL
-              value: "300"
-
-            - name: TOPO_GCP_ASSET_PAGE_SIZE
-              value: "500"
-
-            - name: TOPO_GCP_API_MAX_ATTEMPTS
-              value: "5"
-
+            - name: TOPO_AGENT_HOME
+              value: /var/lib/topo-agent
+            - name: TMPDIR
+              value: /tmp
           volumeMounts:
             - name: state
               mountPath: /var/lib/topo-agent
-
+            - name: temporary
+              mountPath: /tmp
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
               drop:
                 - ALL
-
           resources:
             requests:
               cpu: 50m
               memory: 128Mi
-
             limits:
               cpu: 500m
               memory: 512Mi
-
       volumes:
         - name: state
+          emptyDir: {}
+        - name: temporary
           emptyDir: {}
