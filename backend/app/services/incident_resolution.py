@@ -26,7 +26,9 @@ from app.models.topology import (
     RelationshipType,
 )
 from app.services.pinned_runtime_health import (
-    PINNED_FAILURE_REASONS,
+    PinnedRuntimeHealth,
+    active_container_failure_reasons,
+    pinned_pod_health,
 )
 
 
@@ -437,35 +439,18 @@ def _pod_failure_reasons(
     if phase in {"Failed", "Unknown"}:
         reasons.add(str(phase))
 
-    for key in ("container_statuses", "containers"):
-        containers = pod.properties.get(key)
-        if not isinstance(containers, list):
-            continue
-        for container in containers:
-            if not isinstance(container, dict):
-                continue
-            for reason_key in (
-                "waiting_reason",
-                "terminated_reason",
-                "last_terminated_reason",
-                "reason",
-            ):
-                value = container.get(reason_key)
-                if value:
-                    reasons.add(str(value))
-            state = container.get("state")
-            if not isinstance(state, dict):
-                continue
-            for state_name in ("waiting", "terminated"):
-                state_value = state.get(state_name)
-                if (
-                    isinstance(state_value, dict)
-                    and state_value.get("reason")
-                ):
-                    reasons.add(
-                        str(state_value["reason"])
-                    )
-    return reasons & PINNED_FAILURE_REASONS
+    properties = dict(pod.properties)
+    properties["container_statuses"] = (
+        pod.properties.get("container_statuses")
+        or pod.properties.get("containers")
+        or []
+    )
+    reasons.update(
+        active_container_failure_reasons(
+            properties
+        )
+    )
+    return reasons
 
 
 def evaluate_incident_resolution(
@@ -750,18 +735,29 @@ def evaluate_incident_resolution(
         if current
         else []
     )
+    pod_health = {
+        pod.id: pinned_pod_health(pod)
+        for pod in pods
+    }
     failures = {
         pod.id: sorted(_pod_failure_reasons(pod))
         for pod in pods
-        if _pod_failure_reasons(pod)
+        if pod_health[pod.id]
+        == PinnedRuntimeHealth.FAILED
     }
+    unknown_pods = sorted(
+        pod.id
+        for pod in pods
+        if pod_health[pod.id]
+        == PinnedRuntimeHealth.UNKNOWN
+    )
     pod_status = (
         RecoveryCheckStatus.FAIL
         if failures
         else (
-            RecoveryCheckStatus.PASS
-            if pods
-            else RecoveryCheckStatus.UNKNOWN
+            RecoveryCheckStatus.UNKNOWN
+            if unknown_pods or not pods
+            else RecoveryCheckStatus.PASS
         )
     )
     checks.append(
@@ -770,12 +766,16 @@ def evaluate_incident_resolution(
             title="Affected Pods have no failure state",
             status=pod_status,
             summary=(
-                f"{len(pods)} current workload Pod(s) contain no supported failure reason."
-                if pods and not failures
+                f"{len(pods)} current workload Pod(s) are ready and contain no supported failure reason."
+                if pods and not failures and not unknown_pods
                 else (
                     f"{len(failures)} current workload Pod(s) remain in a supported failure state."
                     if failures
-                    else "No current Pods could be resolved through exact workload ownership edges."
+                    else (
+                        f"{len(unknown_pods)} current workload Pod(s) have insufficient current health evidence."
+                        if unknown_pods
+                        else "No current Pods could be resolved through exact workload ownership edges."
+                    )
                 )
             ),
             expected=(
@@ -789,9 +789,16 @@ def evaluate_incident_resolution(
                 )
                 if failures
                 else (
-                    f"{len(pods)} Pods; no supported failure reasons"
-                    if pods
-                    else "No owned Pods found"
+                    "; ".join(
+                        f"{pod_id}: current health unknown"
+                        for pod_id in unknown_pods
+                    )
+                    if unknown_pods
+                    else (
+                        f"{len(pods)} Pods; ready with no supported failure reasons"
+                        if pods
+                        else "No owned Pods found"
+                    )
                 )
             ),
             source_type=(

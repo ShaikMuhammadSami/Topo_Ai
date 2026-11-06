@@ -167,17 +167,23 @@ def _pod(
     *,
     ready: bool | None,
     reason: str | None = None,
+    last_reason: str | None = None,
 ) -> Entity:
     properties: dict = {"phase": "Running", "ready": ready}
-    if reason:
+    if reason or last_reason:
         properties["phase"] = "Pending"
         properties["container_statuses"] = [
             {
-                "ready": False,
+                "ready": ready,
                 "waiting_reason": reason,
                 "terminated_reason": None,
+                "last_terminated_reason": (
+                    last_reason
+                ),
             }
         ]
+    if not reason:
+        properties["phase"] = "Running"
     return _entity(entity_id, properties=properties)
 
 
@@ -455,6 +461,28 @@ def test_structured_pod_health_classification() -> None:
     assert pinned_pod_health(_pod("pod:ready", ready=True)) == PinnedRuntimeHealth.READY
     assert pinned_pod_health(_pod("pod:failed", ready=False, reason="CrashLoopBackOff")) == PinnedRuntimeHealth.FAILED
     assert pinned_pod_health(_pod("pod:unknown", ready=False)) == PinnedRuntimeHealth.UNKNOWN
+    assert pinned_pod_health(
+        _pod(
+            "pod:recovered-oom",
+            ready=True,
+            last_reason="OOMKilled",
+        )
+    ) == PinnedRuntimeHealth.READY
+    assert pinned_pod_health(
+        _pod(
+            "pod:unknown-oom",
+            ready=None,
+            last_reason="OOMKilled",
+        )
+    ) == PinnedRuntimeHealth.UNKNOWN
+    assert pinned_pod_health(
+        _pod(
+            "pod:active-oom",
+            ready=False,
+            reason="CrashLoopBackOff",
+            last_reason="OOMKilled",
+        )
+    ) == PinnedRuntimeHealth.FAILED
 
 
 def test_legacy_api_construction_remains_compatible() -> None:

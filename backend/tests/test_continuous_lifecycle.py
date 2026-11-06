@@ -429,6 +429,16 @@ def test_snapshot_failure_reasons_include_supported_container_states() -> None:
             )
         } == {reason}
 
+    recovered = _snapshot(
+        "snapshot:recovered-oom"
+    )
+    recovered.entities[1].properties[
+        "container_statuses"
+    ][0]["last_terminated_reason"] = "OOMKilled"
+    assert failure_signals_from_snapshot(
+        recovered
+    ) == []
+
 
 def test_repeated_equivalent_failure_correlates_without_duplicate() -> None:
     session = _session()
@@ -988,6 +998,14 @@ def test_manual_snapshot_uses_oom_evidence_in_same_ingestion_cycle() -> None:
     assert receipt.failure_signal_count == 2
     assert receipt.incident_created_count == 1
     assert len(incidents) == 1
+    assert set(
+        session.scalars(
+            select(SignalRecord.reason)
+        ).all()
+    ) == {
+        "CrashLoopBackOff",
+        "OOMKilled",
+    }
     incident = incidents[0]
     assert incident.title == (
         "OOMKilled on Pod/payment-api-oom"
@@ -1055,6 +1073,87 @@ def test_manual_snapshot_uses_oom_evidence_in_same_ingestion_cycle() -> None:
     )
     assert repeated.incident_created_count == 0
     assert _count(session, IncidentRecord) == 1
+
+    update_incident_status(
+        session,
+        incident_id=incident.incident_id,
+        status=IncidentStatus.RESOLVED,
+        note="Recovered after memory limit correction",
+        tenant_id=TEST_TENANT,
+    )
+
+    for index in range(2):
+        healthy_receipt = persist_agent_snapshot(
+            session,
+            agent=agent,
+            submission=_agent_submission(
+                f"submission:oom-recovered-{index}",
+                collected_at=(
+                    NOW
+                    + timedelta(
+                        minutes=1,
+                        seconds=index,
+                    )
+                ),
+                image="payment:v1",
+                pod_uid="pod-oom",
+                pod_name="payment-api-oom",
+                replica_uid="rs-oom",
+                last_terminated_reason="OOMKilled",
+                checkpoint_reason="manual",
+                pod_template_fingerprint=(
+                    healthy_fingerprint
+                ),
+            ),
+            authorization_context=authorization,
+        )
+        assert healthy_receipt.failure_signal_count == 0
+        assert healthy_receipt.incident_created_count == 0
+
+    session.refresh(incident)
+    assert incident.status == (
+        IncidentStatus.RESOLVED.value
+    )
+    assert _count(session, IncidentRecord) == 1
+
+
+def test_manual_snapshot_creates_config_error_incident_immediately() -> None:
+    session = _session()
+    agent = _agent(session)
+    authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
+
+    receipt = persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:config-error-manual",
+            collected_at=NOW,
+            image="payment:v1",
+            pod_uid="pod-config-error",
+            pod_name="payment-api-config-error",
+            replica_uid="rs-config-error",
+            failure_reason=(
+                "CreateContainerConfigError"
+            ),
+            checkpoint_reason="manual",
+        ),
+        authorization_context=authorization,
+    )
+    incident = session.scalar(
+        select(IncidentRecord)
+    )
+
+    assert receipt.failure_signal_count == 1
+    assert receipt.incident_created_count == 1
+    assert incident is not None
+    assert incident.title == (
+        "CreateContainerConfigError on "
+        "Pod/payment-api-config-error"
+    )
 
 
 def test_pending_topology_reconciles_only_with_safe_checkpoint() -> None:
