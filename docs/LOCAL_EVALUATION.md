@@ -63,9 +63,12 @@ failure state and has no live agent collecting current recovery evidence, so
 
 ### 2. Install and use the real CLI
 
-Install the repository's terminal CLI:
+Install the repository's terminal CLI. On Linux distributions that refuse
+system-wide `pip install` (for example Ubuntu 24.04, "externally-managed-environment"),
+create and activate a virtual environment first, and use it for Path B as well:
 
 ```bash
+python3 -m venv .venv && . .venv/bin/activate
 python3 -m pip install -e ./cli
 ```
 
@@ -188,8 +191,9 @@ topo --tenant $TENANT agents create-token --label docker-desktop-eval --output-t
     --plugin kubernetes --kube-context $Context --collection-interval 30 --token-stdin
 ```
 
-Enrollment stores the agent credential in the operating system's secure
-credential store. It does not print the agent credential. Confirm connectivity,
+Enrollment stores the agent credential in `credentials.json` in the agent home
+directory, readable only by your user account (mode 0600 on Linux and macOS, an
+owner-only ACL on Windows). It does not print the agent credential. Confirm connectivity,
 scope, and Kubernetes read permissions:
 
 ```bash
@@ -209,7 +213,7 @@ Bash:
 
 ```bash
 kubectl --context "$CTX" --namespace "$NS" rollout pause deployment/payment-service
-kubectl --context "$CTX" --namespace "$NS" set image deployment/payment-service payment-service=nginx:topo-ai-invalid-evaluation
+kubectl --context "$CTX" --namespace "$NS" set image deployment/payment-service nginx=nginx:topo-ai-invalid-evaluation
 topo-agent collect --plugin kubernetes
 kubectl --context "$CTX" --namespace "$NS" rollout resume deployment/payment-service
 kubectl --context "$CTX" --namespace "$NS" get pods
@@ -220,7 +224,7 @@ Windows PowerShell:
 
 ```powershell
 kubectl --context $Context --namespace $Namespace rollout pause deployment/payment-service
-kubectl --context $Context --namespace $Namespace set image deployment/payment-service payment-service=nginx:topo-ai-invalid-evaluation
+kubectl --context $Context --namespace $Namespace set image deployment/payment-service nginx=nginx:topo-ai-invalid-evaluation
 topo-agent collect --plugin kubernetes
 kubectl --context $Context --namespace $Namespace rollout resume deployment/payment-service
 kubectl --context $Context --namespace $Namespace get pods
@@ -249,7 +253,7 @@ topo --tenant "$TENANT" causal-rca latest "$INCIDENT"
 topo --tenant "$TENANT" incidents blast-radius "$INCIDENT"
 topo --tenant "$TENANT" snapshots list
 
-kubectl --context "$CTX" --namespace "$NS" set image deployment/payment-service payment-service=nginx:1.27-alpine
+kubectl --context "$CTX" --namespace "$NS" set image deployment/payment-service nginx=nginx:1.27-alpine
 kubectl --context "$CTX" --namespace "$NS" rollout status deployment/payment-service --timeout=120s
 topo-agent collect --plugin kubernetes
 ```
@@ -264,7 +268,7 @@ topo --tenant $TENANT causal-rca latest $INCIDENT
 topo --tenant $TENANT incidents blast-radius $INCIDENT
 topo --tenant $TENANT snapshots list
 
-kubectl --context $Context --namespace $Namespace set image deployment/payment-service payment-service=nginx:1.27-alpine
+kubectl --context $Context --namespace $Namespace set image deployment/payment-service nginx=nginx:1.27-alpine
 kubectl --context $Context --namespace $Namespace rollout status deployment/payment-service --timeout=120s
 topo-agent collect --plugin kubernetes
 ```
@@ -303,9 +307,11 @@ kubectl --context $Context delete namespace $Namespace
 - Check & Resolve uses a sufficiently fresh, tenant/cluster/namespace/workload-
   scoped persisted snapshot. It cannot command the agent to collect live and
   does not run `kubectl` remotely.
-- Agent enrollment requires an operating-system credential store. Headless
-  Linux environments without one will fail closed rather than save a plaintext
-  token.
+- The `topo` CLI stores login tokens only in a usable operating-system
+  keyring. If no suitable keyring is available (for example on headless Linux),
+  tokenless commands still work with the explicitly auth-disabled local demo.
+  Against an authenticated backend, supply a valid `TOPO_API_TOKEN` through the
+  environment or configure a suitable keyring. Token writes fail closed.
 - Fast Kubernetes transitions can combine the Deployment mutation and failure
   symptom in one collection. Topo reports the evidence it observed and should
   not manufacture a causal conclusion.

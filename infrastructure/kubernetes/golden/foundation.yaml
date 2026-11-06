@@ -17,6 +17,8 @@ metadata:
     app.kubernetes.io/part-of: topo-ai
 data:
   # Replace these non-secret placeholders before live bring-up.
+  # installation-id format: installation:<uuid4>, for example
+  # installation:5b2f0a7e-3c1d-4e8f-9a6b-1c2d3e4f5a6b (a bare UUID fails startup).
   installation-id: REPLACE_WITH_INSTALLATION_ID
   cluster-name: REPLACE_WITH_CLUSTER_NAME
   environment: golden

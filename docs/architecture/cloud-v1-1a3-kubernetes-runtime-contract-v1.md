@@ -173,9 +173,11 @@ Secrets Manager synchronization is deferred; no large secret controller is
 introduced here.
 
 `topo-runtime-config` contains only non-secret identity/configuration
-placeholders: installation UUID, cluster name, environment and exact browser
-origins JSON. The installation ID must be a stable valid Topo installation UUID
-before deployment. Database URLs, passwords, tokens and root keys must never be
+placeholders: installation ID, cluster name, environment and exact browser
+origins JSON. The installation ID must be a stable valid Topo installation ID
+before deployment: `installation:` followed by a lowercase version-4 UUID, for
+example `installation:5b2f0a7e-3c1d-4e8f-9a6b-1c2d3e4f5a6b`. A bare UUID is
+rejected and the backend fails startup with `SECRET_SCOPE_INVALID`. Database URLs, passwords, tokens and root keys must never be
 placed in that ConfigMap.
 
 ## Migration responsibility
