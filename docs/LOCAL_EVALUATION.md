@@ -307,10 +307,11 @@ kubectl --context $Context delete namespace $Namespace
 - Check & Resolve uses a sufficiently fresh, tenant/cluster/namespace/workload-
   scoped persisted snapshot. It cannot command the agent to collect live and
   does not run `kubectl` remotely.
-- The `topo` CLI keeps login tokens only in an operating-system credential
-  store. On headless Linux without one, `topo` commands fail with "The
-  configured keyring backend is not suitable for credential storage"; with the
-  auth-disabled local demo, set `TOPO_API_TOKEN` to any value to use the CLI.
+- The `topo` CLI stores login tokens only in a usable operating-system
+  keyring. If no suitable keyring is available (for example on headless Linux),
+  tokenless commands still work with the explicitly auth-disabled local demo.
+  Against an authenticated backend, supply a valid `TOPO_API_TOKEN` through the
+  environment or configure a suitable keyring. Token writes fail closed.
 - Fast Kubernetes transitions can combine the Deployment mutation and failure
   symptom in one collection. Topo reports the evidence it observed and should
   not manufacture a causal conclusion.
