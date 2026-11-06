@@ -127,6 +127,75 @@ def _pod_ready(
     )
 
 
+def _container_status_observation(
+    item: Any,
+    *,
+    container_type: str,
+) -> dict[str, Any]:
+    """Return structured state reasons without kubelet message content."""
+
+    state = getattr(
+        item,
+        "state",
+        None,
+    )
+    last_state = getattr(
+        item,
+        "last_state",
+        None,
+    )
+
+    return {
+        "name": item.name,
+        "container_type": container_type,
+        "image": item.image,
+        "ready": item.ready,
+        "restart_count": item.restart_count,
+        "waiting_reason": getattr(
+            getattr(state, "waiting", None),
+            "reason",
+            None,
+        ),
+        "terminated_reason": getattr(
+            getattr(state, "terminated", None),
+            "reason",
+            None,
+        ),
+        "last_terminated_reason": getattr(
+            getattr(
+                last_state,
+                "terminated",
+                None,
+            ),
+            "reason",
+            None,
+        ),
+    }
+
+
+def _normalized_container_id(
+    item: Any,
+) -> str | None:
+    value = getattr(
+        item,
+        "container_id",
+        None,
+    )
+
+    if not value:
+        return None
+
+    normalized = str(value)
+
+    if "://" in normalized:
+        return normalized.split(
+            "://",
+            1,
+        )[1]
+
+    return normalized
+
+
 def _canonical_kubernetes_value(
     value: Any,
 ) -> Any:
@@ -585,78 +654,63 @@ class KubernetesCollector:
                 _owner(pod.metadata)
             )
 
-            statuses = (
-                pod
-                .status
-                .container_statuses
-                or []
+            status_groups = (
+                (
+                    "container",
+                    getattr(
+                        pod.status,
+                        "container_statuses",
+                        None,
+                    )
+                    or [],
+                ),
+                (
+                    "init_container",
+                    getattr(
+                        pod.status,
+                        "init_container_statuses",
+                        None,
+                    )
+                    or [],
+                ),
+                (
+                    "ephemeral_container",
+                    getattr(
+                        pod.status,
+                        "ephemeral_container_statuses",
+                        None,
+                    )
+                    or [],
+                ),
             )
+            statuses = status_groups[0][1]
             container_ids = []
             container_statuses = []
 
-            for item in statuses:
-                container_id = getattr(
-                    item,
-                    "container_id",
-                    None,
-                )
-
-                if container_id:
-                    normalized = str(
-                        container_id
+            for container_type, group in status_groups:
+                for item in group:
+                    container_id = (
+                        _normalized_container_id(
+                            item
+                        )
                     )
 
-                    if "://" in normalized:
-                        normalized = (
-                            normalized.split(
-                                "://",
-                                1,
-                            )[1]
+                    if (
+                        container_type == "container"
+                        and container_id
+                    ):
+                        container_ids.append(
+                            container_id
                         )
 
-                    container_ids.append(
-                        normalized
+                    container_statuses.append(
+                        _container_status_observation(
+                            item,
+                            container_type=(
+                                container_type
+                            ),
+                        )
                     )
-
-                state = getattr(
-                    item,
-                    "state",
-                    None,
-                )
-                waiting = getattr(
-                    state,
-                    "waiting",
-                    None,
-                )
-                terminated = getattr(
-                    state,
-                    "terminated",
-                    None,
-                )
-                container_statuses.append(
-                    {
-                        "name": item.name,
-                        "image": item.image,
-                        "ready": item.ready,
-                        "restart_count": (
-                            item.restart_count
-                        ),
-                        "waiting_reason": (
-                            getattr(
-                                waiting,
-                                "reason",
-                                None,
-                            )
-                        ),
-                        "terminated_reason": (
-                            getattr(
-                                terminated,
-                                "reason",
-                                None,
-                            )
-                        ),
-                    }
-                )
 
 
             inventory["pods"].append(

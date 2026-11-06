@@ -21,6 +21,7 @@ PINNED_FAILURE_REASONS = frozenset(
         "ErrImagePull",
         "Failed",
         "ImagePullBackOff",
+        "InvalidImageName",
         "OOMKilled",
         "RunContainerError",
         "Unknown",
@@ -42,6 +43,7 @@ def _container_reasons(properties: dict[str, Any]) -> set[str]:
         candidates = (
             container.get("waiting_reason"),
             container.get("terminated_reason"),
+            container.get("last_terminated_reason"),
             container.get("reason"),
         )
 

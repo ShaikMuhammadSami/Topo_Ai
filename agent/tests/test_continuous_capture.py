@@ -363,6 +363,82 @@ def test_kubernetes_failure_preserves_source_and_agent_observation_time(
     assert datetime.fromisoformat(temporal["observed_at"]) >= source_time
 
 
+def test_kubernetes_watch_accepts_specific_reasons_without_raw_messages(
+    monkeypatch,
+) -> None:
+    observed_at = datetime(
+        2026,
+        8,
+        20,
+        10,
+        4,
+        tzinfo=timezone.utc,
+    )
+    reasons = {
+        "OOMKilled",
+        "CreateContainerConfigError",
+        "CreateContainerError",
+        "InvalidImageName",
+    }
+    events = [
+        SimpleNamespace(
+            reason=reason,
+            event_time=observed_at,
+            first_timestamp=observed_at,
+            last_timestamp=observed_at,
+            involved_object=SimpleNamespace(
+                namespace="payments",
+                kind="Pod",
+                name="payments-abc",
+                uid="pod-uid",
+            ),
+            metadata=SimpleNamespace(
+                namespace="payments",
+                uid=f"event-{reason}",
+            ),
+            reporting_component="kubelet",
+            count=1,
+            message=(
+                "could not find key SECRET_VALUE in "
+                "ConfigMap private-config"
+            ),
+            action=None,
+            type="Warning",
+        )
+        for reason in reasons
+    ]
+
+    class _Api:
+        def list_namespaced_event(self, namespace):
+            assert namespace == "payments"
+            return SimpleNamespace(items=events)
+
+    monkeypatch.setattr(
+        "topo_agent.change_watch_kubernetes.config.load_incluster_config",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "topo_agent.change_watch_kubernetes.client.CoreV1Api",
+        lambda: _Api(),
+    )
+    poller = KubernetesChangePoller(
+        cluster_name="production",
+        namespaces=["payments"],
+    )
+    poller.last_poll = observed_at - timedelta(seconds=1)
+
+    assert poller.poll() == []
+    signals = poller.drain_failure_signals()
+
+    assert {signal["reason"] for signal in signals} == reasons
+    assert all(signal["raw_payload"] == {} for signal in signals)
+    assert all(
+        "SECRET_VALUE" not in signal["summary"]
+        and "private-config" not in signal["summary"]
+        for signal in signals
+    )
+
+
 def test_kubernetes_failure_does_not_treat_naive_source_time_as_utc(
     monkeypatch,
 ) -> None:

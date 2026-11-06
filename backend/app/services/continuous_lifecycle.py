@@ -89,8 +89,12 @@ INCIDENT_CORRELATION_WINDOW_MINUTES = max(
 SUPPORTED_KUBERNETES_FAILURE_REASONS = {
     "BackOff",
     "CrashLoopBackOff",
+    "CreateContainerConfigError",
+    "CreateContainerError",
     "ErrImagePull",
     "ImagePullBackOff",
+    "InvalidImageName",
+    "OOMKilled",
     "Failed",
     "FailedScheduling",
     "FailedMount",
@@ -321,6 +325,7 @@ def _container_failure_reasons(
         candidates = [
             container.get("waiting_reason"),
             container.get("terminated_reason"),
+            container.get("last_terminated_reason"),
             container.get("reason"),
         ]
         state = container.get("state")
@@ -338,6 +343,18 @@ def _container_failure_reasons(
             if isinstance(terminated, dict):
                 candidates.append(
                     terminated.get("reason")
+                )
+
+        last_state = container.get("last_state")
+
+        if isinstance(last_state, dict):
+            last_terminated = last_state.get(
+                "terminated"
+            )
+
+            if isinstance(last_terminated, dict):
+                candidates.append(
+                    last_terminated.get("reason")
                 )
 
         for candidate in candidates:

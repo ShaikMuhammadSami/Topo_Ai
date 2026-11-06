@@ -447,6 +447,7 @@ def _pod_failure_reasons(
             for reason_key in (
                 "waiting_reason",
                 "terminated_reason",
+                "last_terminated_reason",
                 "reason",
             ):
                 value = container.get(reason_key)

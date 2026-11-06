@@ -25,8 +25,12 @@ from app.models.temporal import (
 ERROR_REASONS = {
     "BackOff",
     "CrashLoopBackOff",
+    "CreateContainerConfigError",
+    "CreateContainerError",
     "ErrImagePull",
     "ImagePullBackOff",
+    "InvalidImageName",
+    "OOMKilled",
     "Failed",
     "FailedScheduling",
     "FailedMount",
@@ -503,9 +507,30 @@ class KubernetesEventCollector:
                 )
             )
 
+            severity = _severity(
+                event_type=event.type,
+                reason=reason,
+            )
+            incident_eligible = severity in {
+                SignalSeverity.WARNING,
+                SignalSeverity.ERROR,
+                SignalSeverity.CRITICAL,
+            }
             message = (
-                event.message
-                or "Kubernetes event"
+                (
+                    "Topo observed Kubernetes "
+                    f"event reason {reason or 'Unknown'}"
+                    + (
+                        f" on {object_kind}/{object_name}."
+                        if object_kind and object_name
+                        else "."
+                    )
+                )
+                if incident_eligible
+                else (
+                    event.message
+                    or "Kubernetes event"
+                )
             )
 
             title_parts = [
@@ -520,7 +545,9 @@ class KubernetesEventCollector:
                 )
 
             raw_payload = (
-                self.api_client
+                {}
+                if incident_eligible
+                else self.api_client
                 .sanitize_for_serialization(
                     event
                 )
@@ -540,10 +567,7 @@ class KubernetesEventCollector:
                         SignalType
                         .KUBERNETES_EVENT
                     ),
-                    severity=_severity(
-                        event_type=event.type,
-                        reason=reason,
-                    ),
+                    severity=severity,
                     category=_category(
                         reason
                     ),

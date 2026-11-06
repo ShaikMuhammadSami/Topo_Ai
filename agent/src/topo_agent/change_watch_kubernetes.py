@@ -25,8 +25,12 @@ CHANGE_REASONS = {
 FAILURE_REASONS = {
     "BackOff",
     "CrashLoopBackOff",
+    "CreateContainerConfigError",
+    "CreateContainerError",
     "ErrImagePull",
     "ImagePullBackOff",
+    "InvalidImageName",
+    "OOMKilled",
     "Failed",
     "FailedScheduling",
     "FailedMount",
@@ -341,8 +345,9 @@ class KubernetesChangePoller:
                             f"{reason} on {kind}/{name}"
                         ),
                         "summary": (
-                            item.message
-                            or "Kubernetes failure event"
+                            "Topo observed Kubernetes "
+                            f"failure reason {reason} on "
+                            f"{kind}/{name}."
                         ),
                         "reason": reason,
                         "action": item.action,
