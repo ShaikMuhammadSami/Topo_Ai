@@ -2,6 +2,7 @@ from __future__ import annotations
 from domain_tenant_fixtures import TEST_HEADERS, TEST_TENANT, seed_domain_tenant
 
 import inspect
+import json
 from datetime import (
     datetime,
     timedelta,
@@ -825,6 +826,7 @@ def _agent_submission(
     failure_reason: str | None = None,
     checkpoint_reason: str = "periodic_reconcile",
     trigger_signal_ids: list[str] | None = None,
+    pod_template_fingerprint: str | None = None,
 ) -> AgentSnapshotSubmission:
     return AgentSnapshotSubmission(
         submission_id=submission_id,
@@ -851,6 +853,15 @@ def _agent_submission(
                             "image": image,
                         }
                     ],
+                    **(
+                        {
+                            "pod_template_fingerprint": (
+                                pod_template_fingerprint
+                            )
+                        }
+                        if pod_template_fingerprint
+                        else {}
+                    ),
                 }
             ],
             "replicasets": [
@@ -1396,6 +1407,169 @@ def test_image_change_remains_root_after_prior_deployment_creation() -> None:
         == creation_event.event_id
         for hypothesis in analysis.hypotheses
     )
+
+
+def test_command_change_is_supported_candidate_for_crash_loop() -> None:
+    session = _session()
+    agent = _agent(session)
+    agent_authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
+    healthy_fingerprint = "sha256:" + "1" * 64
+    command_fingerprint = "sha256:" + "2" * 64
+
+    persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:command-healthy",
+            collected_at=NOW - timedelta(minutes=3),
+            image="nginx:1.27-alpine",
+            pod_uid="pod-old",
+            pod_name="payment-api-old",
+            replica_uid="rs-old",
+            pod_template_fingerprint=healthy_fingerprint,
+        ),
+        authorization_context=agent_authorization,
+    )
+    persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:command-changed",
+            collected_at=NOW - timedelta(minutes=2),
+            image="nginx:1.27-alpine",
+            pod_uid="pod-old",
+            pod_name="payment-api-old",
+            replica_uid="rs-old",
+            pod_template_fingerprint=command_fingerprint,
+        ),
+        authorization_context=agent_authorization,
+    )
+
+    signal_id = "signal:kubernetes-event:command-crash-loop"
+    failure = persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:command-failure",
+            collected_at=NOW,
+            image="nginx:1.27-alpine",
+            pod_uid="pod-new",
+            pod_name="payment-api-new",
+            replica_uid="rs-new",
+            failure_reason="CrashLoopBackOff",
+            checkpoint_reason="incident_boundary",
+            trigger_signal_ids=[signal_id],
+            pod_template_fingerprint=command_fingerprint,
+        ),
+        authorization_context=agent_authorization,
+    )
+    result = ingest_failure_signal_batch(
+        session,
+        signals=[
+            _signal(
+                signal_id,
+                reason="CrashLoopBackOff",
+                pod_name="payment-api-new",
+                pod_uid="pod-new",
+                snapshot_id=failure.snapshot_id,
+                severity=SignalSeverity.ERROR,
+            )
+        ],
+        tenant_id=TEST_TENANT,
+    )
+    incident_id = result.results[0].incident_id
+    assert incident_id is not None
+
+    deployment_changes = [
+        record
+        for record in session.scalars(
+            select(ChangeRecord).where(
+                ChangeRecord.entity_id
+                == "k8s:production:deployment:deployment-payment"
+            )
+        ).all()
+        if record.change_type == "entity_updated"
+    ]
+    assert len(deployment_changes) == 1
+    change = json.loads(
+        deployment_changes[0].payload_json
+    )
+    assert change["changed_fields"] == {
+        "properties.pod_template_fingerprint": {
+            "before": healthy_fingerprint,
+            "after": command_fingerprint,
+        }
+    }
+    event = session.scalar(
+        select(ChangeEventRecord).where(
+            ChangeEventRecord.origin_change_id
+            == deployment_changes[0].change_id
+        )
+    )
+    analysis = latest_causal_analysis(
+        session,
+        incident_id=incident_id,
+        tenant_id=TEST_TENANT,
+    )
+
+    assert event is not None
+    assert event.title == "Deployment configuration changed"
+    assert analysis is not None
+    assert analysis.top_hypothesis is not None
+    assert analysis.top_hypothesis.root_event_id == event.event_id
+    assert analysis.top_hypothesis.target_event_id == event.event_id
+    assert analysis.top_hypothesis.support_gate is not None
+    assert (
+        analysis.top_hypothesis.support_gate.support_state.value
+        == "supported_under_current_model"
+    )
+
+
+def test_identical_template_fingerprint_creates_no_deployment_change() -> None:
+    session = _session()
+    agent = _agent(session)
+    agent_authorization = authorize_agent_fixed_purpose(
+        session,
+        agent=agent,
+        fixed_purpose="app.services.agent_snapshot_ingest.persist_agent_snapshot",
+    )
+    fingerprint = "sha256:" + "3" * 64
+
+    persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:template-stable-one",
+            collected_at=NOW - timedelta(minutes=1),
+            image="nginx:1.27-alpine",
+            pod_uid="pod-stable",
+            pod_name="payment-api-stable",
+            replica_uid="rs-stable",
+            pod_template_fingerprint=fingerprint,
+        ),
+        authorization_context=agent_authorization,
+    )
+    before_count = _count(session, ChangeRecord)
+    persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=_agent_submission(
+            "submission:template-stable-two",
+            collected_at=NOW,
+            image="nginx:1.27-alpine",
+            pod_uid="pod-stable",
+            pod_name="payment-api-stable",
+            replica_uid="rs-stable",
+            pod_template_fingerprint=fingerprint,
+        ),
+        authorization_context=agent_authorization,
+    )
+
+    assert _count(session, ChangeRecord) == before_count
 
 
 def test_no_hypothesis_has_controlled_terminal_lifecycle_state() -> None:

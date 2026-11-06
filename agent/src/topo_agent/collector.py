@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import (
     datetime,
     timezone,
@@ -122,6 +124,108 @@ def _pod_ready(
         condition.type == "Ready"
         and condition.status == "True"
         for condition in conditions
+    )
+
+
+def _canonical_kubernetes_value(
+    value: Any,
+) -> Any:
+    """Convert Kubernetes models into deterministic JSON-compatible values."""
+
+    if hasattr(value, "to_dict"):
+        value = value.to_dict()
+
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_kubernetes_value(item)
+            for key, item in sorted(
+                value.items(),
+                key=lambda pair: str(pair[0]),
+            )
+        }
+
+    if isinstance(value, (list, tuple)):
+        return [
+            _canonical_kubernetes_value(item)
+            for item in value
+        ]
+
+    if isinstance(value, datetime):
+        return value.isoformat()
+
+    if value is None or isinstance(
+        value,
+        (str, int, float, bool),
+    ):
+        return value
+
+    return str(value)
+
+
+def _pod_template_fingerprint(
+    template: Any,
+) -> str:
+    """Hash meaningful pod-template state without submitting raw config."""
+
+    payload = _canonical_kubernetes_value(
+        template
+    )
+    if not isinstance(payload, dict):
+        payload = {}
+
+    metadata = payload.get("metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    spec = payload.get("spec")
+    if not isinstance(spec, dict):
+        spec = {}
+    else:
+        spec = dict(spec)
+
+    # Regular-container images already have a durable, human-readable
+    # representation in the Deployment inventory. Excluding only those images
+    # keeps existing image-change fields and causal scoring stable. Images for
+    # init and other container types remain in the digest because they are not
+    # represented by the existing inventory field.
+    containers = spec.get("containers")
+    if isinstance(containers, list):
+        sanitized_containers = []
+        for container in containers:
+            if not isinstance(container, dict):
+                sanitized_containers.append(
+                    container
+                )
+                continue
+            sanitized = dict(container)
+            sanitized.pop("image", None)
+            sanitized_containers.append(
+                sanitized
+            )
+        spec["containers"] = sanitized_containers
+
+    fingerprint_input = {
+        "metadata": {
+            "annotations": (
+                metadata.get("annotations")
+                or {}
+            ),
+            "labels": (
+                metadata.get("labels")
+                or {}
+            ),
+        },
+        "spec": spec,
+    }
+    canonical = json.dumps(
+        fingerprint_input,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return (
+        "sha256:"
+        + hashlib.sha256(canonical).hexdigest()
     )
 
 
@@ -405,6 +509,11 @@ class KubernetesCollector:
                         item.image
                         for item in containers
                     ],
+                    "pod_template_fingerprint": (
+                        _pod_template_fingerprint(
+                            deployment.spec.template
+                        )
+                    ),
                 }
             )
 
