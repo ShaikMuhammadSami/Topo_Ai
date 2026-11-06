@@ -51,6 +51,13 @@ def _template_payload() -> dict:
                     },
                 }
             ],
+            "init_containers": [
+                {
+                    "name": "database-migration",
+                    "image": "orders-migration:v1",
+                    "command": ["migrate"],
+                }
+            ],
             "restart_policy": "Always",
             "service_account_name": "orders-api",
         },
@@ -79,6 +86,16 @@ def test_pod_template_fingerprint_is_stable_and_image_independent() -> None:
     assert _fingerprint(baseline) == _fingerprint(baseline)
     assert _fingerprint(reordered) == _fingerprint(baseline)
     assert _fingerprint(changed_image) == _fingerprint(baseline)
+
+
+def test_init_container_image_change_changes_pod_template_fingerprint() -> None:
+    baseline = _template_payload()
+    changed = copy.deepcopy(baseline)
+    changed["spec"]["init_containers"][0]["image"] = (
+        "orders-migration:v2"
+    )
+
+    assert _fingerprint(changed) != _fingerprint(baseline)
 
 
 def test_command_change_changes_pod_template_fingerprint() -> None:

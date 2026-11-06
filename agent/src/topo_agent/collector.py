@@ -183,19 +183,13 @@ def _pod_template_fingerprint(
     else:
         spec = dict(spec)
 
-    # Images already have a durable, human-readable representation in the
-    # Deployment inventory. Excluding them keeps existing image-change fields
-    # and causal scoring stable while this digest covers the rest of the pod
-    # template (command, args, env, resources, probes, and pod configuration).
-    for field in (
-        "containers",
-        "init_containers",
-        "ephemeral_containers",
-    ):
-        containers = spec.get(field)
-        if not isinstance(containers, list):
-            continue
-
+    # Regular-container images already have a durable, human-readable
+    # representation in the Deployment inventory. Excluding only those images
+    # keeps existing image-change fields and causal scoring stable. Images for
+    # init and other container types remain in the digest because they are not
+    # represented by the existing inventory field.
+    containers = spec.get("containers")
+    if isinstance(containers, list):
         sanitized_containers = []
         for container in containers:
             if not isinstance(container, dict):
@@ -208,7 +202,7 @@ def _pod_template_fingerprint(
             sanitized_containers.append(
                 sanitized
             )
-        spec[field] = sanitized_containers
+        spec["containers"] = sanitized_containers
 
     fingerprint_input = {
         "metadata": {
