@@ -81,6 +81,8 @@ def _snapshot(
     cluster_name: str = "docker-desktop",
     failure_reason: str | None = None,
     include_ready: bool = True,
+    include_pod_ready: bool = True,
+    last_terminated_reason: str | None = None,
 ) -> GraphSnapshot:
     deployment = _entity(
         deployment_id,
@@ -102,21 +104,30 @@ def _snapshot(
             else {}
         ),
     )
+    pod_properties = {
+        "phase": "Running",
+        "container_statuses": [
+            {
+                "name": "payment-service",
+                "ready": failure_reason is None,
+                "waiting_reason": failure_reason,
+                "last_terminated_reason": (
+                    last_terminated_reason
+                ),
+            }
+        ],
+    }
+
+    if include_pod_ready:
+        pod_properties["ready"] = (
+            failure_reason is None
+        )
+
     pod = _entity(
         POD_ID,
         kind="KubernetesPod",
         name="payment-service-abc-123",
-        properties={
-            "phase": "Running",
-            "ready": failure_reason is None,
-            "container_statuses": [
-                {
-                    "name": "payment-service",
-                    "ready": failure_reason is None,
-                    "waiting_reason": failure_reason,
-                }
-            ],
-        },
+        properties=pod_properties,
     )
     return GraphSnapshot(
         snapshot_id=snapshot_id,
@@ -180,6 +191,7 @@ def test_fresh_scoped_snapshot_allows_operator_resolution():
     healthy = _snapshot(
         "snapshot:healthy",
         collected_at=NOW - timedelta(minutes=1),
+        last_terminated_reason="OOMKilled",
     )
 
     plan = build_incident_resolution_plan(
@@ -206,6 +218,12 @@ def test_fresh_scoped_snapshot_allows_operator_resolution():
     assert result.eligible_to_resolve is True
     assert result.passed_count == len(result.checks) == 6
     assert result.failed_count == result.unknown_count == 0
+    pod_check = next(
+        check
+        for check in result.checks
+        if check.code == "affected_pods_healthy"
+    )
+    assert pod_check.status == RecoveryCheckStatus.PASS
     assert result.resolution_note is not None
     assert "did not modify infrastructure" in result.resolution_note
     assert {
@@ -278,6 +296,38 @@ def test_failure_stale_or_unknown_evidence_never_allows_resolution():
     assert replica_check.status == RecoveryCheckStatus.UNKNOWN
     assert missing_ready.status == RecoveryStatus.INCONCLUSIVE
     assert missing_ready.eligible_to_resolve is False
+
+    historical_without_current_health = (
+        evaluate_incident_resolution(
+            tenant_id=TENANT_ID,
+            incident=incident,
+            pinned_snapshot=pinned,
+            candidate_snapshot=_snapshot(
+                "snapshot:historical-unknown",
+                collected_at=(
+                    NOW - timedelta(minutes=1)
+                ),
+                include_pod_ready=False,
+                last_terminated_reason="OOMKilled",
+            ),
+            now=NOW,
+        )
+    )
+    historical_pod_check = next(
+        check
+        for check in (
+            historical_without_current_health.checks
+        )
+        if check.code == "affected_pods_healthy"
+    )
+    assert historical_pod_check.status == (
+        RecoveryCheckStatus.UNKNOWN
+    )
+    assert (
+        historical_without_current_health
+        .eligible_to_resolve
+        is False
+    )
 
 
 def test_scope_and_exact_workload_identity_are_fail_closed():

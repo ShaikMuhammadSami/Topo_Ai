@@ -70,6 +70,9 @@ from app.services.canonical_identity import (
     resolve_snapshot_entity_identity,
     resolved_snapshot_entity,
 )
+from app.services.pinned_runtime_health import (
+    active_container_failure_reasons,
+)
 from app.services.webhook_delivery import (
     build_webhook_event,
     publish_event_safely,
@@ -86,18 +89,22 @@ INCIDENT_CORRELATION_WINDOW_MINUTES = max(
 )
 
 
-SUPPORTED_KUBERNETES_FAILURE_REASONS = {
+SUPPORTED_KUBERNETES_FAILURE_REASONS = frozenset({
     "BackOff",
     "CrashLoopBackOff",
+    "CreateContainerConfigError",
+    "CreateContainerError",
     "ErrImagePull",
     "ImagePullBackOff",
+    "InvalidImageName",
+    "OOMKilled",
     "Failed",
     "FailedScheduling",
     "FailedMount",
     "FailedAttachVolume",
     "FailedCreate",
     "Unhealthy",
-}
+})
 
 
 def _digest(*parts: object) -> str:
@@ -304,49 +311,18 @@ def bind_signal_to_incident_topology(
 def _container_failure_reasons(
     properties: dict[str, Any],
 ) -> set[str]:
-    reasons: set[str] = set()
-    containers = (
+    normalized = dict(properties)
+    normalized["container_statuses"] = (
         properties.get("container_statuses")
         or properties.get("containers")
         or []
     )
-
-    if not isinstance(containers, list):
-        return reasons
-
-    for container in containers:
-        if not isinstance(container, dict):
-            continue
-
-        candidates = [
-            container.get("waiting_reason"),
-            container.get("terminated_reason"),
-            container.get("reason"),
-        ]
-        state = container.get("state")
-
-        if isinstance(state, dict):
-            waiting = state.get("waiting")
-
-            if isinstance(waiting, dict):
-                candidates.append(
-                    waiting.get("reason")
-                )
-
-            terminated = state.get("terminated")
-
-            if isinstance(terminated, dict):
-                candidates.append(
-                    terminated.get("reason")
-                )
-
-        for candidate in candidates:
-            if candidate in (
-                SUPPORTED_KUBERNETES_FAILURE_REASONS
-            ):
-                reasons.add(str(candidate))
-
-    return reasons
+    return active_container_failure_reasons(
+        normalized,
+        supported_reasons=(
+            SUPPORTED_KUBERNETES_FAILURE_REASONS
+        ),
+    )
 
 
 def failure_signals_from_snapshot(

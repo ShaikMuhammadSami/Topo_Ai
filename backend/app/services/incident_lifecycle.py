@@ -31,6 +31,9 @@ from app.repositories.incident_record_repository import (
     find_correlatable_incident,
     list_incidents_by_fingerprint,
 )
+from app.repositories.signal_repository import (
+    load_signal,
+)
 from app.services.incident_grouping import (
     incident_fingerprint,
     incident_group_label,
@@ -126,6 +129,47 @@ _SEVERITY_PRIORITY = {
     IncidentSeverity.ERROR.value: 3,
     IncidentSeverity.CRITICAL.value: 4,
 }
+
+
+_GENERIC_FAILURE_REASONS = {
+    "BackOff",
+    "Failed",
+}
+
+
+_TRANSITION_FAILURE_REASONS = {
+    "CrashLoopBackOff",
+    "ImagePullBackOff",
+}
+
+
+def _incident_signal_priority(
+    signal: NormalizedSignal,
+) -> tuple[int, int, str, int, str]:
+    reason = signal.reason or ""
+
+    if reason in _GENERIC_FAILURE_REASONS:
+        specificity = 1
+
+    elif reason in _TRANSITION_FAILURE_REASONS:
+        specificity = 2
+
+    elif reason:
+        specificity = 3
+
+    else:
+        specificity = 0
+
+    return (
+        specificity,
+        _SEVERITY_PRIORITY.get(
+            signal.severity.value,
+            0,
+        ),
+        signal.last_observed_at.isoformat(),
+        signal.occurrence_count,
+        signal.signal_id,
+    )
 
 
 def _title(
@@ -285,8 +329,22 @@ def upsert_incident_from_orchestration(
             incoming_severity
         )
 
-    existing.title = _title(signal)
-    existing.summary = _summary(signal)
+    primary_signal = load_signal(
+        session,
+        existing.primary_signal_id,
+        tenant_id=tenant_id,
+    )
+
+    if (
+        primary_signal is None
+        or _incident_signal_priority(signal)
+        >= _incident_signal_priority(primary_signal)
+    ):
+        existing.title = _title(signal)
+        existing.summary = _summary(signal)
+        existing.primary_signal_id = (
+            signal.signal_id
+        )
 
     previous_latest_signal_id = (
         existing.latest_signal_id

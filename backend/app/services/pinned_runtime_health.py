@@ -21,6 +21,7 @@ PINNED_FAILURE_REASONS = frozenset(
         "ErrImagePull",
         "Failed",
         "ImagePullBackOff",
+        "InvalidImageName",
         "OOMKilled",
         "RunContainerError",
         "Unknown",
@@ -28,7 +29,18 @@ PINNED_FAILURE_REASONS = frozenset(
 )
 
 
-def _container_reasons(properties: dict[str, Any]) -> set[str]:
+def active_container_failure_reasons(
+    properties: dict[str, Any],
+    *,
+    supported_reasons: frozenset[str] = (
+        PINNED_FAILURE_REASONS
+    ),
+) -> set[str]:
+    """
+    Return current failures plus historical context
+    only when a container is actively failing.
+    """
+
     reasons: set[str] = set()
     containers = properties.get("container_statuses") or []
 
@@ -39,24 +51,62 @@ def _container_reasons(properties: dict[str, Any]) -> set[str]:
         if not isinstance(container, dict):
             continue
 
-        candidates = (
+        current_candidates = [
             container.get("waiting_reason"),
             container.get("terminated_reason"),
             container.get("reason"),
-        )
-
-        for candidate in candidates:
-            if candidate:
-                reasons.add(str(candidate))
+        ]
 
         state = container.get("state")
-        if not isinstance(state, dict):
+
+        if isinstance(state, dict):
+            for state_name in (
+                "waiting",
+                "terminated",
+            ):
+                state_value = state.get(state_name)
+                if (
+                    isinstance(state_value, dict)
+                    and state_value.get("reason")
+                ):
+                    current_candidates.append(
+                        state_value["reason"]
+                    )
+
+        current_reasons = {
+            candidate
+            for candidate in current_candidates
+            if isinstance(candidate, str)
+            and candidate in supported_reasons
+        }
+        reasons.update(current_reasons)
+
+        # lastState is retained as historical evidence, but it is actionable
+        # only while the same container has a current supported failure.
+        if not current_reasons:
             continue
 
-        for state_name in ("waiting", "terminated"):
-            state_value = state.get(state_name)
-            if isinstance(state_value, dict) and state_value.get("reason"):
-                reasons.add(str(state_value["reason"]))
+        historical_candidates = [
+            container.get("last_terminated_reason")
+        ]
+        last_state = container.get("last_state")
+
+        if isinstance(last_state, dict):
+            terminated = last_state.get(
+                "terminated"
+            )
+
+            if isinstance(terminated, dict):
+                historical_candidates.append(
+                    terminated.get("reason")
+                )
+
+        reasons.update(
+            candidate
+            for candidate in historical_candidates
+            if isinstance(candidate, str)
+            and candidate in supported_reasons
+        )
 
     return reasons
 
@@ -69,7 +119,9 @@ def pinned_pod_health(entity: Entity) -> PinnedRuntimeHealth:
 
     properties = entity.properties
     phase = str(properties.get("phase") or "")
-    reasons = _container_reasons(properties)
+    reasons = active_container_failure_reasons(
+        properties
+    )
 
     if phase in {"Failed", "Unknown"} or reasons & PINNED_FAILURE_REASONS:
         return PinnedRuntimeHealth.FAILED
