@@ -65,15 +65,17 @@ def closure_engine(request, tmp_path):
 
 def test_inventory_has_no_ambiguous_writer_or_default():
     residual = set(MACHINE_DEPENDENT_WRITERS)
+    stage_metadata = _frozen_0006_metadata()
     assert len(REQUIRED_OWNERSHIP_TABLES) == 19
     assert len(residual) == 16
     assert REQUIRED_OWNERSHIP_TABLES | residual == PH3C_DOMAIN
     assert not REQUIRED_OWNERSHIP_TABLES & residual
+    assert "change_source_dead_letters" in stage_metadata.tables
     revision = script_directory().get_revision(REVISION).module
     assert set(revision.REQUIRED_OWNERSHIP_TABLES) == REQUIRED_OWNERSHIP_TABLES
     assert script_directory().get_revision("0007_machine_tenant_binding").down_revision == REVISION
     for name in PH3C_DOMAIN:
-        column = _frozen_0006_metadata().tables[name].c.tenant_id
+        column = stage_metadata.tables[name].c.tenant_id
         assert column.nullable is (name in residual)
         assert column.default is None and column.server_default is None
 

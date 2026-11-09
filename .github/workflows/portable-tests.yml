@@ -95,6 +95,52 @@ jobs:
           evaluation/tests/test_runtime_causal_observation.py::test_frozen_h3_workflow_is_unchanged
           evaluation/tests/test_source_failure_causal_fixture.py::test_h3_provider_workflow_remains_manual_only_and_frozen
 
+  postgres-tenant-closure:
+    name: PostgreSQL tenant closure
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHONPATH: backend
+      TOPO_TEST_POSTGRES_URL: >-
+        postgresql+psycopg://topo_test:topo_test@127.0.0.1:5432/topo_test
+
+    services:
+      postgres:
+        image: postgres:16.15-alpine
+        env:
+          POSTGRES_USER: topo_test
+          POSTGRES_PASSWORD: topo_test
+          POSTGRES_DB: topo_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U topo_test -d topo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+
+      - name: Install locked backend dependencies and test runner
+        run: >-
+          python -m pip install
+          -r backend/requirements.lock
+          "pytest>=8,<10"
+
+      - name: Run PostgreSQL tenant closure regression
+        run: python -m pytest backend/tests/test_domain_tenant_closure.py
+
   agent:
     name: Agent regressions
     runs-on: ubuntu-latest
