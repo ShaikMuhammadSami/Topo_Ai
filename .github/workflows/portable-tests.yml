@@ -91,7 +91,9 @@ jobs:
           python -m pytest
           evaluation/tests/test_repository_state_guard_v2.py
           evaluation/tests/test_oci_artifact_identity.py
-          evaluation/tests/test_runtime_causal_observation.py
+          evaluation/tests/test_h3_observation.py::test_provider_workflow_remains_frozen
+          evaluation/tests/test_runtime_causal_observation.py::test_frozen_h3_workflow_is_unchanged
+          evaluation/tests/test_source_failure_causal_fixture.py::test_h3_provider_workflow_remains_manual_only_and_frozen
 
   agent:
     name: Agent regressions
