@@ -59,7 +59,7 @@ DIGEST = "sha256:a7616346acbcde6b295a4a1ce77fbe1b201c66643179b6c9fef8d9aa5d6bd8e
 IMAGE = f"ghcr.io/shaikmuhammadsami/topo_ai-topo-lineage-eval@{DIGEST}"
 SOURCE_PATH = "evaluation/fixtures/lineage-image/runtime-mode.txt"
 WORKFLOW = ROOT / ".github/workflows/topo-lineage-provider-fixture.yml"
-WORKFLOW_SHA256 = "145a10245d575e02a756be018aaa25c2eabd1d39cde82b43aebd0d605d951903"
+WORKFLOW_SHA256 = "dd0fe156ac7451e2cdc6e7ba9973adee372986e217e86ed4cdbeb714edca0603"
 PERMANENT_MANIFEST_HASHES = {
     "blast-01.json": "2f292f5ee1c116d2c2c832bc2165a61bc13dedc5",
     "blast-02.json": "695d0feda176f26c7e601a57060f4ad0d29310a9",

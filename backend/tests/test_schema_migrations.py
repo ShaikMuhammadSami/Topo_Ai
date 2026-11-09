@@ -33,17 +33,19 @@ BASELINE_REVISION = "0001_current_schema"
 SESSION_REVISION = "0002_auth_sessions"
 API_CREDENTIAL_REVISION = "0003_auth_api_credentials"
 TENANT_FOUNDATION_REVISION = "0004_tenant_foundation"
+# These hashes are the exact canonical-LF bytes stored in Git. The matching
+# .gitattributes entries keep those bytes stable in Linux and Windows checkouts.
 BASELINE_SHA256 = (
-    "b02368d0d15445417a5ede9445a267f34da9d50dddb181870d972bd23124b8a6"
+    "b13506d8bd25c1018a3516395d2ed3b8994db76a70113be29fd2d656eb0f6efd"
 )
 SESSION_SHA256 = (
-    "4eb2930bff89944da5e9ea24f33b80f170d0f82e40f0ab508a07b2dc6b624460"
+    "db13af3cce4d85afb210040b76d30f3231d3f02a175b00f34fef8df82c80ce92"
 )
 API_CREDENTIAL_SHA256 = (
-    "eae6ba5cf16a4e68161a710edfa29172e20c9dbd6f8739aca981c4a8d4dfac73"
+    "907f0f815fc907786675f347226002568d9e04863c8d1f4ca225e1323fc7426f"
 )
 TENANT_FOUNDATION_SHA256 = (
-    "cbcb14ff6c8d70c1a4f4039e5436d039c599ebc842be8db333d6ca4ed66a9a05"
+    "d2f1a673d51ba76883d5b81c62669a730b19fab9951188ca0c1903b0b55bccd3"
 )
 TENANT_TABLES = {
     "tenants",
@@ -54,6 +56,13 @@ LEGACY_TABLES = {
     "change_dead_letters",
     "integration_deliveries",
     "integrations",
+}
+
+FROZEN_MIGRATION_ATTRIBUTES = {
+    "/backend/alembic/versions/0001_current_schema_baseline.py text eol=lf",
+    "/backend/alembic/versions/0002_auth_sessions.py text eol=lf",
+    "/backend/alembic/versions/0003_auth_api_credentials.py text eol=lf",
+    "/backend/alembic/versions/0004_tenant_foundation.py text eol=lf",
 }
 
 
@@ -84,6 +93,17 @@ def _domain_tables(engine: Engine) -> set[str]:
 def test_alembic_has_exactly_one_head() -> None:
     assert script_directory().get_heads() == [EXPECTED_HEAD]
     assert expected_head() == EXPECTED_HEAD
+
+
+def test_frozen_migrations_have_cross_platform_lf_checkout_contract() -> None:
+    attributes_path = Path(__file__).resolve().parents[2] / ".gitattributes"
+    attributes = {
+        line.strip()
+        for line in attributes_path.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert FROZEN_MIGRATION_ATTRIBUTES <= attributes
 
 
 def test_empty_sqlite_upgrade_has_exact_schema_parity(

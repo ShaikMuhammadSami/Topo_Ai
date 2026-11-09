@@ -22,11 +22,30 @@ from evaluation.product_diff_guard import (
 
 ROOT = Path(__file__).resolve().parents[2]
 WORKFLOW = ROOT / ".github/workflows/topo-lineage-provider-fixture.yml"
+# Exact canonical-LF Git bytes; .gitattributes enforces the same checkout bytes.
 WORKFLOW_SHA256 = (
-    "145a10245d575e02a756be018aaa25c2eabd1d39cde82b43aebd0d605d951903"
+    "dd0fe156ac7451e2cdc6e7ba9973adee372986e217e86ed4cdbeb714edca0603"
 )
 SENTINEL_A = ROOT / "evaluation/manifests/sentinel-a.json"
 SENTINEL_A_GIT_BLOB = "599ba19827d5097fded3f52264cad8dd35abb839"
+
+FROZEN_EVALUATION_ATTRIBUTES = {
+    "/.github/workflows/topo-lineage-provider-fixture.yml text eol=lf",
+    "/evaluation/manifests/*.json text eol=lf",
+    "/evaluation/fixtures/lineage-image/*.txt text eol=lf",
+}
+
+
+def test_frozen_evaluation_text_has_cross_platform_lf_checkout_contract() -> None:
+    attributes = {
+        line.strip()
+        for line in (ROOT / ".gitattributes")
+        .read_text(encoding="utf-8")
+        .splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    }
+
+    assert FROZEN_EVALUATION_ATTRIBUTES <= attributes
 
 
 def test_future_product_diff_is_not_an_immutable_baseline_violation() -> None:

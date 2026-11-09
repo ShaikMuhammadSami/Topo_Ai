@@ -1,0 +1,8 @@
+# Exact-byte custody hashes below use canonical LF bytes on every platform.
+/backend/alembic/versions/0001_current_schema_baseline.py text eol=lf
+/backend/alembic/versions/0002_auth_sessions.py text eol=lf
+/backend/alembic/versions/0003_auth_api_credentials.py text eol=lf
+/backend/alembic/versions/0004_tenant_foundation.py text eol=lf
+/.github/workflows/topo-lineage-provider-fixture.yml text eol=lf
+/evaluation/manifests/*.json text eol=lf
+/evaluation/fixtures/lineage-image/*.txt text eol=lf
