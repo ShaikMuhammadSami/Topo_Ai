@@ -9,6 +9,7 @@ from sqlalchemy import (
     PrimaryKeyConstraint, String, Text, UniqueConstraint,
 )
 
+from app.db import models  # noqa: F401 - populate Base for isolated test runs
 from app.db.database import Base
 from app.db.schema_management import script_directory
 
