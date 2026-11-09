@@ -23,11 +23,11 @@ class CloudV1FrontendArtifactContractTests(unittest.TestCase):
         package = json.loads((FRONTEND / "package.json").read_text(encoding="utf-8"))
         lock = json.loads((FRONTEND / "package-lock.json").read_text(encoding="utf-8"))
 
-        self.assertEqual(package["dependencies"]["next"], "16.3.3")
+        self.assertEqual(package["dependencies"]["next"], "16.4.4")
         self.assertEqual(package["devDependencies"]["postcss"], "8.5.28")
-        self.assertEqual(lock["packages"][""]["dependencies"]["next"], "16.3.3")
+        self.assertEqual(lock["packages"][""]["dependencies"]["next"], "16.4.4")
         self.assertEqual(lock["packages"][""]["devDependencies"]["postcss"], "8.5.28")
-        self.assertEqual(lock["packages"]["node_modules/next"]["version"], "16.3.3")
+        self.assertEqual(lock["packages"]["node_modules/next"]["version"], "16.4.4")
         self.assertEqual(lock["packages"]["node_modules/postcss"]["version"], "8.5.28")
         self.assertNotIn("nodemon", package["dependencies"])
         self.assertNotIn("shadcn", package["dependencies"])
@@ -39,13 +39,13 @@ class CloudV1FrontendArtifactContractTests(unittest.TestCase):
         self.assertEqual(lock["packages"][""]["devDependencies"]["shadcn"], "^4.8.0")
         self.assertEqual(lock["packages"]["node_modules/nodemon"]["version"], "3.1.14")
         self.assertTrue(lock["packages"]["node_modules/nodemon"]["dev"])
-        self.assertEqual(lock["packages"]["node_modules/shadcn"]["version"], "4.11.0")
+        self.assertEqual(lock["packages"]["node_modules/shadcn"]["version"], "4.23.0")
         self.assertTrue(lock["packages"]["node_modules/shadcn"]["dev"])
         self.assertNotIn("baseline-browser-mapping", package["dependencies"])
         self.assertNotIn("baseline-browser-mapping", package["devDependencies"])
         self.assertEqual(
             lock["packages"]["node_modules/baseline-browser-mapping"]["version"],
-            "2.11.25",
+            "2.11.34",
         )
 
     def test_health_route_is_static_and_dependency_free(self) -> None:

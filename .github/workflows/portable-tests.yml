@@ -1,0 +1,132 @@
+name: Portable test suite
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: Frontend tests, lint, and typecheck
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install locked frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npm test
+
+      - name: Run frontend lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Run frontend typecheck
+        working-directory: frontend
+        run: npm run typecheck
+
+  python-contracts:
+    name: Cloud, migration, snapshot, and evaluation contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: backend
+
+    steps:
+      - name: Check out repository with frozen history
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+
+      - name: Install locked backend dependencies and test runner
+        run: >-
+          python -m pip install
+          -r backend/requirements.lock
+          -r scripts/cloud/cx0/requirements.txt
+          "pytest>=8,<10"
+
+      - name: Compile backend
+        run: python -m compileall backend/app
+
+      - name: Run cloud contracts
+        run: python -m pytest scripts/cloud/tests
+
+      - name: Run migration and snapshot regressions
+        run: >-
+          python -m pytest
+          backend/tests/test_schema_migrations.py
+          backend/tests/test_identity_transition_diff.py
+          backend/tests/test_temporal_semantics.py
+          backend/tests/test_relationship_provenance.py
+
+      - name: Run portable frozen-evaluation guards
+        run: >-
+          python -m pytest
+          evaluation/tests/test_repository_state_guard_v2.py
+          evaluation/tests/test_oci_artifact_identity.py
+          evaluation/tests/test_h3_observation.py::test_provider_workflow_remains_frozen
+          evaluation/tests/test_runtime_causal_observation.py::test_frozen_h3_workflow_is_unchanged
+          evaluation/tests/test_source_failure_causal_fixture.py::test_h3_provider_workflow_remains_manual_only_and_frozen
+
+  agent:
+    name: Agent regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: agent/src
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: agent/requirements.lock
+
+      - name: Install locked agent dependencies and test runner
+        run: >-
+          python -m pip install
+          -r agent/requirements.lock
+          "pytest>=8,<10"
+
+      - name: Compile agent
+        run: python -m compileall agent/src
+
+      - name: Run agent regressions
+        run: >-
+          python -m pytest
+          agent/tests/test_continuous_capture.py
+          agent/tests/test_kubernetes_deployment_template.py
+          agent/tests/test_kubernetes_failure_status.py
