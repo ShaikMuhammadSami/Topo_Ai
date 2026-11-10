@@ -48,6 +48,15 @@ ROOT = Path(__file__).resolve().parents[2]
 HARNESS = ROOT / "evaluation/lineage_distractor_robustness.py"
 
 
+def require_historical_seed() -> Path:
+    if not DEFAULT_SEED_DB.is_file():
+        pytest.skip(
+            "historical LINEAGE product database is external evidence and is not "
+            f"tracked; provide {DEFAULT_SEED_DB} with SHA-256 {EXPECTED_SEED_SHA256}"
+        )
+    return DEFAULT_SEED_DB
+
+
 def _sqlite_fixture(path: Path) -> str:
     connection = sqlite3.connect(path)
     try:
@@ -114,7 +123,7 @@ def _synthetic_result(
 @pytest.fixture(scope="module")
 def count_zero_result(tmp_path_factory: pytest.TempPathFactory) -> dict:
     output = tmp_path_factory.mktemp("lineage-2a-count-zero")
-    return run_scenario(DEFAULT_SEED_DB, output, ScenarioSpec(0, 0))
+    return run_scenario(require_historical_seed(), output, ScenarioSpec(0, 0))
 
 
 def test_seed_database_hash_guard_accepts_exact_hash(tmp_path: Path) -> None:
@@ -179,6 +188,7 @@ def test_copy_mutation_cannot_mutate_seed(tmp_path: Path) -> None:
 def test_disposable_product_schema_preparation_preserves_frozen_seed(
     tmp_path: Path,
 ) -> None:
+    require_historical_seed()
     seed_before = sha256_file(DEFAULT_SEED_DB)
     destination = tmp_path / "current-product-copy.db"
     copy_seed_database(DEFAULT_SEED_DB, destination)
@@ -340,6 +350,7 @@ def test_distractor_contract_accepts_complete_matrix() -> None:
 
 
 def test_frozen_seed_has_exact_golden_event_and_mutation_once() -> None:
+    require_historical_seed()
     assert sha256_file(DEFAULT_SEED_DB) == EXPECTED_SEED_SHA256
     connection = sqlite3.connect(
         f"file:{DEFAULT_SEED_DB.resolve().as_posix()}?mode=ro&immutable=1",
@@ -466,6 +477,7 @@ def test_aggregate_report_is_deterministic() -> None:
 
 
 def test_frozen_golden_cause_match_remains_exactly_structured() -> None:
+    require_historical_seed()
     connection = sqlite3.connect(
         f"file:{DEFAULT_SEED_DB.resolve().as_posix()}?mode=ro&immutable=1",
         uri=True,

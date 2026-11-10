@@ -27,6 +27,16 @@ FROZEN_CONTRACT = (
 BASELINE_ROOT = ROOT / "docs/architecture/evaluation/baselines"
 
 
+def require_historical_seed() -> Path:
+    if not b2.DEFAULT_SEED_DB.is_file():
+        pytest.skip(
+            "historical LINEAGE product database is external evidence and is not "
+            f"tracked; provide {b2.DEFAULT_SEED_DB} with SHA-256 "
+            f"{b2.EXPECTED_SEED_SHA256}"
+        )
+    return b2.DEFAULT_SEED_DB
+
+
 def _tree_hashes(root: Path) -> dict[str, str]:
     return {
         path.relative_to(root).as_posix(): sha256_file(path)
@@ -37,18 +47,19 @@ def _tree_hashes(root: Path) -> dict[str, str]:
 
 def _fresh_copy(tmp_path: Path, name: str = "scenario.db") -> Path:
     destination = tmp_path / name
-    copy_seed_database(b2.DEFAULT_SEED_DB, destination)
+    copy_seed_database(require_historical_seed(), destination)
     b2.reset_derived_analysis(destination)
     return destination
 
 
 @pytest.fixture(scope="module")
 def frozen_schema() -> dict:
-    return b2.verify_contract_schema(b2.DEFAULT_SEED_DB)
+    return b2.verify_contract_schema(require_historical_seed())
 
 
 @pytest.fixture(scope="module")
 def measured_result(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    require_historical_seed()
     seed_before = sha256_file(b2.DEFAULT_SEED_DB)
     baselines_before = _tree_hashes(BASELINE_ROOT)
     contract_before = sha256_file(FROZEN_CONTRACT)
@@ -72,6 +83,7 @@ def test_harness_and_contract_are_present() -> None:
 
 
 def test_wrong_seed_hash_is_rejected() -> None:
+    require_historical_seed()
     with pytest.raises(ValueError, match="SHA-256 mismatch"):
         validate_seed_database(b2.DEFAULT_SEED_DB, expected_sha256="0" * 64)
 
@@ -79,6 +91,7 @@ def test_wrong_seed_hash_is_rejected() -> None:
 def test_seed_is_opened_immutable_and_read_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    require_historical_seed()
     original_connect = sqlite3.connect
     calls: list[tuple[str, bool]] = []
 
@@ -97,6 +110,7 @@ def test_seed_is_opened_immutable_and_read_only(
 
 
 def test_scenario_copy_is_byte_identical_and_seed_safe(tmp_path: Path) -> None:
+    require_historical_seed()
     seed_before = sha256_file(b2.DEFAULT_SEED_DB)
     destination = tmp_path / "copy.db"
     receipt = copy_seed_database(b2.DEFAULT_SEED_DB, destination)
@@ -127,6 +141,7 @@ def test_authority_classification_matches_frozen_contract(frozen_schema: dict) -
 
 
 def test_reset_is_symmetric_and_only_removes_derived_state(tmp_path: Path) -> None:
+    require_historical_seed()
     audits = []
     authority_before = []
     authority_after = []

@@ -771,6 +771,12 @@ def test_destructive_downgrade_is_limited_to_disposable_database() -> None:
 
 
 def test_frozen_sqlite_custody_is_unchanged() -> None:
+    missing = [path for path in (DEVELOPER_DB, FROZEN_DB) if not path.is_file()]
+    if missing:
+        pytest.skip(
+            "external SQLite custody artifacts are not tracked: "
+            + ", ".join(str(path) for path in missing)
+        )
     assert hashlib.sha256(DEVELOPER_DB.read_bytes()).hexdigest() == DEVELOPER_DB_SHA256
     assert hashlib.sha256(FROZEN_DB.read_bytes()).hexdigest() == FROZEN_DB_SHA256
 
