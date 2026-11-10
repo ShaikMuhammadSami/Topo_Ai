@@ -12,6 +12,49 @@ mock_provider "aws" {
     }
   }
 
+  mock_resource "aws_eks_node_group" {
+    defaults = {
+      resources = [{
+        autoscaling_groups = [{
+          name = "eks-topo-golden-mock-node-group"
+        }]
+      }]
+    }
+  }
+
+  mock_resource "aws_lb" {
+    defaults = {
+      arn      = "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/topo-golden-edge/50dc6c495c0c9188"
+      dns_name = "topo-golden-edge-1234567890.us-east-1.elb.amazonaws.com"
+      zone_id  = "Z35SXDOTRQ7X7K"
+    }
+  }
+
+  mock_resource "aws_lb_target_group" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/topo-golden-mock/6d0ecf831eec9f09"
+    }
+  }
+
+  mock_resource "aws_lb_listener" {
+    defaults = {
+      arn = "arn:aws:elasticloadbalancing:us-east-1:123456789012:listener/app/topo-golden-edge/50dc6c495c0c9188/f2f7dc8efc522ab2"
+    }
+  }
+
+  mock_resource "aws_acm_certificate" {
+    defaults = {
+      arn    = "arn:aws:acm:us-east-1:123456789012:certificate/12345678-1234-4234-8234-123456789012"
+      status = "PENDING_VALIDATION"
+      domain_validation_options = [{
+        domain_name           = "app.topoai.io"
+        resource_record_name  = "_topo-golden.app.topoai.io."
+        resource_record_type  = "CNAME"
+        resource_record_value = "_topo-golden.acm-validations.aws."
+      }]
+    }
+  }
+
   mock_resource "aws_iam_openid_connect_provider" {
     defaults = {
       arn = "arn:aws:iam::123456789012:oidc-provider/token.actions.githubusercontent.com"

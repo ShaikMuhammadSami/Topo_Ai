@@ -10,6 +10,36 @@ permissions:
   contents: read
 
 jobs:
+  terraform-golden:
+    name: Terraform golden mock contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AWS_EC2_METADATA_DISABLED: "true"
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.16.2"
+
+      - name: Initialize Terraform without a backend
+        run: terraform -chdir=infrastructure/aws/golden init -backend=false -input=false
+
+      - name: Check Terraform formatting
+        run: terraform -chdir=infrastructure/aws/golden fmt -check -recursive
+
+      - name: Validate Terraform configuration
+        run: terraform -chdir=infrastructure/aws/golden validate
+
+      - name: Run Terraform mock-provider contracts
+        run: terraform -chdir=infrastructure/aws/golden test
+
   frontend:
     name: Frontend tests, lint, and typecheck
     runs-on: ubuntu-latest
