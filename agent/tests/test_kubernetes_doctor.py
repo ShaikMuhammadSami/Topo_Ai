@@ -110,7 +110,7 @@ def test_doctor_does_not_accept_namespace_only_permissions() -> None:
 
 
 def test_doctor_reports_denied_when_required_discovery_read_is_forbidden() -> None:
-    marker = "topo_agent_SYNTHETIC_KUBERNETES_ERROR_1234567890"
+    marker = "synthetic-kubernetes-error-marker"
 
     def forbidden(**_: object) -> SimpleNamespace:
         raise ApiException(
@@ -139,7 +139,7 @@ def test_doctor_reports_denied_when_required_discovery_read_is_forbidden() -> No
 
 
 def test_doctor_reports_degraded_without_exposing_connectivity_errors() -> None:
-    marker = "topo_agent_SYNTHETIC_CONNECT_ERROR_1234567890"
+    marker = "synthetic-connectivity-error-marker"
 
     def unavailable(**_: object) -> SimpleNamespace:
         raise RuntimeError(f"https://user:{marker}@cluster.example")
