@@ -49,8 +49,19 @@ PERMANENT_MANIFEST_HASHES = {
 }
 
 
+def require_historical_provider_receipt() -> Path:
+    if not RECEIPT.is_file():
+        pytest.skip(
+            "historical provider receipt is external evidence and is not tracked; "
+            f"provide {RECEIPT.relative_to(ROOT)} to run its authenticity checks"
+        )
+    return RECEIPT
+
+
 def receipt() -> dict[str, Any]:
-    return json.loads(RECEIPT.read_text(encoding="utf-8"))
+    return json.loads(
+        require_historical_provider_receipt().read_text(encoding="utf-8")
+    )
 
 
 def expected() -> dict[str, Any]:
@@ -165,11 +176,12 @@ def assert_divergence(
 
 
 def test_real_provider_receipt_validates():
-    assert load_provider_receipt(RECEIPT)["run_id"] == 32688747741
+    assert load_provider_receipt(require_historical_provider_receipt())["run_id"] == 32688747741
 
 
 def test_real_provider_receipt_hash_is_frozen():
-    assert hashlib.sha256(RECEIPT.read_bytes()).hexdigest() == RECEIPT_SHA256
+    receipt_path = require_historical_provider_receipt()
+    assert hashlib.sha256(receipt_path.read_bytes()).hexdigest() == RECEIPT_SHA256
 
 
 def test_expected_run_identity_includes_repository_run_and_attempt():

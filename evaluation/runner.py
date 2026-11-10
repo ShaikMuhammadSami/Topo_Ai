@@ -36,6 +36,69 @@ from evaluation.topo_client import HttpObservation, TopoClient, bounded_wait
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = Path(__file__).with_name("results")
+BACKEND_PYTHON_ENV = "TOPO_EVALUATION_BACKEND_PYTHON"
+AGENT_EXECUTABLE_ENV = "TOPO_EVALUATION_AGENT_EXECUTABLE"
+
+
+def _venv_executable_candidates(
+    component: str,
+    executable: str,
+    *,
+    os_name: str | None = None,
+) -> tuple[Path, ...]:
+    """Return repository-local virtual-environment candidates for one OS."""
+
+    platform_name = os.name if os_name is None else os_name
+    if platform_name == "nt":
+        return (
+            REPOSITORY_ROOT / component / ".venv" / "Scripts" / f"{executable}.exe",
+        )
+    return (REPOSITORY_ROOT / component / ".venv" / "bin" / executable,)
+
+
+def _resolve_executable(
+    *,
+    purpose: str,
+    environment_variable: str,
+    candidates: tuple[Path, ...],
+) -> Path:
+    configured = os.environ.get(environment_variable, "").strip()
+    if configured:
+        configured_path = Path(configured).expanduser()
+        if not configured_path.is_absolute():
+            raise RuntimeError(
+                f"{environment_variable} must be an absolute path; got {configured!r}."
+            )
+        paths = (configured_path,)
+    else:
+        paths = candidates
+
+    for path in paths:
+        if path.is_file() and os.access(path, os.X_OK):
+            return path.resolve()
+
+    checked = ", ".join(str(path) for path in paths)
+    raise RuntimeError(
+        f"{purpose} executable was not found or is not executable. "
+        f"Checked: {checked}. Create the repository-local virtual environment "
+        f"or set {environment_variable} to an absolute executable path."
+    )
+
+
+def resolve_backend_python() -> Path:
+    return _resolve_executable(
+        purpose="Backend Python",
+        environment_variable=BACKEND_PYTHON_ENV,
+        candidates=_venv_executable_candidates("backend", "python"),
+    )
+
+
+def resolve_agent_executable() -> Path:
+    return _resolve_executable(
+        purpose="Topo Agent",
+        environment_variable=AGENT_EXECUTABLE_ENV,
+        candidates=_venv_executable_candidates("agent", "topo-agent"),
+    )
 
 
 def _free_port() -> int:
@@ -78,9 +141,7 @@ class ManagedTopoEnvironment:
         self._files: list[Any] = []
 
     def start_backend(self) -> None:
-        python = REPOSITORY_ROOT / "backend" / ".venv" / "Scripts" / "python.exe"
-        if not python.exists():
-            raise RuntimeError(f"Backend virtual environment not found: {python}")
+        python = resolve_backend_python()
         log_path = self.root / "backend.log"
         log = log_path.open("w", encoding="utf-8")
         self._files.append(log)
@@ -217,9 +278,7 @@ class ManagedTopoEnvironment:
         )
         if enrollment.status != 201:
             raise RuntimeError(f"Could not enroll isolated agent: {enrollment.body}")
-        executable = REPOSITORY_ROOT / "agent" / ".venv" / "Scripts" / "topo-agent.exe"
-        if not executable.exists():
-            raise RuntimeError(f"Agent executable not found: {executable}")
+        executable = resolve_agent_executable()
         log_path = self.root / "agent.log"
         log = log_path.open("w", encoding="utf-8")
         self._files.append(log)

@@ -53,11 +53,12 @@ def test_evaluation_runner_has_no_development_auth_bypass() -> None:
 
 def test_disposable_evaluation_bootstraps_real_tenant_and_membership(tmp_path, monkeypatch) -> None:
     """Real local backend only: no agent, Kubernetes, or provider is started."""
-    from evaluation.runner import ManagedTopoEnvironment, REPOSITORY_ROOT
+    from evaluation.runner import ManagedTopoEnvironment, resolve_backend_python
 
-    python = REPOSITORY_ROOT / "backend/.venv/Scripts/python.exe"
-    if not python.is_file():
-        pytest.skip("the managed Windows evaluation backend venv is required")
+    try:
+        resolve_backend_python()
+    except RuntimeError as exc:
+        pytest.skip(f"repository-local evaluation backend prerequisite missing: {exc}")
     runtime_root = tmp_path / "evaluation-runtime"
     runtime_root.mkdir()
     monkeypatch.setattr("evaluation.runner.tempfile.mkdtemp", lambda **_: str(runtime_root))

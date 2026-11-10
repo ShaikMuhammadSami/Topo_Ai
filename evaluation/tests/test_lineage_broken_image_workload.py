@@ -57,15 +57,24 @@ from evaluation.lineage_distractor_robustness import (
 )
 
 
+def require_historical_seed() -> Path:
+    if not DEFAULT_SEED_DB.is_file():
+        pytest.skip(
+            "historical LINEAGE product database is external evidence and is not "
+            f"tracked; provide {DEFAULT_SEED_DB} with SHA-256 {EXPECTED_SEED_SHA256}"
+        )
+    return DEFAULT_SEED_DB
+
+
 @pytest.fixture(scope="module")
 def seed_inventory() -> dict:
-    return inspect_database(DEFAULT_SEED_DB, read_only=True)
+    return inspect_database(require_historical_seed(), read_only=True)
 
 
 @pytest.fixture()
 def isolated_copy(tmp_path: Path) -> Path:
     path = tmp_path / "scenario.db"
-    copy_seed_database(DEFAULT_SEED_DB, path)
+    copy_seed_database(require_historical_seed(), path)
     return path
 
 
@@ -78,16 +87,18 @@ def cut_copy(isolated_copy: Path) -> tuple[Path, dict, dict]:
 
 @pytest.fixture(scope="module")
 def measurement(tmp_path_factory: pytest.TempPathFactory) -> dict:
+    require_historical_seed()
     return run_measurement(output_root=tmp_path_factory.mktemp("lineage-2b3") / "result")
 
 
 def test_wrong_seed_hash_rejected() -> None:
+    require_historical_seed()
     with pytest.raises(ValueError, match="SHA-256"):
         validate_seed_database(DEFAULT_SEED_DB, expected_sha256="0" * 64)
 
 
 def test_seed_is_opened_immutable_and_query_only() -> None:
-    connection = _connect(DEFAULT_SEED_DB, read_only=True)
+    connection = _connect(require_historical_seed(), read_only=True)
     try:
         assert connection.execute("PRAGMA query_only").fetchone()[0] == 1
         with pytest.raises(sqlite3.OperationalError):
@@ -105,7 +116,9 @@ def test_copy_only_writes_leave_source_unchanged(isolated_copy: Path) -> None:
 
 
 def test_seed_checks_are_clean() -> None:
-    receipt = validate_seed_database(DEFAULT_SEED_DB, expected_sha256=EXPECTED_SEED_SHA256)
+    receipt = validate_seed_database(
+        require_historical_seed(), expected_sha256=EXPECTED_SEED_SHA256
+    )
     assert receipt["quick_check"] == "ok"
     assert receipt["integrity_check"] == "ok"
     assert receipt["open_mode"] == "mode=ro&immutable=1; PRAGMA query_only=ON"
@@ -129,12 +142,13 @@ def test_contract_schema_fails_if_snapshot_identity_is_nonseparable(monkeypatch:
 
 
 def test_contract_schema_matches_frozen_seed() -> None:
-    audit = verify_contract_schema(DEFAULT_SEED_DB)
+    audit = verify_contract_schema(require_historical_seed())
     assert audit["status"] == "compatible"
     assert all(audit["checks"].values())
 
 
 def test_control_and_b3_reset_are_identical(tmp_path: Path) -> None:
+    require_historical_seed()
     paths = [tmp_path / "control.db", tmp_path / "b3.db"]
     for path in paths:
         copy_seed_database(DEFAULT_SEED_DB, path)
