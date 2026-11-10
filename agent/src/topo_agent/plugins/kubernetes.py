@@ -40,10 +40,31 @@ class KubernetesPlugin:
         self,
     ) -> PluginDiagnostic:
         result = self.collector.doctor()
+        status = str(
+            result.get(
+                "kubernetes_access",
+                "unavailable",
+            )
+        )
+        messages = {
+            "denied": (
+                "Kubernetes discovery permissions are denied for one or more "
+                "required read checks."
+            ),
+            "degraded": (
+                "Kubernetes discovery access is incomplete for one or more "
+                "required read checks."
+            ),
+            "unavailable": (
+                "The Kubernetes API is unavailable for required discovery "
+                "checks."
+            ),
+        }
 
         return PluginDiagnostic(
             name=self.name,
-            status="available",
+            status=status,
+            message=messages.get(status),
             capabilities=list(
                 self.capabilities
             ),

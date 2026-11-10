@@ -136,11 +136,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setPrincipal(null)
       setStatus("unauthenticated")
     } catch (error) {
-      setStatus(
-        apiFailureKind(error) === "backend-unavailable"
-          ? "backend-unavailable"
-          : "expired",
-      )
+      if (apiFailureKind(error) === "unauthenticated") {
+        setPrincipal(null)
+        setStatus("expired")
+      } else {
+        // A failed delete does not prove that the server-side session ended.
+        setStatus("authenticated")
+      }
       throw error
     }
   }, [])
@@ -190,7 +192,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
             </button>
           </div>
         )}
-        <TenantGate>{children}</TenantGate>
+        <TenantGate onLogout={auth.logout}>{children}</TenantGate>
       </>
     )
   }

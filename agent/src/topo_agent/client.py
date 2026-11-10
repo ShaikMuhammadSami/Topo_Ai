@@ -12,6 +12,46 @@ class AgentClientError(Exception):
     pass
 
 
+_ENROLLMENT_REJECTION_DETAIL = (
+    "The enrollment credential is invalid or unavailable."
+)
+
+_ENROLLMENT_ACTION = (
+    "Enrollment credential is invalid, expired, revoked, or already used. "
+    "Create a new enrollment token and try again."
+)
+
+
+def _safe_error_detail(
+    *,
+    method: str,
+    path: str,
+    status_code: int,
+    detail: object,
+) -> str:
+    """Expose only bounded server details that are safe for an operator."""
+
+    if (
+        method.upper() == "POST"
+        and path == "/api/v1/agents/enroll"
+        and status_code == 401
+        and detail == _ENROLLMENT_REJECTION_DETAIL
+    ):
+        return _ENROLLMENT_ACTION
+
+    if (
+        isinstance(detail, str)
+        and re.fullmatch(
+            r"[A-Z][A-Z0-9_. -]{0,200}",
+            detail,
+        )
+        is not None
+    ):
+        return detail
+
+    return "Request failed."
+
+
 class AgentApiClient:
     def __init__(
         self,
@@ -125,18 +165,23 @@ class AgentApiClient:
             if response.status_code >= 400:
                 try:
                     value = response.json()
-                    detail = value.get(
-                        "detail"
+                    detail = (
+                        value.get("detail")
+                        if isinstance(value, dict)
+                        else None
                     )
 
                 except ValueError:
                     detail = None
 
-                if (
-                    not isinstance(detail, str)
-                    or re.fullmatch(r"[A-Z][A-Z0-9_. -]{0,200}", detail) is None
-                ):
-                    detail = "Request failed."
+                detail = _safe_error_detail(
+                    method=method,
+                    path=path,
+                    status_code=(
+                        response.status_code
+                    ),
+                    detail=detail,
+                )
 
                 raise AgentClientError(
                     f"API returned "

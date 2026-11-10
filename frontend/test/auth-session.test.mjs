@@ -164,12 +164,25 @@ test("report downloads use the tenant-scoped transport, not a direct API anchor"
 
 test("tenant gate precedes domain rendering and remounts tenant-owned state on switch", async () => {
   const gate = await source("components/auth/tenant-boundary.tsx")
-  assert.match(await source("components/auth/auth-boundary.tsx"), /<TenantGate>\{children\}<\/TenantGate>/)
+  assert.match(await source("components/auth/auth-boundary.tsx"), /<TenantGate onLogout=\{auth\.logout\}>\{children\}<\/TenantGate>/)
   assert.match(gate, /available\.length === 1/)
   assert.match(gate, /Fragment key=\{selected\}/)
   assert.match(gate, /requestTenant !== selection\.current/)
   assert.match(gate, /No tenant access is available/)
   assert.doesNotMatch(gate, /localStorage|sessionStorage/)
+})
+
+test("tenant chooser exposes the existing logout flow before tenant selection", async () => {
+  const gate = await source("components/auth/tenant-boundary.tsx")
+  const boundary = await source("components/auth/auth-boundary.tsx")
+  assert.match(boundary, /onLogout=\{auth\.logout\}/)
+  assert.match(boundary, /failed delete does not prove[\s\S]*setStatus\("authenticated"\)/)
+  assert.match(gate, /await onLogout\(\)/)
+  assert.match(gate, /aria-label="Sign out"/)
+  assert.match(gate, /disabled=\{loggingOut\}/)
+  assert.match(gate, /role="alert"/)
+  assert.doesNotMatch(gate, /deleteBrowserSession/)
+  assert.ok(gate.indexOf('aria-label="Sign out"') < gate.indexOf("{selected ? ("))
 })
 
 const [boundarySource, layoutSource, apiSource, configSource, reportSource] =
