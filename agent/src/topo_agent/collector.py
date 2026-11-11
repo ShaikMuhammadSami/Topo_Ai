@@ -6,7 +6,7 @@ from datetime import (
     datetime,
     timezone,
 )
-from typing import Any
+from typing import Any, Callable
 from uuid import uuid4
 
 from kubernetes import (
@@ -367,15 +367,95 @@ class KubernetesCollector:
     def doctor(
         self,
     ) -> dict[str, Any]:
-        namespaces = (
-            self.core.list_namespace(
-                limit=1
+        checks: dict[str, str] = {}
+        probe_count = 0
+
+        def probe(
+            name: str,
+            operation: Callable[[], Any],
+        ) -> None:
+            nonlocal probe_count
+
+            try:
+                response = operation()
+                items = getattr(
+                    response,
+                    "items",
+                    None,
+                ) or []
+                probe_count += min(
+                    len(items),
+                    1,
+                )
+                checks[name] = "available"
+            except ApiException as exc:
+                checks[name] = (
+                    "denied"
+                    if exc.status in {401, 403}
+                    else "unavailable"
+                )
+            except Exception:
+                checks[name] = "unavailable"
+
+        if self.config.namespaces:
+            for namespace in sorted(
+                set(self.config.namespaces)
+            ):
+                probe(
+                    f"pods:{namespace}",
+                    lambda namespace=namespace: (
+                        self.core.list_namespaced_pod(
+                            namespace=namespace,
+                            limit=1,
+                        )
+                    ),
+                )
+                probe(
+                    f"deployments:{namespace}",
+                    lambda namespace=namespace: (
+                        self.apps.list_namespaced_deployment(
+                            namespace=namespace,
+                            limit=1,
+                        )
+                    ),
+                )
+        else:
+            probe(
+                "namespaces",
+                lambda: self.core.list_namespace(
+                    limit=1
+                ),
             )
-        )
+            probe(
+                "pods",
+                lambda: (
+                    self.core.list_pod_for_all_namespaces(
+                        limit=1
+                    )
+                ),
+            )
+            probe(
+                "deployments",
+                lambda: (
+                    self.apps.list_deployment_for_all_namespaces(
+                        limit=1
+                    )
+                ),
+            )
+
+        states = set(checks.values())
+        if states == {"available"}:
+            status = "available"
+        elif "denied" in states:
+            status = "denied"
+        elif "available" in states:
+            status = "degraded"
+        else:
+            status = "unavailable"
 
         return {
             "kubernetes_access":
-                "available",
+                status,
             "access_mode":
                 self.access_mode,
             "cluster_name":
@@ -383,7 +463,8 @@ class KubernetesCollector:
             "namespace_scope":
                 self.config.namespaces,
             "probe_count":
-                len(namespaces.items),
+                probe_count,
+            "required_checks": checks,
         }
 
     def collect(

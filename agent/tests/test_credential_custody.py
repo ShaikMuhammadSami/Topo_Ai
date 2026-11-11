@@ -82,6 +82,102 @@ def test_agent_redirect_does_not_forward_bearer_or_enrollment_body():
     assert requests[0].url.host == "topo.example"
 
 
+def test_enrollment_rejection_has_safe_actionable_guidance():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401,
+            json={
+                "detail": (
+                    "The enrollment credential is invalid or unavailable."
+                )
+            },
+            request=request,
+        )
+
+    client = AgentApiClient(
+        backend_url="https://topo.example", token=None, timeout_seconds=1,
+        verify_tls=True, max_retries=0, retry_backoff_seconds=0,
+    )
+    client.client.close()
+    client.client = httpx.Client(
+        base_url="https://topo.example",
+        transport=httpx.MockTransport(handler),
+        follow_redirects=False,
+    )
+    try:
+        with pytest.raises(
+            AgentClientError,
+            match="invalid, expired, revoked, or already used",
+        ):
+            client.enroll({"enrollment_token": "synthetic"})
+    finally:
+        client.close()
+
+
+def test_enrollment_rejection_never_exposes_unapproved_response_detail():
+    marker = "topo_enroll_" + "SYNTHETIC_ERROR_DETAIL_1234567890"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            401,
+            json={"detail": f"Rejected credential {marker}"},
+            request=request,
+        )
+
+    client = AgentApiClient(
+        backend_url="https://topo.example", token=None, timeout_seconds=1,
+        verify_tls=True, max_retries=0, retry_backoff_seconds=0,
+    )
+    client.client.close()
+    client.client = httpx.Client(
+        base_url="https://topo.example",
+        transport=httpx.MockTransport(handler),
+        follow_redirects=False,
+    )
+    try:
+        with pytest.raises(AgentClientError) as raised:
+            client.enroll({"enrollment_token": "synthetic"})
+    finally:
+        client.close()
+
+    assert "Request failed" in str(raised.value)
+    assert marker not in str(raised.value)
+
+
+def test_enroll_command_surfaces_action_without_echoing_credential(
+    monkeypatch,
+    tmp_path,
+):
+    credential = "synthetic-enrollment-value"
+
+    class RejectedClient:
+        def enroll(self, _request):
+            raise AgentClientError(
+                "API returned 401: Enrollment credential is invalid, expired, "
+                "revoked, or already used. Create a new enrollment token and "
+                "try again."
+            )
+
+        def close(self):
+            return None
+
+    monkeypatch.setenv("TOPO_AGENT_HOME", str(tmp_path))
+    monkeypatch.setattr(
+        "topo_agent.main._client",
+        lambda *_args, **_kwargs: RejectedClient(),
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["enroll", "--token-stdin"],
+        input=credential,
+    )
+
+    assert result.exit_code == 1
+    assert "Create a new enrollment token and try again" in result.output
+    assert credential not in result.output
+
+
 def test_agent_debug_logging_redacts_bearer_and_cloud_sdk_transport(caplog):
     marker = "topo_agent_" + "SYNTHETIC_DEBUG_LOG_1234567890"
     install_logging_redaction()

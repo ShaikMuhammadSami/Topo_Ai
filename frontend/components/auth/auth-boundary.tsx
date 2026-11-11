@@ -15,6 +15,7 @@ import { AlertTriangle, LoaderCircle, LogIn, RefreshCw } from "lucide-react"
 import { TopoLogo } from "@/components/topo-logo"
 import { TenantGate } from "@/components/auth/tenant-boundary"
 import { Button } from "@/components/ui/button"
+import { runLogoutLifecycle } from "@/lib/auth-logout-lifecycle"
 import {
   type BrowserSession,
   TopoApiError,
@@ -41,6 +42,7 @@ type AuthContextValue = {
   logout: () => Promise<void>
   retry: () => Promise<void>
   dismissForbidden: () => void
+  logoutError: string | null
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
@@ -56,6 +58,7 @@ function apiFailureKind(error: unknown) {
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<AuthStatus>("authenticating")
   const [principal, setPrincipal] = useState<BrowserSession | null>(null)
+  const [logoutError, setLogoutError] = useState<string | null>(null)
 
   const resolveSession = useCallback(async () => {
     setStatus("authenticating")
@@ -130,19 +133,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(async () => {
-    setStatus("logging-out")
-    try {
-      await deleteBrowserSession()
-      setPrincipal(null)
-      setStatus("unauthenticated")
-    } catch (error) {
-      setStatus(
-        apiFailureKind(error) === "backend-unavailable"
-          ? "backend-unavailable"
-          : "expired",
-      )
-      throw error
-    }
+    await runLogoutLifecycle({
+      deleteSession: deleteBrowserSession,
+      classifyError: apiFailureKind,
+      setStatus,
+      clearPrincipal: () => setPrincipal(null),
+      setError: setLogoutError,
+    })
   }, [])
 
   const value = useMemo<AuthContextValue>(() => ({
@@ -150,9 +147,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     principal,
     login,
     logout,
+    logoutError,
     retry: resolveSession,
     dismissForbidden: () => setStatus("authenticated"),
-  }), [status, principal, login, logout, resolveSession])
+  }), [status, principal, login, logout, logoutError, resolveSession])
 
   return (
     <AuthContext.Provider value={value}>
@@ -190,7 +188,12 @@ export function AuthGate({ children }: { children: ReactNode }) {
             </button>
           </div>
         )}
-        <TenantGate>{children}</TenantGate>
+        <TenantGate
+          onLogout={auth.logout}
+          logoutError={auth.logoutError}
+        >
+          {children}
+        </TenantGate>
       </>
     )
   }

@@ -1,14 +1,24 @@
 "use client"
 
 import { Fragment, type ReactNode, useCallback, useEffect, useRef, useState } from "react"
+import { LogOut } from "lucide-react"
 import { listTenants, selectApiTenant, subscribeTenantDenied, type TenantView } from "@/lib/topo-api"
 import { Button } from "@/components/ui/button"
 
-export function TenantGate({ children }: { children: ReactNode }) {
+export function TenantGate({
+  children,
+  onLogout,
+  logoutError,
+}: {
+  children: ReactNode
+  onLogout: () => Promise<void>
+  logoutError: string | null
+}) {
   const [tenants, setTenants] = useState<TenantView[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
+  const [loggingOut, setLoggingOut] = useState(false)
   const active = useRef(true)
   const selection = useRef<string | null>(null)
   const generation = useRef(0)
@@ -40,6 +50,18 @@ export function TenantGate({ children }: { children: ReactNode }) {
     choose(null)
     setLoading(true)
     void loadAccess(false)
+  }
+
+  async function signOut() {
+    if (loggingOut) return
+    setLoggingOut(true)
+    try {
+      await onLogout()
+    } catch {
+      // AuthProvider owns the error so it survives this gate being unmounted.
+    } finally {
+      setLoggingOut(false)
+    }
   }
 
   useEffect(() => {
@@ -87,6 +109,17 @@ export function TenantGate({ children }: { children: ReactNode }) {
           {tenants.map((tenant) => <option key={tenant.tenant_id} value={tenant.tenant_id}>{tenant.display_name} ({tenant.tenant_id.slice(-8)})</option>)}
         </select>
         <Button variant="ghost" size="sm" onClick={reload}>Reload access</Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label="Sign out"
+          disabled={loggingOut}
+          onClick={() => void signOut()}
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          {loggingOut ? "Signing out…" : "Sign out"}
+        </Button>
+        {logoutError && <span className="text-danger" role="alert">{logoutError}</span>}
       </div>
       {selected ? (
         // Remount all tenant-owned state, including the sidebar and page caches.
