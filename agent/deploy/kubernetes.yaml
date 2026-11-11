@@ -2,11 +2,17 @@
 #
 # Access granted: the ClusterRoleBinding below gives the topo-agent service
 # account read-only access (get, list, watch) to namespaces, nodes, pods,
-# services, endpoints, events, deployments, replicasets, ingresses and
-# endpointslices in every namespace of the cluster. It grants no write access
-# and no access to Secrets or ConfigMaps. The `namespaces` value in the
-# ConfigMap limits what the agent collects, not what the service account is
-# allowed to read.
+# services, endpoints, events, deployments, replicasets, daemonsets,
+# statefulsets, jobs, cronjobs, ingresses and endpointslices in every
+# namespace of the cluster. It grants no write access and no access to Secrets
+# or ConfigMaps. The `namespaces` value in the ConfigMap limits what the agent
+# collects, not what the service account is allowed to read.
+#
+# ConfigMaps (optional): without access the agent skips them and reports
+# `configmaps` under `skipped_optional`. With access it submits only each
+# ConfigMap's key names and a SHA-256 hash of its data, never the values, so a
+# removed or changed key can be linked to the workloads that read it. To allow
+# it, add `configmaps` to the "" (core) apiGroup resources below.
 #
 # Backend address: the agent pod must reach the Topo backend at `backend-url`.
 # The value below, http://host.docker.internal:8000, is a Docker Desktop
@@ -104,6 +110,17 @@ rules:
     resources:
       - deployments
       - replicasets
+      - daemonsets
+      - statefulsets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - batch
+    resources:
+      - jobs
+      - cronjobs
     verbs:
       - get
       - list

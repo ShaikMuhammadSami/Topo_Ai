@@ -93,6 +93,18 @@ def _namespace(
     return value
 
 
+# Pod-template workloads. They are categorized like Deployments.
+WORKLOAD_KINDS = frozenset(
+    {
+        "KubernetesDeployment",
+        "KubernetesDaemonSet",
+        "KubernetesStatefulSet",
+        "KubernetesJob",
+        "KubernetesCronJob",
+    }
+)
+
+
 def _category_for_entity(
     kind: str,
     changed_fields: dict[
@@ -105,7 +117,10 @@ def _category_for_entity(
     if kind == "ContainerImage":
         return ChangeCategory.IMAGE
 
-    if kind == "KubernetesDeployment":
+    if kind == "KubernetesConfigMap":
+        return ChangeCategory.CONFIGURATION
+
+    if kind in WORKLOAD_KINDS:
         if any(
             "replicas" in field
             for field in fields
@@ -170,12 +185,19 @@ def _importance_for_entity(
         return ChangeImportance.HIGH
 
     if (
-        kind == "KubernetesDeployment"
+        kind in WORKLOAD_KINDS
         and any(
             "containers" in field
             or "image" in field
             for field in fields
         )
+    ):
+        return ChangeImportance.HIGH
+
+    # A changed key set breaks configMapKeyRef readers of a removed key.
+    if (
+        kind == "KubernetesConfigMap"
+        and "properties.keys" in fields
     ):
         return ChangeImportance.HIGH
 
@@ -197,7 +219,7 @@ def _importance_for_entity(
         return ChangeImportance.MEDIUM
 
     if (
-        kind == "KubernetesDeployment"
+        kind in WORKLOAD_KINDS
         and change_type
         in {
             ChangeType.ENTITY_ADDED,
@@ -355,8 +377,13 @@ def _entity_title_and_summary(
     if category == (
         ChangeCategory.DEPLOYMENT
     ):
+        workload = (
+            entity.kind.removeprefix("Kubernetes")
+            if entity.kind in WORKLOAD_KINDS
+            else "Deployment"
+        )
         return (
-            "Deployment configuration changed",
+            f"{workload} configuration changed",
             (
                 f"{resource} changed fields: "
                 f"{', '.join(sorted(changed_fields))}."
