@@ -7,11 +7,16 @@ import {
   apiRequest,
   downloadApiFile,
   createBrowserSession,
+  deleteBrowserSession,
   csrfCookieValue,
   subscribeAuthTransport,
   selectApiTenant,
   subscribeTenantDenied,
 } from "../lib/topo-api.ts"
+import {
+  LOGOUT_FAILURE_MESSAGE,
+  runLogoutLifecycle,
+} from "../lib/auth-logout-lifecycle.ts"
 
 
 async function source(path) {
@@ -164,7 +169,7 @@ test("report downloads use the tenant-scoped transport, not a direct API anchor"
 
 test("tenant gate precedes domain rendering and remounts tenant-owned state on switch", async () => {
   const gate = await source("components/auth/tenant-boundary.tsx")
-  assert.match(await source("components/auth/auth-boundary.tsx"), /<TenantGate onLogout=\{auth\.logout\}>\{children\}<\/TenantGate>/)
+  assert.match(await source("components/auth/auth-boundary.tsx"), /<TenantGate[\s\S]*onLogout=\{auth\.logout\}[\s\S]*logoutError=\{auth\.logoutError\}/)
   assert.match(gate, /available\.length === 1/)
   assert.match(gate, /Fragment key=\{selected\}/)
   assert.match(gate, /requestTenant !== selection\.current/)
@@ -176,13 +181,66 @@ test("tenant chooser exposes the existing logout flow before tenant selection", 
   const gate = await source("components/auth/tenant-boundary.tsx")
   const boundary = await source("components/auth/auth-boundary.tsx")
   assert.match(boundary, /onLogout=\{auth\.logout\}/)
-  assert.match(boundary, /failed delete does not prove[\s\S]*setStatus\("authenticated"\)/)
+  assert.match(boundary, /logoutError=\{auth\.logoutError\}/)
   assert.match(gate, /await onLogout\(\)/)
   assert.match(gate, /aria-label="Sign out"/)
   assert.match(gate, /disabled=\{loggingOut\}/)
   assert.match(gate, /role="alert"/)
   assert.doesNotMatch(gate, /deleteBrowserSession/)
   assert.ok(gate.indexOf('aria-label="Sign out"') < gate.indexOf("{selected ? ("))
+})
+
+test("failed logout preserves a retryable error and a successful retry signs out", async () => {
+  const originalFetch = globalThis.fetch
+  let statuses = []
+  let principalCleared = 0
+  let errorMessage = "stale"
+  const requests = []
+  const lifecycle = () => runLogoutLifecycle({
+    deleteSession: deleteBrowserSession,
+    classifyError: (error) => error instanceof TopoApiError
+      ? error.kind
+      : "http",
+    setStatus: (status) => statuses.push(status),
+    clearPrincipal: () => { principalCleared += 1 },
+    setError: (message) => { errorMessage = message },
+  })
+
+  try {
+    globalThis.fetch = async (path, init) => {
+      requests.push([path, init.method])
+      throw new TypeError("network unavailable")
+    }
+
+    await assert.rejects(lifecycle(), (error) => (
+      error instanceof TopoApiError &&
+      error.kind === "backend-unavailable"
+    ))
+
+    assert.deepEqual(requests, [["/api/v1/auth/session", "DELETE"]])
+    assert.deepEqual(statuses, ["logging-out", "authenticated"])
+    assert.equal(principalCleared, 0)
+    assert.equal(errorMessage, LOGOUT_FAILURE_MESSAGE)
+    assert.match(errorMessage, /try again/i)
+
+    statuses = []
+    globalThis.fetch = async (path, init) => {
+      requests.push([path, init.method])
+      return new Response(null, { status: 204 })
+    }
+
+    await lifecycle()
+
+    assert.deepEqual(requests, [
+      ["/api/v1/auth/session", "DELETE"],
+      ["/api/v1/auth/session", "DELETE"],
+    ])
+    assert.deepEqual(statuses, ["logging-out", "unauthenticated"])
+    assert.equal(principalCleared, 1)
+    assert.equal(errorMessage, null)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
 })
 
 const [boundarySource, layoutSource, apiSource, configSource, reportSource] =

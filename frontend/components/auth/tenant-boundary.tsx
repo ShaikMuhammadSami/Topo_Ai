@@ -8,16 +8,17 @@ import { Button } from "@/components/ui/button"
 export function TenantGate({
   children,
   onLogout,
+  logoutError,
 }: {
   children: ReactNode
   onLogout: () => Promise<void>
+  logoutError: string | null
 }) {
   const [tenants, setTenants] = useState<TenantView[]>([])
   const [selected, setSelected] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState<string | null>(null)
   const [loggingOut, setLoggingOut] = useState(false)
-  const [logoutError, setLogoutError] = useState<string | null>(null)
   const active = useRef(true)
   const selection = useRef<string | null>(null)
   const generation = useRef(0)
@@ -54,11 +55,10 @@ export function TenantGate({
   async function signOut() {
     if (loggingOut) return
     setLoggingOut(true)
-    setLogoutError(null)
     try {
       await onLogout()
     } catch {
-      setLogoutError("Sign out failed. Your browser session may still be active; try again.")
+      // AuthProvider owns the error so it survives this gate being unmounted.
     } finally {
       setLoggingOut(false)
     }
