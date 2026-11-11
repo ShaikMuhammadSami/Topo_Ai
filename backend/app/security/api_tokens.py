@@ -28,6 +28,7 @@ from app.security.session_auth import (
     CSRF_HEADER_NAME,
     SESSION_COOKIE_NAME,
     UNSAFE_HTTP_METHODS,
+    browser_origin_is_allowed,
     clear_auth_session_cookies,
 )
 from app.services.auth_session_service import (
@@ -271,6 +272,11 @@ class ApiTokenAuthMiddleware(BaseHTTPMiddleware):
                     )
 
                 if request.method.upper() in UNSAFE_HTTP_METHODS:
+                    if not browser_origin_is_allowed(
+                        request,
+                        self.configuration,
+                    ):
+                        return _forbidden("Browser origin is not allowed.")
                     csrf_secret = request.headers.get(CSRF_HEADER_NAME, "")
                     if not csrf_secret or not csrf_secret_matches(
                         resolved.record,

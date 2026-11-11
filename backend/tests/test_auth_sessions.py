@@ -40,6 +40,7 @@ from app.services.webhook_security import WebhookAuthenticationError
 
 
 ORIGIN = "https://topo.test"
+UNTRUSTED_ORIGIN = "https://untrusted.example"
 
 
 @pytest.fixture()
@@ -188,7 +189,7 @@ def test_login_rejections_and_origin_validation_are_fail_closed(
                 "Authorization": "Bearer provider-" + "webhook-secret"
             },
         ).status_code == 401
-        mismatch = _login(client, bootstrap, origin="https://untrusted.example")
+        mismatch = _login(client, bootstrap, origin=UNTRUSTED_ORIGIN)
         assert mismatch.status_code == 403
         assert SESSION_COOKIE_NAME not in mismatch.cookies
 
@@ -249,20 +250,28 @@ def test_session_introspection_precedence_csrf_and_logout(session_app) -> None:
         accepted = client.post(
             target,
             json={"max_uses": 1},
-            headers={"X-Topo-CSRF": csrf, **TEST_HEADERS},
+            headers={
+                "Origin": ORIGIN,
+                "X-Topo-CSRF": csrf,
+                **TEST_HEADERS,
+            },
         )
         assert accepted.status_code == 201
 
         bearer_post = client.post(
             target,
             json={"max_uses": 1},
-            headers={"Authorization": f"Bearer {bootstrap}", **TEST_HEADERS},
+            headers={
+                "Authorization": f"Bearer {bootstrap}",
+                "Origin": UNTRUSTED_ORIGIN,
+                **TEST_HEADERS,
+            },
         )
         assert bearer_post.status_code == 201
 
         logout = client.delete(
             "/api/v1/auth/session",
-            headers={"X-Topo-CSRF": csrf},
+            headers={"Origin": ORIGIN, "X-Topo-CSRF": csrf},
         )
         assert logout.status_code == 204
         assert logout.content == b""
@@ -283,6 +292,132 @@ def test_session_introspection_precedence_csrf_and_logout(session_app) -> None:
             select(AgentEnrollmentTokenRecord)
         ).all()
         assert len(enrollment_records) == 2
+
+
+def test_session_unsafe_requests_require_origin_and_csrf(session_app) -> None:
+    application, bootstrap, _, factory, _ = session_app
+    target = "/api/v1/agents/enrollment-tokens"
+
+    with TestClient(application, base_url=ORIGIN) as client:
+        assert _login(client, bootstrap).status_code == 201
+        csrf = client.cookies.get(CSRF_COOKIE_NAME)
+
+        missing_csrf = client.post(
+            target,
+            json={"max_uses": 1},
+            headers={"Origin": ORIGIN, **TEST_HEADERS},
+        )
+        wrong_csrf = client.post(
+            target,
+            json={"max_uses": 1},
+            headers={
+                "Origin": ORIGIN,
+                "X-Topo-CSRF": "wrong",
+                **TEST_HEADERS,
+            },
+        )
+        untrusted_origin = client.post(
+            target,
+            json={"max_uses": 1},
+            headers={
+                "Origin": UNTRUSTED_ORIGIN,
+                "X-Topo-CSRF": csrf,
+                **TEST_HEADERS,
+            },
+        )
+        untrusted_origin_and_csrf = client.post(
+            target,
+            json={"max_uses": 1},
+            headers={
+                "Origin": UNTRUSTED_ORIGIN,
+                "X-Topo-CSRF": "wrong",
+                **TEST_HEADERS,
+            },
+        )
+
+        assert missing_csrf.status_code == 403
+        assert missing_csrf.json() == {"detail": "CSRF validation failed."}
+        assert wrong_csrf.status_code == 403
+        assert wrong_csrf.json() == {"detail": "CSRF validation failed."}
+        assert untrusted_origin.status_code == 403
+        assert untrusted_origin.json() == {
+            "detail": "Browser origin is not allowed."
+        }
+        assert untrusted_origin_and_csrf.status_code == 403
+        assert untrusted_origin_and_csrf.json() == {
+            "detail": "Browser origin is not allowed."
+        }
+
+    with factory() as session:
+        assert session.scalars(select(AgentEnrollmentTokenRecord)).all() == []
+        assert all(
+            record.revoked_at is None
+            for record in session.scalars(select(AuthSessionRecord)).all()
+        )
+
+    # The established helper contract permits non-browser clients that omit
+    # Origin; cookie sessions still need their session-bound CSRF secret.
+    with TestClient(application, base_url=ORIGIN) as client:
+        assert _login(client, bootstrap).status_code == 201
+        csrf = client.cookies.get(CSRF_COOKIE_NAME)
+        missing_origin = client.post(
+            target,
+            json={"max_uses": 1},
+            headers={"X-Topo-CSRF": csrf, **TEST_HEADERS},
+        )
+        assert missing_origin.status_code == 201
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("POST", "/api/v1/agents/enrollment-tokens", {"max_uses": 1}),
+        ("PUT", "/api/v1/auth/session", None),
+        ("PATCH", "/api/v1/auth/session", None),
+        ("DELETE", "/api/v1/auth/session", None),
+    ],
+)
+def test_untrusted_origin_rejects_every_cookie_authenticated_unsafe_method(
+    session_app,
+    method: str,
+    path: str,
+    body: dict[str, int] | None,
+) -> None:
+    application, bootstrap, _, factory, _ = session_app
+
+    with TestClient(application, base_url=ORIGIN) as client:
+        assert _login(client, bootstrap).status_code == 201
+        raw_session = client.cookies.get(SESSION_COOKIE_NAME)
+        raw_csrf = client.cookies.get(CSRF_COOKIE_NAME)
+        assert raw_session and raw_csrf
+
+    with factory() as session:
+        record_before = session.scalars(select(AuthSessionRecord)).one()
+        session_id = record_before.session_id
+        last_seen_at = record_before.last_seen_at
+
+    with TestClient(application, base_url=ORIGIN) as client:
+        client.cookies.set(SESSION_COOKIE_NAME, raw_session)
+        client.cookies.set(CSRF_COOKIE_NAME, raw_csrf)
+        response = client.request(
+            method,
+            path,
+            json=body,
+            headers={
+                "Origin": UNTRUSTED_ORIGIN,
+                "X-Topo-CSRF": raw_csrf,
+                **TEST_HEADERS,
+            },
+        )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Browser origin is not allowed."}
+    with factory() as session:
+        assert session.scalars(select(AgentEnrollmentTokenRecord)).all() == []
+        record_after = session.get(AuthSessionRecord, session_id)
+        assert record_after is not None
+        assert record_after.revoked_at is None
+        assert record_after.last_seen_at == last_seen_at
 
 
 def test_session_app_isolates_agent_route_from_default_database(
