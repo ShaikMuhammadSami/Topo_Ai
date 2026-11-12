@@ -782,8 +782,19 @@ def collect(
                 "plugin_status":
                     manager
                     .status_snapshot(),
+                "collection_status": (
+                    runner
+                    .last_collection_status
+                ),
+                "error": runner.last_error,
             }
         )
+
+        if (
+            runner.last_collection_status
+            == "collection_failed"
+        ):
+            raise typer.Exit(code=1)
 
     finally:
         runner.close()

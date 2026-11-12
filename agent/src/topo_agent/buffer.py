@@ -4,6 +4,10 @@ import json
 from pathlib import Path
 from uuid import uuid4
 
+from topo_agent.collection_integrity import (
+    collection_integrity_error,
+)
+
 
 class SnapshotBuffer:
     def __init__(
@@ -41,6 +45,22 @@ class SnapshotBuffer:
         self,
         payload: dict,
     ) -> Path:
+        # The buffer is also shared by runtime-sensor batches. Apply the
+        # topology completeness contract only to snapshot-shaped payloads.
+        if (
+            "inventory" in payload
+            and "collector_version" in payload
+        ):
+            integrity_error = (
+                collection_integrity_error(
+                    payload
+                )
+            )
+            if integrity_error is not None:
+                raise ValueError(
+                    integrity_error
+                )
+
         filename = (
             payload.get(
                 "collected_at",

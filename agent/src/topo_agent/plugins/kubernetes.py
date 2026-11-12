@@ -111,6 +111,21 @@ class KubernetesPlugin:
                     metadata.get(
                         "access_mode"
                     ),
+                "resource_completeness":
+                    metadata.get(
+                        "resource_completeness",
+                        {},
+                    ),
+                "collection_failures":
+                    metadata.get(
+                        "collection_failures",
+                        [],
+                    ),
+                "skipped_optional":
+                    metadata.get(
+                        "skipped_optional",
+                        [],
+                    ),
             },
         )
 

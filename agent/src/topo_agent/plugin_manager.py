@@ -135,7 +135,7 @@ class PluginManager:
         ] = []
 
         successful_plugins = 0
-        failed_plugins = 0
+        incomplete_plugins = 0
 
         for plugin in self.plugins:
             started = (
@@ -193,7 +193,7 @@ class PluginManager:
 
             if result.status in {
                 "success",
-                "partial",
+                "skipped_optional",
             }:
                 successful_plugins += 1
 
@@ -203,11 +203,11 @@ class PluginManager:
                 )
 
             else:
-                failed_plugins += 1
+                incomplete_plugins += 1
 
         overall_status = (
             "success"
-            if failed_plugins == 0
+            if incomplete_plugins == 0
             else (
                 "partial"
                 if successful_plugins > 0
@@ -239,7 +239,7 @@ class PluginManager:
                 "successful_plugin_count":
                     successful_plugins,
                 "failed_plugin_count":
-                    failed_plugins,
+                    incomplete_plugins,
                 "plugins":
                     plugin_metadata,
             },
