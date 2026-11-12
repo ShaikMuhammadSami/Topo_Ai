@@ -298,6 +298,155 @@ def _pod_template_fingerprint(
     )
 
 
+
+TOPO_ANNOTATION_PREFIX = "topo.ai/"
+
+
+def _topo_annotations(
+    metadata: Any,
+) -> dict[str, str]:
+    """Return only the Topo-declared annotations (`topo.ai/*`)."""
+
+    values = getattr(
+        metadata,
+        "annotations",
+        None,
+    ) or {}
+
+    return {
+        str(key): str(value)
+        for key, value in sorted(
+            values.items()
+        )
+        if str(key).startswith(
+            TOPO_ANNOTATION_PREFIX
+        )
+    }
+
+
+def _config_map_refs(
+    pod_spec: Any,
+) -> list[str]:
+    """Names of the ConfigMaps a pod spec reads, from env valueFrom,
+    envFrom and configMap / projected volumes. Names only, no values."""
+
+    names: set[str] = set()
+
+    if pod_spec is None:
+        return []
+
+    containers = [
+        *(getattr(pod_spec, "init_containers", None) or []),
+        *(getattr(pod_spec, "containers", None) or []),
+    ]
+
+    for container in containers:
+        for env in getattr(container, "env", None) or []:
+            value_from = getattr(env, "value_from", None)
+            key_ref = getattr(
+                value_from,
+                "config_map_key_ref",
+                None,
+            )
+
+            if getattr(key_ref, "name", None):
+                names.add(str(key_ref.name))
+
+        for env_from in getattr(container, "env_from", None) or []:
+            ref = getattr(
+                env_from,
+                "config_map_ref",
+                None,
+            )
+
+            if getattr(ref, "name", None):
+                names.add(str(ref.name))
+
+    for volume in getattr(pod_spec, "volumes", None) or []:
+        config_map = getattr(volume, "config_map", None)
+
+        if getattr(config_map, "name", None):
+            names.add(str(config_map.name))
+
+        projected = getattr(volume, "projected", None)
+        sources = getattr(projected, "sources", None) or []
+
+        # Skip the service-account volume Kubernetes injects into every
+        # pod (kube-api-access-*: a token projection plus kube-root-ca.crt);
+        # it is not a dependency the workload declared.
+        if any(
+            getattr(source, "service_account_token", None)
+            for source in sources
+        ):
+            continue
+
+        for source in sources:
+            projected_map = getattr(
+                source,
+                "config_map",
+                None,
+            )
+
+            if getattr(projected_map, "name", None):
+                names.add(str(projected_map.name))
+
+    return sorted(names)
+
+
+def _config_map_data_sha256(
+    config_map: Any,
+) -> str:
+    """Hash ConfigMap data so changes are detectable without
+    submitting any value."""
+
+    payload = {
+        "data": dict(
+            getattr(config_map, "data", None) or {}
+        ),
+        "binary_data": dict(
+            getattr(config_map, "binary_data", None) or {}
+        ),
+    }
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return (
+        "sha256:"
+        + hashlib.sha256(canonical).hexdigest()
+    )
+
+
+def _template_images(
+    template: Any,
+) -> list[str]:
+    spec = getattr(template, "spec", None)
+
+    return [
+        item.image
+        for item in (
+            getattr(spec, "containers", None)
+            or []
+        )
+    ]
+
+
+def _pod_template_properties(
+    template: Any,
+) -> dict[str, Any]:
+    return {
+        "images": _template_images(template),
+        "pod_template_fingerprint": (
+            _pod_template_fingerprint(template)
+        ),
+        "config_map_refs": _config_map_refs(
+            getattr(template, "spec", None)
+        ),
+    }
+
+
 class KubernetesCollector:
     def __init__(
         self,
@@ -339,6 +488,10 @@ class KubernetesCollector:
         self.discovery = (
             client
             .DiscoveryV1Api()
+        )
+
+        self.batch = (
+            client.BatchV1Api()
         )
 
     def _list_for_namespaces(
@@ -484,7 +637,13 @@ class KubernetesCollector:
             "services": [],
             "ingresses": [],
             "endpoint_slices": [],
+            "daemonsets": [],
+            "statefulsets": [],
+            "jobs": [],
+            "cronjobs": [],
+            "configmaps": [],
         }
+        skipped_optional: list[str] = []
 
         try:
             namespaces = (
@@ -664,6 +823,9 @@ class KubernetesCollector:
                             deployment.spec.template
                         )
                     ),
+                    "config_map_refs": _config_map_refs(
+                        deployment.spec.template.spec
+                    ),
                 }
             )
 
@@ -794,6 +956,10 @@ class KubernetesCollector:
                     )
 
 
+            pod_annotations = _topo_annotations(
+                pod.metadata
+            )
+
             inventory["pods"].append(
                 {
                     "uid":
@@ -842,6 +1008,15 @@ class KubernetesCollector:
                         container_statuses,
                     "pod_ip":
                         pod.status.pod_ip,
+                    "config_map_refs":
+                        _config_map_refs(
+                            pod.spec
+                        ),
+                    **(
+                        {"annotations": pod_annotations}
+                        if pod_annotations
+                        else {}
+                    ),
                 }
             )
 
@@ -1113,6 +1288,156 @@ class KubernetesCollector:
                 }
             )
 
+        def workload_base(item: Any) -> dict[str, Any]:
+            return {
+                "uid": item.metadata.uid,
+                "name": item.metadata.name,
+                "namespace": item.metadata.namespace,
+                "labels": _labels(item.metadata),
+            }
+
+        def selector_labels(item: Any) -> dict[str, str]:
+            selector = getattr(item.spec, "selector", None)
+            return dict(
+                getattr(selector, "match_labels", None)
+                or {}
+            )
+
+        try:
+            for daemon_set in self._list_for_namespaces(
+                self.apps
+                .list_daemon_set_for_all_namespaces,
+                self.apps
+                .list_namespaced_daemon_set,
+            ):
+                inventory["daemonsets"].append(
+                    {
+                        **workload_base(daemon_set),
+                        "selector": selector_labels(daemon_set),
+                        "desired_scheduled": (
+                            daemon_set.status
+                            .desired_number_scheduled
+                        ),
+                        "ready_scheduled": (
+                            daemon_set.status.number_ready
+                        ),
+                        **_pod_template_properties(
+                            daemon_set.spec.template
+                        ),
+                    }
+                )
+        except ApiException as exc:
+            errors.append(
+                f"daemonsets: {exc.status} {exc.reason}"
+            )
+
+        try:
+            for stateful_set in self._list_for_namespaces(
+                self.apps
+                .list_stateful_set_for_all_namespaces,
+                self.apps
+                .list_namespaced_stateful_set,
+            ):
+                inventory["statefulsets"].append(
+                    {
+                        **workload_base(stateful_set),
+                        "selector": selector_labels(stateful_set),
+                        "replicas": stateful_set.spec.replicas,
+                        "ready_replicas": (
+                            stateful_set.status.ready_replicas
+                        ),
+                        **_pod_template_properties(
+                            stateful_set.spec.template
+                        ),
+                    }
+                )
+        except ApiException as exc:
+            errors.append(
+                f"statefulsets: {exc.status} {exc.reason}"
+            )
+
+        try:
+            for job in self._list_for_namespaces(
+                self.batch
+                .list_job_for_all_namespaces,
+                self.batch
+                .list_namespaced_job,
+            ):
+                owner_uid, owner_kind = _owner(job.metadata)
+                inventory["jobs"].append(
+                    {
+                        **workload_base(job),
+                        "owner_uid": owner_uid,
+                        "owner_kind": owner_kind,
+                        "active": job.status.active,
+                        "succeeded": job.status.succeeded,
+                        "failed": job.status.failed,
+                        **_pod_template_properties(
+                            job.spec.template
+                        ),
+                    }
+                )
+        except ApiException as exc:
+            errors.append(
+                f"jobs: {exc.status} {exc.reason}"
+            )
+
+        try:
+            for cron_job in self._list_for_namespaces(
+                self.batch
+                .list_cron_job_for_all_namespaces,
+                self.batch
+                .list_namespaced_cron_job,
+            ):
+                inventory["cronjobs"].append(
+                    {
+                        **workload_base(cron_job),
+                        "schedule": cron_job.spec.schedule,
+                        "suspend": bool(cron_job.spec.suspend),
+                        **_pod_template_properties(
+                            cron_job.spec.job_template.spec.template
+                        ),
+                    }
+                )
+        except ApiException as exc:
+            errors.append(
+                f"cronjobs: {exc.status} {exc.reason}"
+            )
+
+        # ConfigMaps are optional: the shipped in-cluster manifest grants
+        # no ConfigMap access. Only metadata is submitted (key names and a
+        # hash of the data), never values.
+        try:
+            for config_map in self._list_for_namespaces(
+                self.core
+                .list_config_map_for_all_namespaces,
+                self.core
+                .list_namespaced_config_map,
+            ):
+                inventory["configmaps"].append(
+                    {
+                        **workload_base(config_map),
+                        "keys": sorted(
+                            {
+                                *(config_map.data or {}),
+                                *(config_map.binary_data or {}),
+                            }
+                        ),
+                        "data_sha256": (
+                            _config_map_data_sha256(config_map)
+                        ),
+                    }
+                )
+        except ApiException as exc:
+            if exc.status in (401, 403):
+                skipped_optional.append(
+                    f"configmaps: {exc.status} {exc.reason}"
+                )
+            else:
+                errors.append(
+                    f"configmaps: {exc.status} {exc.reason}"
+                )
+
         return {
             "submission_id": (
                 "agent-submission:"
@@ -1138,5 +1463,7 @@ class KubernetesCollector:
                     self.access_mode,
                 "collection_errors":
                     errors,
+                "skipped_optional":
+                    skipped_optional,
             },
         }

@@ -129,6 +129,7 @@ def _collector() -> KubernetesCollector:
     collector.apps = api
     collector.networking = api
     collector.discovery = api
+    collector.batch = api
     return collector
 
 

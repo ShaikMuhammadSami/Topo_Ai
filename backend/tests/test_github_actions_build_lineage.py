@@ -88,7 +88,7 @@ TRUTH_CONTRACT_HASHES = {
     "confidence-semantics.md": "16c00fb91c399e07a0ddf0c18cd3929e6d7271e9",
     "entity-identity-contract.json": "d67c17ce7fd84b5610173193af4c104114dda731",
     "entity-identity.md": "61d2949668926a8046e5a984aec1d11e312de3dd",
-    "relationship-provenance-contract.json": "866c379730b6a57face4ac03543ac6e863abcaa2",
+    "relationship-provenance-contract.json": "5f728e264966edf7c0157ef08ec31231ee7581ea",
     "relationship-provenance.md": "67336aab3bb48b38185d5976c6eee75de2aea1fa",
     "temporal-semantics-contract.json": "a8984eb2110bd3cb8b3412723565569edbfd4853",
     "temporal-semantics.md": "cc3036a44b9b14486737a651b3a3eebd6f195a42",

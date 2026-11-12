@@ -196,6 +196,36 @@ class _ListApi:
     def list_namespaced_endpoint_slice(self, namespace: str):
         return SimpleNamespace(items=[])
 
+    def list_daemon_set_for_all_namespaces(self):
+        return SimpleNamespace(items=[])
+
+    def list_namespaced_daemon_set(self, namespace: str):
+        return SimpleNamespace(items=[])
+
+    def list_stateful_set_for_all_namespaces(self):
+        return SimpleNamespace(items=[])
+
+    def list_namespaced_stateful_set(self, namespace: str):
+        return SimpleNamespace(items=[])
+
+    def list_job_for_all_namespaces(self):
+        return SimpleNamespace(items=[])
+
+    def list_namespaced_job(self, namespace: str):
+        return SimpleNamespace(items=[])
+
+    def list_cron_job_for_all_namespaces(self):
+        return SimpleNamespace(items=[])
+
+    def list_namespaced_cron_job(self, namespace: str):
+        return SimpleNamespace(items=[])
+
+    def list_config_map_for_all_namespaces(self):
+        return SimpleNamespace(items=[])
+
+    def list_namespaced_config_map(self, namespace: str):
+        return SimpleNamespace(items=[])
+
 
 def test_collector_submits_only_image_and_template_fingerprint() -> None:
     payload = _template_payload()
@@ -238,6 +268,7 @@ def test_collector_submits_only_image_and_template_fingerprint() -> None:
     collector.apps = api
     collector.networking = api
     collector.discovery = api
+    collector.batch = api
 
     first = collector.collect()["inventory"]["deployments"][0]
     second = collector.collect()["inventory"]["deployments"][0]
