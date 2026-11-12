@@ -230,6 +230,120 @@ class AgentSnapshotSubmission(BaseModel):
     )
 
 
+def agent_snapshot_completeness_error(
+    submission: AgentSnapshotSubmission,
+) -> str | None:
+    """Validate the declared collection-integrity contract.
+
+    Older agents did not declare plugin completeness, so an entirely absent
+    contract remains a supported legacy submission. Once any completeness
+    field is declared, the collection must be successful and every enabled
+    plugin must be successful (or explicitly optional and skipped). Declared
+    partial or failed data is never topology evidence.
+    """
+
+    metadata = submission.metadata
+    contract_keys = {
+        "collection_status",
+        "plugin_count",
+        "successful_plugin_count",
+        "failed_plugin_count",
+        "plugins",
+    }
+    if not contract_keys.intersection(metadata):
+        return None
+
+    if metadata.get("collection_status") != "success":
+        return (
+            "Incomplete topology collections are not accepted."
+        )
+
+    plugins = metadata.get("plugins")
+    plugin_contract_keys = {
+        "plugin_count",
+        "successful_plugin_count",
+        "failed_plugin_count",
+        "plugins",
+    }
+    if (
+        plugins is None
+        and not plugin_contract_keys.intersection(
+            metadata
+        )
+    ):
+        return None
+
+    if not isinstance(plugins, list):
+        return "Plugin completeness metadata is required."
+    if not plugins:
+        return "At least one completed plugin is required."
+
+    allowed_statuses = {
+        "success",
+        "skipped_optional",
+    }
+    for plugin in plugins:
+        if not isinstance(plugin, dict):
+            return "Plugin completeness metadata is invalid."
+
+        if plugin.get("status") not in allowed_statuses:
+            return (
+                "Incomplete plugin collections are not accepted."
+            )
+
+        errors = plugin.get("errors")
+        if isinstance(errors, list) and errors:
+            return (
+                "Plugin collection errors are not accepted."
+            )
+
+        failures = plugin.get("collection_failures")
+        if isinstance(failures, list) and failures:
+            return (
+                "Required resource collection failures are not accepted."
+            )
+
+        resource_completeness = plugin.get(
+            "resource_completeness"
+        )
+        if (
+            isinstance(resource_completeness, dict)
+            and any(
+                value not in {
+                    "complete",
+                    "skipped_optional",
+                }
+                for value in (
+                    resource_completeness.values()
+                )
+            )
+        ):
+            return (
+                "Incomplete required resource collections are not accepted."
+            )
+
+    declared_count = metadata.get("plugin_count")
+    if (
+        not isinstance(declared_count, int)
+        or declared_count != len(plugins)
+    ):
+        return "Plugin completeness metadata is inconsistent."
+
+    failed_count = metadata.get("failed_plugin_count")
+    if failed_count != 0:
+        return "Incomplete plugin collections are not accepted."
+
+    successful_count = metadata.get(
+        "successful_plugin_count"
+    )
+    if (
+        successful_count != len(plugins)
+    ):
+        return "Plugin completeness metadata is inconsistent."
+
+    return None
+
+
 class AgentSnapshotReceipt(BaseModel):
     model_config = ConfigDict(
         extra="forbid"

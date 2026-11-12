@@ -9,6 +9,9 @@ from topo_agent import __version__
 from topo_agent.buffer import (
     SnapshotBuffer,
 )
+from topo_agent.collection_integrity import (
+    collection_integrity_error,
+)
 from topo_agent.client import (
     AgentApiClient,
     AgentClientError,
@@ -97,6 +100,23 @@ class AgentRunner:
             payload = self.buffer.load(
                 path
             )
+
+            integrity_error = (
+                collection_integrity_error(
+                    payload
+                )
+            )
+            if integrity_error is not None:
+                self.last_collection_status = (
+                    "collection_failed"
+                )
+                self.last_error = integrity_error
+                LOGGER.warning(
+                    "Skipped incomplete buffered snapshot %s: %s",
+                    path.name,
+                    integrity_error,
+                )
+                continue
 
             try:
                 self.client.submit_snapshot(
@@ -198,6 +218,22 @@ class AgentRunner:
                 "unknown",
             )
         )
+
+        integrity_error = (
+            collection_integrity_error(
+                submission
+            )
+        )
+        if integrity_error is not None:
+            self.last_collection_status = (
+                "collection_failed"
+            )
+            self.last_error = integrity_error
+            LOGGER.warning(
+                "Topology collection rejected before submission: %s",
+                integrity_error,
+            )
+            return None
 
         try:
             receipt = (
