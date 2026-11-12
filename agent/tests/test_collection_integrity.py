@@ -11,6 +11,7 @@ from topo_agent.buffer import SnapshotBuffer
 from topo_agent.collector import KubernetesCollector
 from topo_agent.config import AgentConfig
 from topo_agent.main import app
+import topo_agent.main as agent_main
 from topo_agent.plugins.kubernetes import KubernetesPlugin
 from topo_agent.runner import AgentRunner
 
@@ -99,6 +100,20 @@ def _submission(
             "plugins": [plugin],
         },
     }
+
+
+def _zero_plugin_submission() -> dict:
+    payload = _submission("success")
+    payload["inventory"] = {}
+    payload["metadata"].update(
+        {
+            "plugin_count": 0,
+            "successful_plugin_count": 0,
+            "failed_plugin_count": 0,
+            "plugins": [],
+        }
+    )
+    return payload
 
 
 class _Client:
@@ -233,6 +248,18 @@ def test_buffer_rejects_incomplete_collection(tmp_path) -> None:
     assert buffer.size() == 0
 
 
+def test_zero_plugin_collection_is_never_buffered(tmp_path) -> None:
+    buffer = SnapshotBuffer(tmp_path, max_items=5)
+
+    with pytest.raises(
+        ValueError,
+        match="At least one completed plugin",
+    ):
+        buffer.enqueue(_zero_plugin_submission())
+
+    assert buffer.size() == 0
+
+
 def test_success_label_cannot_hide_failed_required_resource(
     tmp_path,
 ) -> None:
@@ -264,6 +291,49 @@ def test_shared_buffer_still_accepts_non_topology_payloads(
     assert path.exists()
 
 
+def test_successful_plugin_with_empty_resource_lists_is_accepted(
+    tmp_path,
+) -> None:
+    client = _Client()
+    payload = _submission("success")
+    runner = AgentRunner(
+        config=AgentConfig(),
+        client=client,
+        plugin_manager=_Manager([payload]),
+        buffer=SnapshotBuffer(tmp_path, max_items=5),
+    )
+
+    assert runner.collect_once() == {
+        "snapshot_id": "snapshot:accepted"
+    }
+    assert client.snapshots[0]["inventory"] == {
+        "deployments": [],
+        "replicasets": [],
+    }
+
+
+def test_empty_plugin_configuration_fails_closed(
+    monkeypatch,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="At least one agent plugin",
+    ):
+        AgentConfig.from_dict(
+            {"enabled_plugins": []}
+        )
+
+    monkeypatch.setenv(
+        "TOPO_ENABLED_PLUGINS",
+        "",
+    )
+    with pytest.raises(
+        ValueError,
+        match="At least one agent plugin",
+    ):
+        AgentConfig().apply_environment()
+
+
 def test_manual_collect_exits_nonzero_without_success_receipt(
     monkeypatch,
     tmp_path,
@@ -286,4 +356,36 @@ def test_manual_collect_exits_nonzero_without_success_receipt(
     assert result.exit_code == 1
     assert "collection_failed" in result.stdout
     assert "snapshot:accepted" not in result.stdout
+    assert client.snapshots == []
+
+
+def test_manual_collect_with_no_enabled_plugins_exits_nonzero(
+    monkeypatch,
+) -> None:
+    client = _Client()
+    monkeypatch.setattr(
+        agent_main,
+        "load_config",
+        lambda: AgentConfig(
+            enabled_plugins=[]
+        ),
+    )
+    monkeypatch.setattr(
+        agent_main,
+        "load_agent_token",
+        lambda: "test-agent-token",
+    )
+    monkeypatch.setattr(
+        agent_main,
+        "_client",
+        lambda config, token: client,
+    )
+
+    result = CliRunner().invoke(
+        app,
+        ["collect"],
+    )
+
+    assert result.exit_code != 0
+    assert "At least one agent plugin" in result.output
     assert client.snapshots == []

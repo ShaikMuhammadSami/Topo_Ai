@@ -39,6 +39,11 @@ class PluginManager:
         environment: str | None,
         namespace_scope: list[str],
     ) -> None:
+        if not plugins:
+            raise ValueError(
+                "At least one agent plugin must be enabled."
+            )
+
         self.plugins = plugins
 
         self.cluster_name = (
@@ -125,6 +130,11 @@ class PluginManager:
     def collect(
         self,
     ) -> dict[str, Any]:
+        if not self.plugins:
+            raise ValueError(
+                "At least one agent plugin must be enabled."
+            )
+
         inventory: dict[
             str,
             list[dict[str, Any]],

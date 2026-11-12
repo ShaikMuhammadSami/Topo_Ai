@@ -131,7 +131,12 @@ def _runtime(
     object,
     SnapshotBuffer,
 ]:
-    config = load_config()
+    try:
+        config = load_config()
+    except ValueError as exc:
+        raise typer.BadParameter(
+            str(exc)
+        ) from None
 
     token = load_agent_token()
 
@@ -155,6 +160,12 @@ def _runtime(
                 ),
             )
         )
+
+    except ValueError as exc:
+        client.close()
+        raise typer.BadParameter(
+            str(exc)
+        ) from None
 
     except Exception:
         client.close()

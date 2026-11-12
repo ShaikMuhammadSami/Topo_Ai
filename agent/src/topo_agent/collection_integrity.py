@@ -30,6 +30,8 @@ def collection_integrity_error(
     plugins = metadata.get("plugins")
     if not isinstance(plugins, list):
         return "Plugin completeness metadata is missing."
+    if not plugins:
+        return "At least one completed plugin is required."
 
     incomplete: list[str] = []
     for value in plugins:

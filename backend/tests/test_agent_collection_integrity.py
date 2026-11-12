@@ -137,6 +137,50 @@ def test_backend_accepts_complete_declared_contract() -> None:
     assert agent_snapshot_completeness_error(submission) is None
 
 
+def test_backend_rejects_declared_zero_plugin_collection() -> None:
+    submission = _submission(
+        status="success",
+        plugin_status="success",
+    )
+    submission.metadata.update(
+        {
+            "plugin_count": 0,
+            "successful_plugin_count": 0,
+            "failed_plugin_count": 0,
+            "plugins": [],
+        }
+    )
+
+    assert agent_snapshot_completeness_error(submission) == (
+        "At least one completed plugin is required."
+    )
+    with pytest.raises(
+        ValueError,
+        match="At least one completed plugin",
+    ):
+        persist_agent_snapshot(
+            None,
+            agent=SimpleNamespace(),
+            submission=submission,
+        )
+
+    with pytest.raises(HTTPException) as exc_info:
+        submit_snapshot(
+            submission,
+            request=SimpleNamespace(
+                state=SimpleNamespace()
+            ),
+            agent=SimpleNamespace(
+                cluster_name=(
+                    submission.cluster_name
+                )
+            ),
+            session=None,
+        )
+
+    assert exc_info.value.status_code == 400
+
+
 def test_optional_skip_is_not_a_required_collection_failure() -> None:
     submission = _submission(
         status="success",
@@ -285,6 +329,40 @@ def test_failed_cycle_preserves_snapshot_and_recovery_has_no_false_changes(
         submission=baseline,
         authorization_context=authorization,
     )
+
+    zero_plugin = _submission(
+        status="success",
+        plugin_status="success",
+        inventory={},
+        submission_id="submission:zero-plugin",
+        collected_at="2026-11-13T10:00:30+00:00",
+    )
+    zero_plugin.metadata.update(
+        {
+            "plugin_count": 0,
+            "successful_plugin_count": 0,
+            "failed_plugin_count": 0,
+            "plugins": [],
+        }
+    )
+    with pytest.raises(ValueError):
+        persist_agent_snapshot(
+            session,
+            agent=agent,
+            submission=zero_plugin,
+            authorization_context=authorization,
+        )
+
+    assert session.scalar(
+        select(func.count()).select_from(
+            SnapshotRecord
+        )
+    ) == 1
+    assert session.scalar(
+        select(func.count()).select_from(
+            ChangeRecord
+        )
+    ) == 0
 
     incomplete = _submission(
         status="partial",

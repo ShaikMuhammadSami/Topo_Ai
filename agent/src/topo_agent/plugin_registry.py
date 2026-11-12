@@ -91,6 +91,11 @@ def build_plugin_manager(
             + ", ".join(unknown)
         )
 
+    if not normalized:
+        raise ValueError(
+            "At least one agent plugin must be enabled."
+        )
+
     plugins: list[
         CollectorPlugin
     ] = []

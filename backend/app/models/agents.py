@@ -275,6 +275,8 @@ def agent_snapshot_completeness_error(
 
     if not isinstance(plugins, list):
         return "Plugin completeness metadata is required."
+    if not plugins:
+        return "At least one completed plugin is required."
 
     allowed_statuses = {
         "success",
