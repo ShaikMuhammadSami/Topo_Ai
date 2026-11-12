@@ -137,6 +137,18 @@ class RollbackCandidate(BaseModel):
     reason: str
     change_event_id: str | None = None
 
+    # Container images recorded on the causal change
+    # event (properties.images before and after).
+    # Evidence only: filled whenever the leading change
+    # recorded an image change, independent of
+    # `available`, and never an execution target.
+    previous_images: list[str] = Field(
+        default_factory=list
+    )
+    current_images: list[str] = Field(
+        default_factory=list
+    )
+
     # This stays true even when no candidate is
     # available so a future caller cannot mistake
     # this response for execution authorization.
