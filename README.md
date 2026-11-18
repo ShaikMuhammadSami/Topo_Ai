@@ -12,6 +12,30 @@ The full product repository is **[ShaikMuhammadSami/Topo_Ai](https://github.com/
 
 > **Independent evaluation:** Follow the concise [Local Evaluation Guide](docs/LOCAL_EVALUATION.md) to run the Docker demo, investigate it with the real CLI, and optionally test a disposable Docker Desktop Kubernetes workload with the Topo Agent.
 
+## Start with an empty local workspace
+
+For a local-first setup without synthetic incidents, clone the repository and start Compose without running the demo seed:
+
+~~~bash
+git clone https://github.com/ShaikMuhammadSami/Topo_Ai.git
+cd Topo_Ai
+cp .env.example .env
+docker compose up --build --detach --wait
+~~~
+
+Windows PowerShell:
+
+~~~powershell
+git clone https://github.com/ShaikMuhammadSami/Topo_Ai.git
+Set-Location Topo_Ai
+Copy-Item .env.example .env
+docker compose up --build --detach --wait
+~~~
+
+Open **http://localhost:3000/app**, enter a name under **Create workspace**, and submit it. The new workspace is selected automatically and starts with no incidents or topology. This control exists only in the explicit SQLite-only `TOPO_AUTH_MODE=development-disabled` configuration used by the local Compose setup; authenticated deployments continue to require installation bootstrap authority.
+
+To load the synthetic investigation instead, follow the demo seed workflow below. Creating an empty workspace never runs that seed automatically.
+
 ## Run the local demo
 
 Requirements:

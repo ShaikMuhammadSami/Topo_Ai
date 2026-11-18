@@ -21,8 +21,9 @@ from sqlalchemy.orm import Session
 
 from app.db.database import get_session
 from app.db import models as db_models
-from app.models.principal_identity import PrincipalType
+from app.models.principal_identity import DEVELOPMENT_ISSUER, PrincipalType
 from app.security.approval_authorization import authenticated_principal
+from app.security.auth_config import AuthConfiguration, AuthMode
 from app.security.authorization_plan import (
     AuthorizationIntent,
     operation_authorization_plan,
@@ -50,7 +51,10 @@ from app.services.authority_assignments import (
     resolve_service_permissions,
     resolve_tenant_permissions,
 )
-from app.services.principal_identity import PrincipalIdentityError
+from app.services.principal_identity import (
+    PrincipalIdentityError,
+    require_active_principal,
+)
 
 
 class AuthorityKind(StrEnum):
@@ -373,6 +377,7 @@ def authorize_installation(
     *,
     principal: AuthPrincipal,
     required_permissions: frozenset[Permission],
+    allow_local_development_bootstrap: bool = False,
 ) -> AuthorizationContext:
     if principal.principal_type != PrincipalType.HUMAN.value:
         raise AuthorizationFailure(
@@ -380,9 +385,24 @@ def authorize_installation(
             required_permissions=required_permissions,
             authorization_context=_principal_attempt_context(principal),
         )
-    effective = resolve_installation_permissions(
-        session, principal_id=principal.principal_id or ""
+    is_local_development = (
+        allow_local_development_bootstrap
+        and principal.authentication_type == "development"
+        and principal.subject == "local-development"
+        and principal.external_issuer == DEVELOPMENT_ISSUER
+        and principal.external_subject == "local-development"
     )
+    if is_local_development:
+        require_active_principal(
+            session,
+            principal_id=principal.principal_id or "",
+            principal_type=PrincipalType.HUMAN,
+        )
+        effective = frozenset({Permission.INSTALLATION_BOOTSTRAP})
+    else:
+        effective = resolve_installation_permissions(
+            session, principal_id=principal.principal_id or ""
+        )
     context = _context(
         principal,
         authority_kind=AuthorityKind.INSTALLATION,
@@ -801,10 +821,20 @@ async def require_route_authorization(
         }:
             context = authorize_authentication_self_service(principal)
         elif intent is AuthorizationIntent.INSTALLATION_PERMISSION:
+            auth_configuration = getattr(
+                request.app.state,
+                "auth_configuration",
+                None,
+            )
             context = authorize_installation(
                 session,
                 principal=principal,
                 required_permissions=plan.authority.permissions,
+                allow_local_development_bootstrap=(
+                    isinstance(auth_configuration, AuthConfiguration)
+                    and auth_configuration.mode
+                    is AuthMode.DEVELOPMENT_DISABLED
+                ),
             )
         elif intent is AuthorizationIntent.TENANT_PERMISSION:
             selected_tenant_id = _selected_tenant_id(request, principal)
