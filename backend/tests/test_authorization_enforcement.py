@@ -22,6 +22,7 @@ from app.db.models import (
 )
 from app.models.principal_identity import new_principal_id
 from app.repositories import tenant_repository
+from app.security.api_tokens import development_principal
 from app.security.authorization_enforcement import (
     AuthorizationContext,
     AuthorizationFailure,
@@ -513,6 +514,70 @@ def test_installation_authority_is_current_human_assignment_only(
                 session,
                 principal=principal,
                 required_permissions=frozenset({Permission.INSTALLATION_STATUS_READ}),
+            )
+
+
+def test_local_development_principal_has_only_bootstrap_authority(
+    authority_factory,
+) -> None:
+    with authority_factory() as session:
+        principal = development_principal(session)
+        with pytest.raises(
+            AuthorizationFailure,
+            match="PERMISSION_DENIED",
+        ):
+            authorize_installation(
+                session,
+                principal=principal,
+                required_permissions=frozenset(
+                    {Permission.INSTALLATION_BOOTSTRAP}
+                ),
+            )
+
+        context = authorize_installation(
+            session,
+            principal=principal,
+            required_permissions=frozenset(
+                {Permission.INSTALLATION_BOOTSTRAP}
+            ),
+            allow_local_development_bootstrap=True,
+        )
+        assert context.effective_permissions == frozenset(
+            {Permission.INSTALLATION_BOOTSTRAP}
+        )
+
+        for forbidden_permission in (
+            Permission.INSTALLATION_STATUS_READ,
+            Permission.INSTALLATION_RECOVERY,
+            Permission.INSTALLATION_SECRET_MANAGE,
+        ):
+            with pytest.raises(
+                AuthorizationFailure,
+                match="PERMISSION_DENIED",
+            ):
+                authorize_installation(
+                    session,
+                    principal=principal,
+                    required_permissions=frozenset(
+                        {forbidden_permission}
+                    ),
+                    allow_local_development_bootstrap=True,
+                )
+
+        with pytest.raises(
+            AuthorizationFailure,
+            match="PERMISSION_DENIED",
+        ):
+            authorize_installation(
+                session,
+                principal=replace(
+                    principal,
+                    authentication_type="api_token",
+                ),
+                required_permissions=frozenset(
+                    {Permission.INSTALLATION_BOOTSTRAP}
+                ),
+                allow_local_development_bootstrap=True,
             )
 
 

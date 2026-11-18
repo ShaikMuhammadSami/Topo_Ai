@@ -110,6 +110,16 @@ export function listTenants(): Promise<TenantView[]> {
   return apiRequest<TenantView[]>("/api/v1/tenants")
 }
 
+export function createTenant(displayName: string): Promise<TenantView> {
+  return apiRequest<TenantView>("/api/v1/tenants", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ display_name: displayName }),
+  })
+}
+
 export class TopoApiError extends Error {
   readonly status: number | null
   readonly kind: ApiFailureKind

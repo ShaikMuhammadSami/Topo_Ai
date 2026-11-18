@@ -12,6 +12,7 @@ import {
   subscribeAuthTransport,
   selectApiTenant,
   subscribeTenantDenied,
+  createTenant,
 } from "../lib/topo-api.ts"
 import {
   LOGOUT_FAILURE_MESSAGE,
@@ -188,6 +189,60 @@ test("tenant chooser exposes the existing logout flow before tenant selection", 
   assert.match(gate, /role="alert"/)
   assert.doesNotMatch(gate, /deleteBrowserSession/)
   assert.ok(gate.indexOf('aria-label="Sign out"') < gate.indexOf("{selected ? ("))
+})
+
+test("local workspace creation uses the existing tenant API and selects its result", async () => {
+  const originalFetch = globalThis.fetch
+  const requests = []
+  globalThis.fetch = async (path, init) => {
+    requests.push({
+      path,
+      method: init.method,
+      tenant: init.headers.get("X-Topo-Tenant-ID"),
+      body: init.body,
+    })
+    if (path === "/api/v1/tenants") {
+      return Response.json({
+        tenant_id: "tenant:local-workspace",
+        display_name: "Local workspace",
+      }, { status: 201 })
+    }
+    return Response.json([])
+  }
+  try {
+    selectApiTenant(null)
+    const created = await createTenant("Local workspace")
+    selectApiTenant(created.tenant_id)
+    await apiRequest("/api/v1/incidents")
+
+    assert.deepEqual(requests, [
+      {
+        path: "/api/v1/tenants",
+        method: "POST",
+        tenant: null,
+        body: JSON.stringify({ display_name: "Local workspace" }),
+      },
+      {
+        path: "/api/v1/incidents",
+        method: undefined,
+        tenant: "tenant:local-workspace",
+        body: undefined,
+      },
+    ])
+  } finally {
+    selectApiTenant(null)
+    globalThis.fetch = originalFetch
+  }
+})
+
+test("workspace control is development-only and auto-selects the created tenant", async () => {
+  const gate = await source("components/auth/tenant-boundary.tsx")
+  const boundary = await source("components/auth/auth-boundary.tsx")
+  assert.match(boundary, /canCreateWorkspace=\{auth\.principal\?\.authentication_type === "development"\}/)
+  assert.match(gate, /tenants\.length === 0 && canCreateWorkspace && message === null/)
+  assert.match(gate, /await createTenant\(workspaceName\)/)
+  assert.match(gate, /setTenants\(\(current\) => \[\.\.\.current, created\]\)/)
+  assert.match(gate, /choose\(created\.tenant_id\)/)
 })
 
 test("failed logout preserves a retryable error and a successful retry signs out", async () => {

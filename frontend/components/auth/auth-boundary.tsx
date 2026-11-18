@@ -191,6 +191,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
         <TenantGate
           onLogout={auth.logout}
           logoutError={auth.logoutError}
+          canCreateWorkspace={auth.principal?.authentication_type === "development"}
         >
           {children}
         </TenantGate>
