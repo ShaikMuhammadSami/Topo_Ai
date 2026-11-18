@@ -15,6 +15,7 @@ from topo_agent.collection_integrity import (
 from topo_agent.client import (
     AgentApiClient,
     AgentClientError,
+    AgentNonRetryableError,
 )
 from topo_agent.config import (
     AgentConfig,
@@ -122,6 +123,21 @@ class AgentRunner:
                 self.client.submit_snapshot(
                     payload
                 )
+
+            except AgentNonRetryableError as exc:
+                self.buffer.remove(path)
+                self.last_collection_status = (
+                    "snapshot_rejected"
+                )
+                self.last_error = (
+                    f"{exc.code}: buffered snapshot was discarded."
+                )
+                LOGGER.warning(
+                    "Discarded non-retryable buffered snapshot %s: %s",
+                    path.name,
+                    exc.code,
+                )
+                continue
 
             except AgentClientError as exc:
                 self.last_error = safe_exception_message(exc, "Agent heartbeat failed")
@@ -242,6 +258,19 @@ class AgentRunner:
                     submission
                 )
             )
+
+        except AgentNonRetryableError as exc:
+            self.last_collection_status = (
+                "snapshot_rejected"
+            )
+            self.last_error = (
+                f"{exc.code}: snapshot was not buffered."
+            )
+            LOGGER.warning(
+                "Snapshot rejected as non-retryable: %s",
+                exc.code,
+            )
+            return None
 
         except AgentClientError as exc:
             buffered_path = (

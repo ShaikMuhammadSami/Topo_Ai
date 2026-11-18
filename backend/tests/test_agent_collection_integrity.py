@@ -21,6 +21,7 @@ from app.models.agents import (
     agent_snapshot_completeness_error,
 )
 from app.services.agent_snapshot_ingest import (
+    SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED,
     persist_agent_snapshot,
 )
 from app.security.authorization_enforcement import (
@@ -335,8 +336,20 @@ def _declare_config_map_state(
     }
     if state == "skipped_optional":
         plugin["skipped_optional"] = [
-            "configmaps: 403 Forbidden"
+            {
+                "resource": "configmaps",
+                "status_code": 403,
+                "category": "authorization",
+            }
         ]
+
+
+def _api_request(authorization: object) -> SimpleNamespace:
+    return SimpleNamespace(
+        state=SimpleNamespace(
+            authorization_context=authorization
+        )
+    )
 
 
 def test_failed_cycle_preserves_snapshot_and_recovery_has_no_false_changes(
@@ -478,11 +491,11 @@ def test_config_map_permission_loss_cannot_create_false_topology_changes(
         collected_at="2026-11-13T11:00:00+00:00",
     )
     _declare_config_map_state(baseline, "complete")
-    persist_agent_snapshot(
-        session,
+    submit_snapshot(
+        baseline,
+        request=_api_request(authorization),
         agent=agent,
-        submission=baseline,
-        authorization_context=authorization,
+        session=session,
     )
 
     denied = _submission(
@@ -496,16 +509,18 @@ def test_config_map_permission_loss_cannot_create_false_topology_changes(
         collected_at="2026-11-13T11:01:00+00:00",
     )
     _declare_config_map_state(denied, "skipped_optional")
-    with pytest.raises(
-        ValueError,
-        match="ConfigMap collection became unavailable",
-    ):
-        persist_agent_snapshot(
-            session,
+    with pytest.raises(HTTPException) as exc_info:
+        submit_snapshot(
+            denied,
+            request=_api_request(authorization),
             agent=agent,
-            submission=denied,
-            authorization_context=authorization,
+            session=session,
         )
+    assert exc_info.value.status_code == 409
+    assert (
+        exc_info.value.detail
+        == SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+    )
 
     assert session.scalar(
         select(func.count()).select_from(SnapshotRecord)
@@ -528,11 +543,11 @@ def test_config_map_permission_loss_cannot_create_false_topology_changes(
         collected_at="2026-11-13T11:02:00+00:00",
     )
     _declare_config_map_state(restored, "complete")
-    restored_receipt = persist_agent_snapshot(
-        session,
+    restored_receipt = submit_snapshot(
+        restored,
+        request=_api_request(authorization),
         agent=agent,
-        submission=restored,
-        authorization_context=authorization,
+        session=session,
     )
 
     assert restored_receipt.detected_change_count == 0
@@ -557,11 +572,11 @@ def test_config_map_permission_loss_cannot_create_false_topology_changes(
         collected_at="2026-11-13T11:03:00+00:00",
     )
     _declare_config_map_state(deletion, "complete")
-    deletion_receipt = persist_agent_snapshot(
-        session,
+    deletion_receipt = submit_snapshot(
+        deletion,
+        request=_api_request(authorization),
         agent=agent,
-        submission=deletion,
-        authorization_context=authorization,
+        session=session,
     )
 
     assert deletion_receipt.detected_change_count >= 2

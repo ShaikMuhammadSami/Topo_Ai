@@ -9,7 +9,12 @@ import pytest
 from typer.testing import CliRunner
 
 from topo_agent import config
-from topo_agent.client import AgentApiClient, AgentClientError
+from topo_agent.client import (
+    SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED,
+    AgentApiClient,
+    AgentClientError,
+    AgentNonRetryableError,
+)
 from topo_agent.main import app
 from topo_agent.plugin_manager import PluginManager
 from topo_agent.security import install_logging_redaction
@@ -142,6 +147,44 @@ def test_enrollment_rejection_never_exposes_unapproved_response_detail():
 
     assert "Request failed" in str(raised.value)
     assert marker not in str(raised.value)
+
+
+def test_snapshot_integrity_rejection_is_non_retryable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            409,
+            json={
+                "detail": (
+                    SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+                )
+            },
+            request=request,
+        )
+
+    client = AgentApiClient(
+        backend_url="https://topo.example",
+        token="synthetic",
+        timeout_seconds=1,
+        verify_tls=True,
+        max_retries=0,
+        retry_backoff_seconds=0,
+    )
+    client.client.close()
+    client.client = httpx.Client(
+        base_url="https://topo.example",
+        transport=httpx.MockTransport(handler),
+        follow_redirects=False,
+    )
+    try:
+        with pytest.raises(AgentNonRetryableError) as raised:
+            client.submit_snapshot({"inventory": {}})
+    finally:
+        client.close()
+
+    assert (
+        raised.value.code
+        == SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+    )
 
 
 def test_enroll_command_surfaces_action_without_echoing_credential(

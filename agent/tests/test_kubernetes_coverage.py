@@ -207,9 +207,11 @@ class _Api:
         self,
         resources: dict[str, list[object]],
         denied: dict[str, int] | None = None,
+        denied_reason: str = "Forbidden",
     ) -> None:
         self.resources = resources
         self.denied = denied or {}
+        self.denied_reason = denied_reason
 
     def __getattr__(self, name: str):
         resource = (
@@ -222,7 +224,7 @@ class _Api:
             if resource in self.denied:
                 raise ApiException(
                     status=self.denied[resource],
-                    reason="Forbidden",
+                    reason=self.denied_reason,
                 )
             return SimpleNamespace(
                 items=self.resources.get(resource, [])
@@ -351,7 +353,12 @@ def test_pod_without_topo_annotations_has_no_annotations_key() -> None:
 
 
 def test_forbidden_config_maps_are_skipped_not_errors() -> None:
-    api = _Api(_resources(), denied={"config_map": 403})
+    marker = "Bear" + "er synthetic-credential-must-not-leak"
+    api = _Api(
+        _resources(),
+        denied={"config_map": 403},
+        denied_reason=marker,
+    )
     collector = _collector(api)
     plugin = object.__new__(KubernetesPlugin)
     plugin.collector = collector
@@ -362,15 +369,25 @@ def test_forbidden_config_maps_are_skipped_not_errors() -> None:
     assert submission["inventory"]["configmaps"] == []
     assert submission["metadata"]["collection_errors"] == []
     assert submission["metadata"]["skipped_optional"] == [
-        "configmaps: 403 Forbidden"
+        {
+            "resource": "configmaps",
+            "status_code": 403,
+            "category": "authorization",
+        }
     ]
     assert submission["metadata"]["resource_completeness"][
         "configmaps"
     ] == "skipped_optional"
     assert result.status == "success"
     assert result.metadata["skipped_optional"] == [
-        "configmaps: 403 Forbidden"
+        {
+            "resource": "configmaps",
+            "status_code": 403,
+            "category": "authorization",
+        }
     ]
+    assert marker not in repr(submission)
+    assert marker not in repr(result)
     assert "kubernetes.configmaps" in result.capabilities
 
 

@@ -8,6 +8,11 @@ import pytest
 from typer.testing import CliRunner
 
 from topo_agent.buffer import SnapshotBuffer
+from topo_agent.client import (
+    SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED,
+    AgentClientError,
+    AgentNonRetryableError,
+)
 from topo_agent.collector import KubernetesCollector
 from topo_agent.config import AgentConfig
 from topo_agent.main import app
@@ -128,6 +133,23 @@ def _zero_plugin_submission() -> dict:
     return payload
 
 
+def _config_map_submission(state: str) -> dict:
+    payload = _submission("success")
+    plugin = payload["metadata"]["plugins"][0]
+    plugin["resource_completeness"] = {
+        "configmaps": state,
+    }
+    if state == "skipped_optional":
+        plugin["skipped_optional"] = [
+            {
+                "resource": "configmaps",
+                "status_code": 403,
+                "category": "authorization",
+            }
+        ]
+    return payload
+
+
 class _Client:
     def __init__(self) -> None:
         self.snapshots: list[dict] = []
@@ -135,6 +157,37 @@ class _Client:
     def submit_snapshot(self, payload: dict) -> dict:
         self.snapshots.append(payload)
         return {"snapshot_id": "snapshot:accepted"}
+
+    def close(self) -> None:
+        return None
+
+
+class _RejectedThenAcceptedClient:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.accepted: list[dict] = []
+
+    def submit_snapshot(self, payload: dict) -> dict:
+        self.calls += 1
+        if self.calls == 1:
+            raise AgentNonRetryableError(
+                "Snapshot integrity rejection.",
+                code=(
+                    SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+                ),
+            )
+        self.accepted.append(payload)
+        return {"snapshot_id": "snapshot:recovered"}
+
+    def close(self) -> None:
+        return None
+
+
+class _TransientFailureClient:
+    def submit_snapshot(self, payload: dict) -> dict:
+        raise AgentClientError(
+            "Unable to reach the Topo backend."
+        )
 
     def close(self) -> None:
         return None
@@ -270,6 +323,73 @@ def test_zero_plugin_collection_is_never_buffered(tmp_path) -> None:
         buffer.enqueue(_zero_plugin_submission())
 
     assert buffer.size() == 0
+
+
+def test_non_retryable_snapshot_rejection_is_not_buffered_and_recovers(
+    tmp_path,
+) -> None:
+    client = _RejectedThenAcceptedClient()
+    manager = _Manager(
+        [
+            _config_map_submission("skipped_optional"),
+            _config_map_submission("complete"),
+        ]
+    )
+    buffer = SnapshotBuffer(tmp_path, max_items=5)
+    runner = AgentRunner(
+        config=AgentConfig(),
+        client=client,
+        plugin_manager=manager,
+        buffer=buffer,
+    )
+
+    assert runner.collect_once() is None
+    assert runner.last_collection_status == "snapshot_rejected"
+    assert buffer.size() == 0
+
+    assert runner.collect_once() == {
+        "snapshot_id": "snapshot:recovered"
+    }
+    assert len(client.accepted) == 1
+    assert buffer.size() == 0
+
+
+def test_non_retryable_buffer_entry_is_discarded_once(
+    tmp_path,
+) -> None:
+    client = _RejectedThenAcceptedClient()
+    buffer = SnapshotBuffer(tmp_path, max_items=5)
+    buffer.enqueue(
+        _config_map_submission("skipped_optional")
+    )
+    runner = AgentRunner(
+        config=AgentConfig(),
+        client=client,
+        plugin_manager=_Manager([]),
+        buffer=buffer,
+    )
+
+    assert runner.replay_buffer() == 0
+    assert client.calls == 1
+    assert buffer.size() == 0
+    assert runner.replay_buffer() == 0
+    assert client.calls == 1
+
+
+def test_transient_snapshot_failure_remains_buffered(
+    tmp_path,
+) -> None:
+    buffer = SnapshotBuffer(tmp_path, max_items=5)
+    runner = AgentRunner(
+        config=AgentConfig(),
+        client=_TransientFailureClient(),
+        plugin_manager=_Manager([_submission("success")]),
+        buffer=buffer,
+    )
+
+    assert runner.collect_once() is None
+    assert runner.last_collection_status == "buffered"
+    assert buffer.size() == 1
 
 
 def test_success_label_cannot_hide_failed_required_resource(

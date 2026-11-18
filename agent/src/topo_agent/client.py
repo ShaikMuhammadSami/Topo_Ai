@@ -12,6 +12,22 @@ class AgentClientError(Exception):
     pass
 
 
+class AgentNonRetryableError(AgentClientError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+
+
+SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED = (
+    "SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED"
+)
+
+
 _ENROLLMENT_REJECTION_DETAIL = (
     "The enrollment credential is invalid or unavailable."
 )
@@ -173,6 +189,21 @@ class AgentApiClient:
 
                 except ValueError:
                     detail = None
+
+                if (
+                    method.upper() == "POST"
+                    and path == "/api/v1/agent/snapshots"
+                    and response.status_code == 409
+                    and detail
+                    == SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+                ):
+                    raise AgentNonRetryableError(
+                        "Snapshot rejected because an optional resource "
+                        "that was previously observed is now unobservable.",
+                        code=(
+                            SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+                        ),
+                    )
 
                 detail = _safe_error_detail(
                     method=method,

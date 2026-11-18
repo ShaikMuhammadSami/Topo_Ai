@@ -706,7 +706,9 @@ class KubernetesCollector:
             "cronjobs": [],
             "configmaps": [],
         }
-        skipped_optional: list[str] = []
+        skipped_optional: list[
+            dict[str, Any]
+        ] = []
 
         namespaces = required_items(
             "namespaces",
@@ -1494,7 +1496,11 @@ class KubernetesCollector:
                     "skipped_optional"
                 )
                 skipped_optional.append(
-                    f"configmaps: {exc.status} {exc.reason}"
+                    {
+                        "resource": "configmaps",
+                        "status_code": exc.status,
+                        "category": "authorization",
+                    }
                 )
             else:
                 resource_completeness["configmaps"] = "failed"

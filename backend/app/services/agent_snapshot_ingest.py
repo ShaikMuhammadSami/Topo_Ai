@@ -85,6 +85,18 @@ CONFIG_MAP_CONSUMER_KEYS = (
     ("cronjobs", "cronjob"),
 )
 
+SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED = (
+    "SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED"
+)
+
+
+class SnapshotIntegrityRejection(ValueError):
+    """A bounded, non-retryable snapshot-integrity rejection."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
 
 def _declared_resource_state(
     metadata: dict[str, Any],
@@ -174,9 +186,8 @@ def _reject_lost_config_map_observation(
         )
     )
     if previously_observed:
-        raise ValueError(
-            "ConfigMap collection became unavailable after a complete "
-            "observation; the topology snapshot is not accepted."
+        raise SnapshotIntegrityRejection(
+            SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
         )
 
 
