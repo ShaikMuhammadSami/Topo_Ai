@@ -26,6 +26,9 @@ from app.models.topology import (
 from app.repositories.agent_repository import (
     record_snapshot_success,
 )
+from app.repositories.snapshot_repository import (
+    load_snapshot,
+)
 from app.services.agent_runtime_enrichment import (
     enrich_runtime_inventory,
 )
@@ -53,6 +56,7 @@ from app.services.continuous_lifecycle import (
     reconcile_pending_incidents_for_checkpoint,
 )
 from app.services.topology_checkpoint import (
+    latest_checkpoint_record,
     persist_topology_checkpoint,
 )
 from app.services.canonical_identity import (
@@ -62,6 +66,129 @@ from app.services.relationship_provenance import (
     relationship_provenance,
     source_reference,
 )
+from app.services.network_topology_enricher import (
+    NETWORK_ANNOTATION_DEPENDS_ON,
+    NETWORK_ANNOTATION_OUTBOUND,
+    _external_host,
+    _parse_dependency_values,
+)
+
+# Inventory keys whose items carry `config_map_refs` (ConfigMap names read by
+# the pod spec or pod template). The refs become depends_on relationships to
+# the ConfigMap entities, not entity properties.
+CONFIG_MAP_CONSUMER_KEYS = (
+    ("pods", "pod"),
+    ("deployments", "deployment"),
+    ("daemonsets", "daemonset"),
+    ("statefulsets", "statefulset"),
+    ("jobs", "job"),
+    ("cronjobs", "cronjob"),
+)
+
+SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED = (
+    "SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED"
+)
+
+
+class SnapshotIntegrityRejection(ValueError):
+    """A bounded, non-retryable snapshot-integrity rejection."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
+
+
+def _declared_resource_state(
+    metadata: dict[str, Any],
+    *,
+    plugin_name: str,
+    resource: str,
+) -> str | None:
+    plugins = metadata.get("plugins")
+    if not isinstance(plugins, list):
+        return None
+
+    for plugin in plugins:
+        if (
+            not isinstance(plugin, dict)
+            or plugin.get("name") != plugin_name
+        ):
+            continue
+
+        completeness = plugin.get(
+            "resource_completeness"
+        )
+        if not isinstance(completeness, dict):
+            return None
+
+        value = completeness.get(resource)
+        return str(value) if value is not None else None
+
+    return None
+
+
+def _reject_lost_config_map_observation(
+    session: Session,
+    *,
+    agent: TopoAgentRecord,
+    submission: AgentSnapshotSubmission,
+) -> None:
+    """Keep unavailable optional data from becoming removal evidence.
+
+    ConfigMaps remain optional for the shipped least-privilege RBAC. Once a
+    scope has produced a complete ConfigMap observation, however, a later
+    authorization skip cannot safely replace that topology. Rejecting that
+    cycle preserves the last complete checkpoint without copying stale
+    objects into a new snapshot. A later complete, genuinely empty list is
+    still accepted and therefore remains deletion evidence.
+    """
+
+    current_state = _declared_resource_state(
+        submission.metadata,
+        plugin_name="kubernetes",
+        resource="configmaps",
+    )
+    if current_state != "skipped_optional":
+        return
+
+    namespace = (
+        submission.namespace_scope[0]
+        if len(submission.namespace_scope) == 1
+        else "*"
+    )
+    previous_record = latest_checkpoint_record(
+        session,
+        cluster_name=submission.cluster_name,
+        namespace=namespace,
+        tenant_id=agent.tenant_id,
+    )
+    if previous_record is None:
+        return
+
+    previous = load_snapshot(
+        session,
+        previous_record.snapshot_id,
+        tenant_id=agent.tenant_id,
+    )
+    if previous is None:
+        return
+
+    previous_state = _declared_resource_state(
+        previous.metadata,
+        plugin_name="kubernetes",
+        resource="configmaps",
+    )
+    previously_observed = (
+        previous_state == "complete"
+        or any(
+            entity.kind == "KubernetesConfigMap"
+            for entity in previous.entities
+        )
+    )
+    if previously_observed:
+        raise SnapshotIntegrityRejection(
+            SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+        )
 
 
 def _enum_member(
@@ -179,6 +306,8 @@ def build_agent_snapshot(
         tuple[str, str, str]
     ] = set()
 
+    external_entity_ids: set[str] = set()
+
     observed_at = (
         submission.collected_at
     )
@@ -274,6 +403,7 @@ def build_agent_snapshot(
             in item.items()
             if key not in {
                 "labels",
+                "config_map_refs",
             }
         }
 
@@ -473,6 +603,36 @@ def build_agent_snapshot(
             "KubernetesEndpointSlice",
             ("NETWORK", "SERVICE"),
         ),
+        (
+            "daemonsets",
+            "daemonset",
+            "KubernetesDaemonSet",
+            ("WORKLOAD", "COMPUTE"),
+        ),
+        (
+            "statefulsets",
+            "statefulset",
+            "KubernetesStatefulSet",
+            ("WORKLOAD", "COMPUTE"),
+        ),
+        (
+            "jobs",
+            "job",
+            "KubernetesJob",
+            ("WORKLOAD", "COMPUTE"),
+        ),
+        (
+            "cronjobs",
+            "cronjob",
+            "KubernetesCronJob",
+            ("WORKLOAD", "COMPUTE"),
+        ),
+        (
+            "configmaps",
+            "configmap",
+            "KubernetesConfigMap",
+            ("UNKNOWN",),
+        ),
     ]
 
     for (
@@ -518,10 +678,16 @@ def build_agent_snapshot(
                     ),
                 )
 
-    for item in inventory.get(
-        "replicasets",
-        [],
-    ):
+    for item in [
+        *inventory.get(
+            "replicasets",
+            [],
+        ),
+        *inventory.get(
+            "jobs",
+            [],
+        ),
+    ]:
         child_id = entity_by_uid.get(
             str(item.get("uid"))
         )
@@ -610,6 +776,189 @@ def build_agent_snapshot(
                         )
                     ],
                 )
+
+    for inventory_key, kind_key in CONFIG_MAP_CONSUMER_KEYS:
+        for item in inventory.get(
+            inventory_key,
+            [],
+        ):
+            subject_id = entity_by_uid.get(
+                str(item.get("uid"))
+            )
+            refs = item.get("config_map_refs")
+
+            if not subject_id or not isinstance(refs, list):
+                continue
+
+            namespace = str(
+                item.get("namespace")
+                or ""
+            )
+
+            for config_map_name in sorted(
+                {str(ref) for ref in refs if ref}
+            ):
+                config_map_id = entity_by_name.get(
+                    (
+                        "configmap",
+                        namespace,
+                        config_map_name,
+                    )
+                )
+
+                if not config_map_id:
+                    continue
+
+                add_relationship(
+                    source_id=subject_id,
+                    target_id=config_map_id,
+                    relation_name="DEPENDS_ON",
+                    origin=RelationshipOrigin.DECLARED,
+                    source_references=[
+                        source_reference(
+                            reference_type=(
+                                "kubernetes_config_map_reference"
+                            ),
+                            reference=(
+                                f"{namespace}/{config_map_name}"
+                            ),
+                            source_system="kubernetes",
+                            attributes={
+                                "subject_kind": kind_key,
+                                "subject_uid": item.get("uid"),
+                            },
+                        )
+                    ],
+                )
+
+    # Declared dependencies from Pod `topo.ai/*` annotations, built the same
+    # way as network_topology_enricher builds them from the live API.
+    for item in inventory.get(
+        "pods",
+        [],
+    ):
+        pod_id = entity_by_uid.get(
+            str(item.get("uid"))
+        )
+        annotations = item.get("annotations")
+
+        if not pod_id or not isinstance(annotations, dict):
+            continue
+
+        namespace = str(
+            item.get("namespace")
+            or ""
+        )
+
+        for outbound_value in _parse_dependency_values(
+            annotations.get(
+                NETWORK_ANNOTATION_OUTBOUND
+            )
+        ):
+            host, port = _external_host(
+                outbound_value
+            )
+            external_id = (
+                "external:endpoint:"
+                f"{_stable_digest(host, 32)}"
+            )
+
+            if external_id not in external_entity_ids:
+                external_entity_ids.add(external_id)
+                entities.append(
+                    Entity(
+                        id=external_id,
+                        entity_type=EntityType.ENDPOINT,
+                        kind="ExternalEndpoint",
+                        name=host,
+                        source_system=(
+                            "kubernetes-annotation"
+                        ),
+                        external_id=host,
+                        environment=(
+                            submission.environment
+                        ),
+                        observed_at=observed_at,
+                        confidence=1.0,
+                        labels={},
+                        properties={
+                            "hostname": host,
+                            "port": port,
+                            "external": True,
+                            "resolution_status":
+                                "not_checked",
+                        },
+                    )
+                )
+
+            add_relationship(
+                source_id=pod_id,
+                target_id=external_id,
+                relation_name="CALLS",
+                origin=RelationshipOrigin.DECLARED,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_annotation",
+                        reference=outbound_value,
+                        source_system="kubernetes",
+                        attributes={
+                            "annotation": (
+                                NETWORK_ANNOTATION_OUTBOUND
+                            ),
+                            "pod_uid": str(
+                                item.get("uid") or ""
+                            ),
+                        },
+                    )
+                ],
+            )
+
+        for dependency in _parse_dependency_values(
+            annotations.get(
+                NETWORK_ANNOTATION_DEPENDS_ON
+            )
+        ):
+            if "/" in dependency:
+                (
+                    dependency_namespace,
+                    dependency_name,
+                ) = dependency.split("/", 1)
+            else:
+                dependency_namespace = namespace
+                dependency_name = dependency
+
+            service_id = entity_by_name.get(
+                (
+                    "service",
+                    dependency_namespace,
+                    dependency_name,
+                )
+            )
+
+            if not service_id:
+                continue
+
+            add_relationship(
+                source_id=pod_id,
+                target_id=service_id,
+                relation_name="DEPENDS_ON",
+                origin=RelationshipOrigin.DECLARED,
+                source_references=[
+                    source_reference(
+                        reference_type="kubernetes_annotation",
+                        reference=dependency,
+                        source_system="kubernetes",
+                        attributes={
+                            "annotation": (
+                                NETWORK_ANNOTATION_DEPENDS_ON
+                            ),
+                            "pod_uid": str(
+                                item.get("uid") or ""
+                            ),
+                        },
+                    )
+                ],
+            )
 
     pods = inventory.get(
         "pods",
@@ -905,6 +1254,11 @@ def persist_agent_snapshot(
     authorize_service_operation(
         "app.services.agent_snapshot_ingest.persist_agent_snapshot",
         authorization_context=authorization_context,
+    )
+    _reject_lost_config_map_observation(
+        session,
+        agent=agent,
+        submission=submission,
     )
     snapshot = build_agent_snapshot(
         agent=agent,

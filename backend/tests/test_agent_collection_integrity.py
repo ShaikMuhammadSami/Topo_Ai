@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.api.agents import submit_snapshot
 from app.db.database import Base
 from app.db.models import (
+    ChangeEventRecord,
     ChangeRecord,
     SnapshotRecord,
     TopoAgentRecord,
@@ -20,6 +21,7 @@ from app.models.agents import (
     agent_snapshot_completeness_error,
 )
 from app.services.agent_snapshot_ingest import (
+    SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED,
     persist_agent_snapshot,
 )
 from app.security.authorization_enforcement import (
@@ -278,6 +280,7 @@ def _session_and_agent() -> tuple[Session, TopoAgentRecord, object]:
 def _kubernetes_inventory(
     *,
     include_replica_set: bool,
+    include_config_map: bool = False,
 ) -> dict:
     inventory = {
         "namespaces": [
@@ -292,11 +295,13 @@ def _kubernetes_inventory(
                 "name": "payment-api",
                 "namespace": "payments",
                 "images": ["payment:v1"],
+                "config_map_refs": ["payment-config"],
             }
         ],
         "replicasets": [],
         "pods": [],
         "services": [],
+        "configmaps": [],
     }
     if include_replica_set:
         inventory["replicasets"] = [
@@ -308,7 +313,43 @@ def _kubernetes_inventory(
                 "owner_kind": "Deployment",
             }
         ]
+    if include_config_map:
+        inventory["configmaps"] = [
+            {
+                "uid": "configmap-payment",
+                "name": "payment-config",
+                "namespace": "payments",
+                "keys": ["MODE"],
+                "data_sha256": "sha256:" + "1" * 64,
+            }
+        ]
     return inventory
+
+
+def _declare_config_map_state(
+    submission: AgentSnapshotSubmission,
+    state: str,
+) -> None:
+    plugin = submission.metadata["plugins"][0]
+    plugin["resource_completeness"] = {
+        "configmaps": state,
+    }
+    if state == "skipped_optional":
+        plugin["skipped_optional"] = [
+            {
+                "resource": "configmaps",
+                "status_code": 403,
+                "category": "authorization",
+            }
+        ]
+
+
+def _api_request(authorization: object) -> SimpleNamespace:
+    return SimpleNamespace(
+        state=SimpleNamespace(
+            authorization_context=authorization
+        )
+    )
 
 
 def test_failed_cycle_preserves_snapshot_and_recovery_has_no_false_changes(
@@ -433,4 +474,147 @@ def test_failed_cycle_preserves_snapshot_and_recovery_has_no_false_changes(
     )
     assert "entity_removed" in change_types
     assert "relationship_removed" in change_types
+    session.close()
+
+
+def test_config_map_permission_loss_cannot_create_false_topology_changes(
+) -> None:
+    session, agent, authorization = _session_and_agent()
+    baseline = _submission(
+        status="success",
+        plugin_status="success",
+        inventory=_kubernetes_inventory(
+            include_replica_set=True,
+            include_config_map=True,
+        ),
+        submission_id="submission:configmap-baseline",
+        collected_at="2026-11-13T11:00:00+00:00",
+    )
+    _declare_config_map_state(baseline, "complete")
+    submit_snapshot(
+        baseline,
+        request=_api_request(authorization),
+        agent=agent,
+        session=session,
+    )
+
+    denied = _submission(
+        status="success",
+        plugin_status="success",
+        inventory=_kubernetes_inventory(
+            include_replica_set=True,
+            include_config_map=False,
+        ),
+        submission_id="submission:configmap-denied",
+        collected_at="2026-11-13T11:01:00+00:00",
+    )
+    _declare_config_map_state(denied, "skipped_optional")
+    with pytest.raises(HTTPException) as exc_info:
+        submit_snapshot(
+            denied,
+            request=_api_request(authorization),
+            agent=agent,
+            session=session,
+        )
+    assert exc_info.value.status_code == 409
+    assert (
+        exc_info.value.detail
+        == SNAPSHOT_OPTIONAL_RESOURCE_UNOBSERVED
+    )
+
+    assert session.scalar(
+        select(func.count()).select_from(SnapshotRecord)
+    ) == 1
+    assert session.scalar(
+        select(func.count()).select_from(ChangeRecord)
+    ) == 0
+    assert session.scalar(
+        select(func.count()).select_from(ChangeEventRecord)
+    ) == 0
+
+    restored = _submission(
+        status="success",
+        plugin_status="success",
+        inventory=_kubernetes_inventory(
+            include_replica_set=True,
+            include_config_map=True,
+        ),
+        submission_id="submission:configmap-restored",
+        collected_at="2026-11-13T11:02:00+00:00",
+    )
+    _declare_config_map_state(restored, "complete")
+    restored_receipt = submit_snapshot(
+        restored,
+        request=_api_request(authorization),
+        agent=agent,
+        session=session,
+    )
+
+    assert restored_receipt.detected_change_count == 0
+    assert session.scalar(
+        select(func.count()).select_from(SnapshotRecord)
+    ) == 1
+    assert session.scalar(
+        select(func.count()).select_from(ChangeRecord)
+    ) == 0
+    assert session.scalar(
+        select(func.count()).select_from(ChangeEventRecord)
+    ) == 0
+
+    deletion = _submission(
+        status="success",
+        plugin_status="success",
+        inventory=_kubernetes_inventory(
+            include_replica_set=True,
+            include_config_map=False,
+        ),
+        submission_id="submission:configmap-deleted",
+        collected_at="2026-11-13T11:03:00+00:00",
+    )
+    _declare_config_map_state(deletion, "complete")
+    deletion_receipt = submit_snapshot(
+        deletion,
+        request=_api_request(authorization),
+        agent=agent,
+        session=session,
+    )
+
+    assert deletion_receipt.detected_change_count >= 2
+    change_types = set(
+        session.scalars(select(ChangeRecord.change_type)).all()
+    )
+    assert "entity_removed" in change_types
+    assert "relationship_removed" in change_types
+    assert session.scalar(
+        select(func.count()).select_from(ChangeEventRecord)
+    ) > 0
+    session.close()
+
+
+def test_initial_optional_config_map_skip_preserves_default_rbac() -> None:
+    session, agent, authorization = _session_and_agent()
+    submission = _submission(
+        status="success",
+        plugin_status="success",
+        inventory=_kubernetes_inventory(
+            include_replica_set=True,
+            include_config_map=False,
+        ),
+        submission_id="submission:configmap-never-observed",
+        collected_at="2026-11-13T12:00:00+00:00",
+    )
+    _declare_config_map_state(submission, "skipped_optional")
+
+    receipt = persist_agent_snapshot(
+        session,
+        agent=agent,
+        submission=submission,
+        authorization_context=authorization,
+    )
+
+    assert receipt.checkpoint_created is True
+    assert receipt.detected_change_count == 0
+    assert session.scalar(
+        select(func.count()).select_from(SnapshotRecord)
+    ) == 1
     session.close()

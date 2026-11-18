@@ -26,6 +26,11 @@ class KubernetesPlugin:
         "kubernetes.services",
         "kubernetes.ingresses",
         "kubernetes.endpointslices",
+        "kubernetes.daemonsets",
+        "kubernetes.statefulsets",
+        "kubernetes.jobs",
+        "kubernetes.cronjobs",
+        "kubernetes.configmaps",
     )
 
     def __init__(

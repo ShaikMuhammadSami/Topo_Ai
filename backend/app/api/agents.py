@@ -54,6 +54,7 @@ from app.security.agent_tokens import (
     require_agent,
 )
 from app.services.agent_snapshot_ingest import (
+    SnapshotIntegrityRejection,
     persist_agent_snapshot,
 )
 from app.models.runtime_observability import (
@@ -417,16 +418,22 @@ def submit_snapshot(
             detail=completeness_error,
         )
 
-    return persist_agent_snapshot(
-        session=session,
-        agent=agent,
-        submission=submission,
-        authorization_context=getattr(
-            request.state,
-            "authorization_context",
-            None,
-        ),
-    )
+    try:
+        return persist_agent_snapshot(
+            session=session,
+            agent=agent,
+            submission=submission,
+            authorization_context=getattr(
+                request.state,
+                "authorization_context",
+                None,
+            ),
+        )
+    except SnapshotIntegrityRejection as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=exc.code,
+        ) from exc
 
 
 @admin_router.get(
