@@ -27,7 +27,10 @@ test("shared application chrome contains no fictional incident or connection con
 })
 
 test("CLI direct route is informational and lists only real terminal commands", async () => {
-  const cli = await source("components/app/cli-view.tsx")
+  const [cli, landingHero] = await Promise.all([
+    source("components/app/cli-view.tsx"),
+    source("components/landing/hero.tsx"),
+  ])
 
   assert.match(cli, /not an interactive terminal/i)
   assert.match(cli, /does not[\s\S]*represent a connection/i)
@@ -37,6 +40,9 @@ test("CLI direct route is informational and lists only real terminal commands", 
   assert.match(cli, /topo --tenant <tenant-id> snapshots list/)
   assert.doesNotMatch(cli, /runCommand|useState|<input|connected to cluster/i)
   assert.doesNotMatch(cli, fictionalEvidence)
+  assert.match(landingHero, /illustrative example · not live data/i)
+  assert.match(landingHero, /causal-rca latest incident-id/)
+  assert.doesNotMatch(landingHero, /topo<\/span> why|on-prem LLM ready/i)
 })
 
 test("Ask direct route cannot manufacture analysis and points to real incident Copilot", async () => {

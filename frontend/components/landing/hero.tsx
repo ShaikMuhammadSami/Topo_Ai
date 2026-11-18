@@ -41,12 +41,12 @@ export function Hero() {
               href="/app/cli"
               className="inline-flex items-center gap-2 rounded-sm border border-border px-4 py-2.5 font-mono text-sm transition-colors hover:bg-secondary"
             >
-              <Terminal className="h-4 w-4" /> open the CLI
+              <Terminal className="h-4 w-4" /> CLI guide
             </Link>
           </div>
           <div className="mt-8 flex flex-wrap gap-x-5 gap-y-2 font-mono text-[11px] text-muted-foreground">
             <span className="flex items-center gap-1.5">
-              <span className="h-1 w-1 rounded-full bg-ok" /> on-prem LLM ready
+              <span className="h-1 w-1 rounded-full bg-muted-foreground" /> optional LLM integration
             </span>
             <span className="flex items-center gap-1.5">
               <span className="h-1 w-1 rounded-full bg-ok" /> eBPF flows (PoC)
@@ -73,11 +73,14 @@ function HeroTerminal() {
         <span className="ml-3 font-mono text-[11px] text-muted-foreground">
           topo - zsh - 120×30
         </span>
+        <span className="ml-auto font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
+          illustrative example · not live data
+        </span>
       </div>
       <pre className="overflow-x-auto p-4 font-mono text-[12px] leading-relaxed">
         <code>
           <span className="text-warn">topo</span>{" "}
-          <span className="text-info">topo</span> why checkout-api{"\n"}
+          <span className="text-info">topo</span> --tenant tenant-id causal-rca latest incident-id{"\n"}
           <span className="text-muted-foreground">
             {"  "}~ pulling temporal graph @ t=14:32:08Z ± 60m{"\n"}
             {"  "}~ 27 signals · 4 diffs · 11 pod events · 1 deploy{"\n\n"}
