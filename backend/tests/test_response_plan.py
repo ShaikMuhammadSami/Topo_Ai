@@ -604,6 +604,217 @@ def test_deployment_rollback_candidate_requires_approval(
     )
 
 
+_IMAGE_CHANGE_METADATA = {
+    "changed_fields": {
+        "properties.images": {
+            "before": ["nginx:1.27-alpine"],
+            "after": [
+                "nginx:9.99-does-not-exist"
+            ],
+        }
+    },
+    "before": {
+        "kind": "KubernetesDeployment",
+        "properties": {
+            "images": ["nginx:1.27-alpine"]
+        },
+    },
+    "after": {
+        "kind": "KubernetesDeployment",
+        "properties": {
+            "images": [
+                "nginx:9.99-does-not-exist"
+            ]
+        },
+    },
+}
+
+
+def _compare_state_check(result):
+    return next(
+        action
+        for action in result.validation_checks
+        if action.title
+        == (
+            "Compare the recorded previous "
+            "and current state"
+        )
+    )
+
+
+def test_image_change_names_previous_and_current_images(
+    monkeypatch,
+) -> None:
+    _wire(
+        monkeypatch,
+        analysis=_analysis(),
+        context=_context(),
+        snapshot=_snapshot(),
+        events=_events(
+            target_metadata=(
+                _IMAGE_CHANGE_METADATA
+            )
+        ),
+    )
+
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
+    )
+
+    candidate = result.rollback_candidate
+    assert candidate.available
+    assert candidate.previous_images == [
+        "nginx:1.27-alpine"
+    ]
+    assert candidate.current_images == [
+        "nginx:9.99-does-not-exist"
+    ]
+
+    rollback_action = next(
+        action
+        for action in result.recommended_actions
+        if action.category
+        == ResponseActionCategory
+        .ROLLBACK_CANDIDATE
+    )
+    assert (
+        "previous nginx:1.27-alpine; current "
+        "nginx:9.99-does-not-exist"
+        in rollback_action.description
+    )
+    assert (
+        "previous nginx:1.27-alpine"
+        in _compare_state_check(result)
+        .description
+    )
+
+
+def test_image_change_below_threshold_keeps_gate_and_names_images(
+    monkeypatch,
+) -> None:
+    _wire(
+        monkeypatch,
+        analysis=_analysis(confidence=0.6983),
+        context=_context(),
+        snapshot=_snapshot(),
+        events=_events(
+            target_metadata=(
+                _IMAGE_CHANGE_METADATA
+            )
+        ),
+    )
+
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
+    )
+
+    candidate = result.rollback_candidate
+    assert not candidate.available
+    assert "0.75" in candidate.reason
+    assert candidate.change_event_id is None
+    assert candidate.previous_images == [
+        "nginx:1.27-alpine"
+    ]
+    assert candidate.current_images == [
+        "nginx:9.99-does-not-exist"
+    ]
+    assert all(
+        action.category
+        != ResponseActionCategory
+        .ROLLBACK_CANDIDATE
+        for action in result.recommended_actions
+    )
+    assert (
+        "previous nginx:1.27-alpine"
+        in _compare_state_check(result)
+        .description
+    )
+
+
+def test_image_delta_falls_back_to_before_after_state(
+    monkeypatch,
+) -> None:
+    metadata = {
+        key: value
+        for key, value in (
+            _IMAGE_CHANGE_METADATA.items()
+        )
+        if key != "changed_fields"
+    }
+
+    _wire(
+        monkeypatch,
+        analysis=_analysis(),
+        context=_context(),
+        snapshot=_snapshot(),
+        events=_events(
+            target_metadata=metadata
+        ),
+    )
+
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
+    )
+
+    assert (
+        result.rollback_candidate
+        .previous_images
+        == ["nginx:1.27-alpine"]
+    )
+
+
+def test_non_image_change_records_no_images(
+    monkeypatch,
+) -> None:
+    _wire(
+        monkeypatch,
+        analysis=_analysis(),
+        context=_context(),
+        snapshot=_snapshot(),
+        events=_events(
+            target_metadata={
+                "changed_fields": {
+                    "properties.replicas": {
+                        "before": 3,
+                        "after": 1,
+                    }
+                },
+                "before": {
+                    "properties": {
+                        "images": ["nginx:1.27"]
+                    }
+                },
+                "after": {
+                    "properties": {
+                        "images": ["nginx:1.27"]
+                    }
+                },
+            }
+        ),
+    )
+
+    result = response_service.build_incident_response_plan(
+        session=object(), incident_id="incident:1", tenant_id=TEST_TENANT
+    )
+
+    assert result.rollback_candidate.available
+    assert (
+        result.rollback_candidate
+        .previous_images
+        == []
+    )
+    assert (
+        result.rollback_candidate
+        .current_images
+        == []
+    )
+    assert (
+        "Recorded container images"
+        not in _compare_state_check(result)
+        .description
+    )
+
+
 def test_weak_confidence_is_conservative(
     monkeypatch,
 ) -> None:

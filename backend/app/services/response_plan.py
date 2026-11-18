@@ -939,6 +939,7 @@ def _validation_checks(
                     f"'{event.event_id}' and confirm "
                     "that the changed values are "
                     "present on the causal entity."
+                    + _image_change_sentence(event)
                 ),
                 reason=(
                     "A rollback or reversion should "
@@ -957,7 +958,129 @@ def _validation_checks(
     return _rank_actions(checks)
 
 
+def _image_list(
+    value: Any,
+) -> list[str] | None:
+    if not isinstance(value, list):
+        return None
+
+    if not all(
+        isinstance(item, str)
+        and item
+        for item in value
+    ):
+        return None
+
+    return list(value)
+
+
+def _recorded_image_change(
+    event: _EventContext,
+) -> tuple[list[str], list[str]]:
+    """Return the (previous, current) container images
+    recorded on the change event, or two empty lists when
+    the event did not record an image change.
+
+    Topology-diff change events store the field delta in
+    `changed_fields["properties.images"]` and the full
+    entity state in `before` / `after`.
+    """
+
+    previous: list[str] | None = None
+    current: list[str] | None = None
+
+    changed_fields = event.metadata.get(
+        "changed_fields"
+    )
+
+    if isinstance(changed_fields, dict):
+        delta = changed_fields.get(
+            "properties.images"
+        )
+
+        if isinstance(delta, dict):
+            previous = _image_list(
+                delta.get("before")
+            )
+            current = _image_list(
+                delta.get("after")
+            )
+
+    if previous is None or current is None:
+        states = [
+            event.metadata.get(side)
+            for side in ("before", "after")
+        ]
+
+        if all(
+            isinstance(state, dict)
+            and isinstance(
+                state.get("properties"),
+                dict,
+            )
+            for state in states
+        ):
+            previous = _image_list(
+                states[0]["properties"].get(
+                    "images"
+                )
+            )
+            current = _image_list(
+                states[1]["properties"].get(
+                    "images"
+                )
+            )
+
+    if (
+        not previous
+        or not current
+        or previous == current
+    ):
+        return [], []
+
+    return previous, current
+
+
+def _image_change_sentence(
+    event: _EventContext,
+) -> str:
+    previous, current = (
+        _recorded_image_change(event)
+    )
+
+    if not previous:
+        return ""
+
+    return (
+        " Recorded container images: previous "
+        f"{', '.join(previous)}; current "
+        f"{', '.join(current)}."
+    )
+
+
 def _rollback_candidate(
+    *,
+    hypothesis: CausalHypothesis,
+    event: _EventContext,
+    entity_id: str | None,
+) -> RollbackCandidate:
+    previous_images, current_images = (
+        _recorded_image_change(event)
+    )
+
+    return _rollback_eligibility(
+        hypothesis=hypothesis,
+        event=event,
+        entity_id=entity_id,
+    ).model_copy(
+        update={
+            "previous_images": previous_images,
+            "current_images": current_images,
+        }
+    )
+
+
+def _rollback_eligibility(
     *,
     hypothesis: CausalHypothesis,
     event: _EventContext,
@@ -1639,6 +1762,7 @@ def _recommended_actions(
                     f"'{event.event_id}' through its "
                     "authoritative delivery system. Topo "
                     "has not approved or executed this action."
+                    + _image_change_sentence(event)
                 ),
                 reason=rollback.reason,
                 risk=RecommendationRisk.HIGH,
