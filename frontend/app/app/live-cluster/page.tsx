@@ -7,7 +7,6 @@ export default function LiveClusterPage() {
       <AppTopbar
         title="Live cluster"
         path="app/live-cluster"
-        showIncidentContext={false}
       />
 
       <LiveClusterView />

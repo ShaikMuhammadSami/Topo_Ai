@@ -9,7 +9,6 @@ export default function TopologyPage() {
       <AppTopbar
         title="Topology · live snapshots"
         path="app/topology"
-        showIncidentContext={false}
       />
 
       <Suspense fallback={<TopologyLoading />}>

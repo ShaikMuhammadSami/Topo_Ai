@@ -4,7 +4,7 @@ import { CliView } from "@/components/app/cli-view"
 export default function CliPage() {
   return (
     <>
-      <AppTopbar title="CLI simulator" path="app/cli" />
+      <AppTopbar title="Topo CLI" path="app/cli" />
       <CliView />
     </>
   )

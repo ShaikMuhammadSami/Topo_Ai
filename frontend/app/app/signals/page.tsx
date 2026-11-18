@@ -9,7 +9,6 @@ export default function SignalsPage() {
       <AppTopbar
         title="Signals & changes · live evidence"
         path="app/signals"
-        showIncidentContext={false}
       />
 
       <Suspense fallback={<SignalsLoading />}>

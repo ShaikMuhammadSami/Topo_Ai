@@ -8,15 +8,12 @@ import {
   Activity,
   Fingerprint,
   GitBranch,
-  TerminalSquare,
-  Sparkles,
   Workflow,
   Server,
   GitPullRequestArrow,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { TopoLogo } from "@/components/topo-logo"
-import { incident } from "@/lib/topo-data"
 
 const navGroups = [
   {
@@ -40,8 +37,6 @@ const navGroups = [
   {
     label: "Tools",
     items: [
-      { href: "/app/ask", label: "Ask Topo", icon: Sparkles },
-      { href: "/app/cli", label: "CLI", icon: TerminalSquare },
       { href: "/app/integrations", label: "Integrations", icon: Workflow },
     ],
   },
@@ -94,23 +89,6 @@ export function AppSidebar() {
           </section>
         ))}
       </nav>
-      <p className="mb-2 font-mono text-[9px] uppercase tracking-widest text-muted-foreground">
-          Demo context
-       </p>
-      <div className="border-t border-border px-5 py-4 font-mono text-[11px] leading-relaxed text-muted-foreground">
-        <p>
-          cluster <span className="text-foreground">{incident.cluster}</span>
-        </p>
-        <p>
-          ns <span className="text-foreground">{incident.ns}</span>
-        </p>
-        <p>
-          snapshot <span className="text-foreground">t={incident.snapshot}</span>
-        </p>
-        <p className="mt-2 flex items-center gap-1.5">
-          <span className="h-1.5 w-1.5 rounded-full bg-ok" /> collector connected
-        </p>
-      </div>
     </aside>
   )
 }
