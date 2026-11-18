@@ -3,13 +3,18 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+import pytest
 from kubernetes.client.exceptions import ApiException
 
 from topo_agent.collector import (
     KubernetesCollector,
     _config_map_refs,
 )
+from topo_agent.collection_integrity import (
+    collection_integrity_error,
+)
 from topo_agent.config import AgentConfig
+from topo_agent.plugin_manager import PluginManager
 from topo_agent.plugins.kubernetes import KubernetesPlugin
 
 
@@ -285,6 +290,21 @@ def test_collect_reports_workload_kinds_and_config_maps() -> None:
 
     assert submission["metadata"]["collection_errors"] == []
     assert submission["metadata"]["skipped_optional"] == []
+    assert submission["metadata"]["resource_completeness"] == {
+        "namespaces": "complete",
+        "nodes": "complete",
+        "deployments": "complete",
+        "replicasets": "complete",
+        "pods": "complete",
+        "services": "complete",
+        "ingresses": "complete",
+        "endpoint_slices": "complete",
+        "daemonsets": "complete",
+        "statefulsets": "complete",
+        "jobs": "complete",
+        "cronjobs": "complete",
+        "configmaps": "complete",
+    }
 
 
 def test_config_map_hash_changes_with_values_and_is_stable() -> None:
@@ -344,6 +364,9 @@ def test_forbidden_config_maps_are_skipped_not_errors() -> None:
     assert submission["metadata"]["skipped_optional"] == [
         "configmaps: 403 Forbidden"
     ]
+    assert submission["metadata"]["resource_completeness"][
+        "configmaps"
+    ] == "skipped_optional"
     assert result.status == "success"
     assert result.metadata["skipped_optional"] == [
         "configmaps: 403 Forbidden"
@@ -351,13 +374,54 @@ def test_forbidden_config_maps_are_skipped_not_errors() -> None:
     assert "kubernetes.configmaps" in result.capabilities
 
 
-def test_forbidden_workload_kind_is_a_collection_error() -> None:
-    api = _Api(_resources(), denied={"daemon_set": 403})
+@pytest.mark.parametrize(
+    ("api_resource", "inventory_resource"),
+    [
+        ("daemon_set", "daemonsets"),
+        ("stateful_set", "statefulsets"),
+        ("job", "jobs"),
+        ("cron_job", "cronjobs"),
+    ],
+)
+def test_forbidden_required_workload_kind_fails_closed(
+    api_resource: str,
+    inventory_resource: str,
+) -> None:
+    api = _Api(_resources(), denied={api_resource: 403})
     plugin = object.__new__(KubernetesPlugin)
     plugin.collector = _collector(api)
 
     result = plugin.collect()
 
     assert result.status == "partial"
-    assert result.errors == ["daemonsets: 403 Forbidden"]
-    assert result.inventory["statefulsets"]
+    assert result.errors == [f"{inventory_resource}: HTTP 403"]
+    assert result.metadata["resource_completeness"][
+        inventory_resource
+    ] == "failed"
+    assert result.metadata["collection_failures"] == [
+        {
+            "resource": inventory_resource,
+            "status_code": 403,
+            "category": "authorization",
+        }
+    ]
+    assert result.inventory[inventory_resource] == []
+
+
+def test_failed_required_workload_collection_is_not_bufferable() -> None:
+    plugin = object.__new__(KubernetesPlugin)
+    plugin.collector = _collector(
+        _Api(_resources(), denied={"stateful_set": 403})
+    )
+    manager = PluginManager(
+        plugins=[plugin],
+        cluster_name="production",
+        environment="test",
+        namespace_scope=[],
+    )
+
+    submission = manager.collect()
+
+    assert submission["metadata"]["collection_status"] == "failed"
+    assert submission["inventory"] == {}
+    assert collection_integrity_error(submission) is not None

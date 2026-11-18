@@ -26,6 +26,9 @@ from app.models.topology import (
 from app.repositories.agent_repository import (
     record_snapshot_success,
 )
+from app.repositories.snapshot_repository import (
+    load_snapshot,
+)
 from app.services.agent_runtime_enrichment import (
     enrich_runtime_inventory,
 )
@@ -53,6 +56,7 @@ from app.services.continuous_lifecycle import (
     reconcile_pending_incidents_for_checkpoint,
 )
 from app.services.topology_checkpoint import (
+    latest_checkpoint_record,
     persist_topology_checkpoint,
 )
 from app.services.canonical_identity import (
@@ -80,6 +84,100 @@ CONFIG_MAP_CONSUMER_KEYS = (
     ("jobs", "job"),
     ("cronjobs", "cronjob"),
 )
+
+
+def _declared_resource_state(
+    metadata: dict[str, Any],
+    *,
+    plugin_name: str,
+    resource: str,
+) -> str | None:
+    plugins = metadata.get("plugins")
+    if not isinstance(plugins, list):
+        return None
+
+    for plugin in plugins:
+        if (
+            not isinstance(plugin, dict)
+            or plugin.get("name") != plugin_name
+        ):
+            continue
+
+        completeness = plugin.get(
+            "resource_completeness"
+        )
+        if not isinstance(completeness, dict):
+            return None
+
+        value = completeness.get(resource)
+        return str(value) if value is not None else None
+
+    return None
+
+
+def _reject_lost_config_map_observation(
+    session: Session,
+    *,
+    agent: TopoAgentRecord,
+    submission: AgentSnapshotSubmission,
+) -> None:
+    """Keep unavailable optional data from becoming removal evidence.
+
+    ConfigMaps remain optional for the shipped least-privilege RBAC. Once a
+    scope has produced a complete ConfigMap observation, however, a later
+    authorization skip cannot safely replace that topology. Rejecting that
+    cycle preserves the last complete checkpoint without copying stale
+    objects into a new snapshot. A later complete, genuinely empty list is
+    still accepted and therefore remains deletion evidence.
+    """
+
+    current_state = _declared_resource_state(
+        submission.metadata,
+        plugin_name="kubernetes",
+        resource="configmaps",
+    )
+    if current_state != "skipped_optional":
+        return
+
+    namespace = (
+        submission.namespace_scope[0]
+        if len(submission.namespace_scope) == 1
+        else "*"
+    )
+    previous_record = latest_checkpoint_record(
+        session,
+        cluster_name=submission.cluster_name,
+        namespace=namespace,
+        tenant_id=agent.tenant_id,
+    )
+    if previous_record is None:
+        return
+
+    previous = load_snapshot(
+        session,
+        previous_record.snapshot_id,
+        tenant_id=agent.tenant_id,
+    )
+    if previous is None:
+        return
+
+    previous_state = _declared_resource_state(
+        previous.metadata,
+        plugin_name="kubernetes",
+        resource="configmaps",
+    )
+    previously_observed = (
+        previous_state == "complete"
+        or any(
+            entity.kind == "KubernetesConfigMap"
+            for entity in previous.entities
+        )
+    )
+    if previously_observed:
+        raise ValueError(
+            "ConfigMap collection became unavailable after a complete "
+            "observation; the topology snapshot is not accepted."
+        )
 
 
 def _enum_member(
@@ -1145,6 +1243,11 @@ def persist_agent_snapshot(
     authorize_service_operation(
         "app.services.agent_snapshot_ingest.persist_agent_snapshot",
         authorization_context=authorization_context,
+    )
+    _reject_lost_config_map_observation(
+        session,
+        agent=agent,
+        submission=submission,
     )
     snapshot = build_agent_snapshot(
         agent=agent,

@@ -1366,105 +1366,101 @@ class KubernetesCollector:
                 or {}
             )
 
-        try:
-            for daemon_set in self._list_for_namespaces(
+        daemon_sets = required_items(
+            "daemonsets",
+            lambda: self._list_for_namespaces(
                 self.apps
                 .list_daemon_set_for_all_namespaces,
                 self.apps
                 .list_namespaced_daemon_set,
-            ):
-                inventory["daemonsets"].append(
-                    {
-                        **workload_base(daemon_set),
-                        "selector": selector_labels(daemon_set),
-                        "desired_scheduled": (
-                            daemon_set.status
-                            .desired_number_scheduled
-                        ),
-                        "ready_scheduled": (
-                            daemon_set.status.number_ready
-                        ),
-                        **_pod_template_properties(
-                            daemon_set.spec.template
-                        ),
-                    }
-                )
-        except ApiException as exc:
-            errors.append(
-                f"daemonsets: {exc.status} {exc.reason}"
+            ),
+        )
+        for daemon_set in daemon_sets:
+            inventory["daemonsets"].append(
+                {
+                    **workload_base(daemon_set),
+                    "selector": selector_labels(daemon_set),
+                    "desired_scheduled": (
+                        daemon_set.status
+                        .desired_number_scheduled
+                    ),
+                    "ready_scheduled": (
+                        daemon_set.status.number_ready
+                    ),
+                    **_pod_template_properties(
+                        daemon_set.spec.template
+                    ),
+                }
             )
 
-        try:
-            for stateful_set in self._list_for_namespaces(
+        stateful_sets = required_items(
+            "statefulsets",
+            lambda: self._list_for_namespaces(
                 self.apps
                 .list_stateful_set_for_all_namespaces,
                 self.apps
                 .list_namespaced_stateful_set,
-            ):
-                inventory["statefulsets"].append(
-                    {
-                        **workload_base(stateful_set),
-                        "selector": selector_labels(stateful_set),
-                        "replicas": stateful_set.spec.replicas,
-                        "ready_replicas": (
-                            stateful_set.status.ready_replicas
-                        ),
-                        **_pod_template_properties(
-                            stateful_set.spec.template
-                        ),
-                    }
-                )
-        except ApiException as exc:
-            errors.append(
-                f"statefulsets: {exc.status} {exc.reason}"
+            ),
+        )
+        for stateful_set in stateful_sets:
+            inventory["statefulsets"].append(
+                {
+                    **workload_base(stateful_set),
+                    "selector": selector_labels(stateful_set),
+                    "replicas": stateful_set.spec.replicas,
+                    "ready_replicas": (
+                        stateful_set.status.ready_replicas
+                    ),
+                    **_pod_template_properties(
+                        stateful_set.spec.template
+                    ),
+                }
             )
 
-        try:
-            for job in self._list_for_namespaces(
+        jobs = required_items(
+            "jobs",
+            lambda: self._list_for_namespaces(
                 self.batch
                 .list_job_for_all_namespaces,
                 self.batch
                 .list_namespaced_job,
-            ):
-                owner_uid, owner_kind = _owner(job.metadata)
-                inventory["jobs"].append(
-                    {
-                        **workload_base(job),
-                        "owner_uid": owner_uid,
-                        "owner_kind": owner_kind,
-                        "active": job.status.active,
-                        "succeeded": job.status.succeeded,
-                        "failed": job.status.failed,
-                        **_pod_template_properties(
-                            job.spec.template
-                        ),
-                    }
-                )
-        except ApiException as exc:
-            errors.append(
-                f"jobs: {exc.status} {exc.reason}"
+            ),
+        )
+        for job in jobs:
+            owner_uid, owner_kind = _owner(job.metadata)
+            inventory["jobs"].append(
+                {
+                    **workload_base(job),
+                    "owner_uid": owner_uid,
+                    "owner_kind": owner_kind,
+                    "active": job.status.active,
+                    "succeeded": job.status.succeeded,
+                    "failed": job.status.failed,
+                    **_pod_template_properties(
+                        job.spec.template
+                    ),
+                }
             )
 
-        try:
-            for cron_job in self._list_for_namespaces(
+        cron_jobs = required_items(
+            "cronjobs",
+            lambda: self._list_for_namespaces(
                 self.batch
                 .list_cron_job_for_all_namespaces,
                 self.batch
                 .list_namespaced_cron_job,
-            ):
-                inventory["cronjobs"].append(
-                    {
-                        **workload_base(cron_job),
-                        "schedule": cron_job.spec.schedule,
-                        "suspend": bool(cron_job.spec.suspend),
-                        **_pod_template_properties(
-                            cron_job.spec.job_template.spec.template
-                        ),
-                    }
-                )
-        except ApiException as exc:
-            errors.append(
-                f"cronjobs: {exc.status} {exc.reason}"
+            ),
+        )
+        for cron_job in cron_jobs:
+            inventory["cronjobs"].append(
+                {
+                    **workload_base(cron_job),
+                    "schedule": cron_job.spec.schedule,
+                    "suspend": bool(cron_job.spec.suspend),
+                    **_pod_template_properties(
+                        cron_job.spec.job_template.spec.template
+                    ),
+                }
             )
 
         # ConfigMaps are optional: the shipped in-cluster manifest grants
@@ -1491,14 +1487,35 @@ class KubernetesCollector:
                         ),
                     }
                 )
+            resource_completeness["configmaps"] = "complete"
         except ApiException as exc:
             if exc.status in (401, 403):
+                resource_completeness["configmaps"] = (
+                    "skipped_optional"
+                )
                 skipped_optional.append(
                     f"configmaps: {exc.status} {exc.reason}"
                 )
             else:
+                resource_completeness["configmaps"] = "failed"
+                collection_failures.append(
+                    {
+                        "resource": "configmaps",
+                        "status_code": (
+                            exc.status
+                            if isinstance(exc.status, int)
+                            else None
+                        ),
+                        "category": "api_error",
+                    }
+                )
                 errors.append(
-                    f"configmaps: {exc.status} {exc.reason}"
+                    "configmaps: "
+                    + (
+                        f"HTTP {exc.status}"
+                        if isinstance(exc.status, int)
+                        else "Kubernetes API error"
+                    )
                 )
 
         return {

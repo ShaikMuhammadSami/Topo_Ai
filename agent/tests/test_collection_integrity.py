@@ -34,6 +34,8 @@ def _collector_with_replica_set_denied() -> KubernetesCollector:
         list_namespaced_pod=lambda _: _response(),
         list_service_for_all_namespaces=lambda: _response(),
         list_namespaced_service=lambda _: _response(),
+        list_config_map_for_all_namespaces=lambda: _response(),
+        list_namespaced_config_map=lambda _: _response(),
     )
 
     def forbidden(_: str) -> SimpleNamespace:
@@ -47,6 +49,16 @@ def _collector_with_replica_set_denied() -> KubernetesCollector:
         list_namespaced_deployment=lambda _: _response(),
         list_replica_set_for_all_namespaces=lambda: _response(),
         list_namespaced_replica_set=forbidden,
+        list_daemon_set_for_all_namespaces=lambda: _response(),
+        list_namespaced_daemon_set=lambda _: _response(),
+        list_stateful_set_for_all_namespaces=lambda: _response(),
+        list_namespaced_stateful_set=lambda _: _response(),
+    )
+    collector.batch = SimpleNamespace(
+        list_job_for_all_namespaces=lambda: _response(),
+        list_namespaced_job=lambda _: _response(),
+        list_cron_job_for_all_namespaces=lambda: _response(),
+        list_namespaced_cron_job=lambda _: _response(),
     )
     collector.networking = SimpleNamespace(
         list_ingress_for_all_namespaces=lambda: _response(),
