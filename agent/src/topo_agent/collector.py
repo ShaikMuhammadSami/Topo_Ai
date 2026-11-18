@@ -471,6 +471,69 @@ class KubernetesCollector:
         self,
     ) -> dict[str, Any]:
         errors: list[str] = []
+        collection_failures: list[
+            dict[str, Any]
+        ] = []
+        resource_completeness: dict[
+            str,
+            str,
+        ] = {}
+
+        def required_items(
+            resource: str,
+            operation: Callable[[], list[Any]],
+        ) -> list[Any]:
+            try:
+                items = operation()
+            except ApiException as exc:
+                status_code = (
+                    exc.status
+                    if isinstance(exc.status, int)
+                    else None
+                )
+                resource_completeness[
+                    resource
+                ] = "failed"
+                collection_failures.append(
+                    {
+                        "resource": resource,
+                        "status_code": status_code,
+                        "category": (
+                            "authorization"
+                            if status_code in {401, 403}
+                            else "api_error"
+                        ),
+                    }
+                )
+                errors.append(
+                    f"{resource}: "
+                    + (
+                        f"HTTP {status_code}"
+                        if status_code is not None
+                        else "Kubernetes API error"
+                    )
+                )
+                return []
+            except Exception:
+                resource_completeness[
+                    resource
+                ] = "failed"
+                collection_failures.append(
+                    {
+                        "resource": resource,
+                        "status_code": None,
+                        "category": "unavailable",
+                    }
+                )
+                errors.append(
+                    f"{resource}: unavailable"
+                )
+                return []
+
+            resource_completeness[
+                resource
+            ] = "complete"
+            return items
 
         inventory: dict[
             str,
@@ -486,130 +549,123 @@ class KubernetesCollector:
             "endpoint_slices": [],
         }
 
-        try:
-            namespaces = (
+        namespaces = required_items(
+            "namespaces",
+            lambda: (
                 self.core
                 .list_namespace()
                 .items
+            ),
+        )
+
+        for namespace in namespaces:
+            if (
+                self.config.namespaces
+                and namespace
+                .metadata
+                .name
+                not in self
+                .config.namespaces
+            ):
+                continue
+
+            inventory[
+                "namespaces"
+            ].append(
+                {
+                    "uid":
+                        namespace
+                        .metadata.uid,
+                    "name":
+                        namespace
+                        .metadata.name,
+                    "labels":
+                        _labels(
+                            namespace
+                            .metadata
+                        ),
+                    "phase":
+                        getattr(
+                            namespace
+                            .status,
+                            "phase",
+                            None,
+                        ),
+                }
             )
 
-            for namespace in namespaces:
-                if (
-                    self.config.namespaces
-                    and namespace
-                    .metadata
-                    .name
-                    not in self
-                    .config.namespaces
-                ):
-                    continue
-
-                inventory[
-                    "namespaces"
-                ].append(
-                    {
-                        "uid":
-                            namespace
-                            .metadata.uid,
-                        "name":
-                            namespace
-                            .metadata.name,
-                        "labels":
-                            _labels(
-                                namespace
-                                .metadata
-                            ),
-                        "phase":
-                            getattr(
-                                namespace
-                                .status,
-                                "phase",
-                                None,
-                            ),
-                    }
-                )
-
-        except ApiException as exc:
-            errors.append(
-                "namespaces: "
-                f"{exc.status} {exc.reason}"
-            )
-
-        try:
-            nodes = (
+        nodes = required_items(
+            "nodes",
+            lambda: (
                 self.core
                 .list_node()
                 .items
-            )
+            ),
+        )
 
-            for node in nodes:
-                conditions = [
-                    {
-                        "type":
-                            item.type,
-                        "status":
-                            item.status,
-                    }
-                    for item in (
-                        node
-                        .status
-                        .conditions
-                        or []
-                    )
-                ]
-
-                inventory[
-                    "nodes"
-                ].append(
-                    {
-                        "uid":
-                            node
-                            .metadata.uid,
-                        "name":
-                            node
-                            .metadata.name,
-                        "labels":
-                            _labels(
-                                node.metadata
-                            ),
-                        "provider_id":
-                            getattr(
-                             node.spec,
-                             "provider_id",
-                             None,
-                            ),    
-                        "addresses": [
-                            {
-                                "type":
-                                    item.type,
-                                "address":
-                                    item.address,
-                            }
-                            for item in (
-                                node
-                                .status
-                                .addresses
-                                or []
-                            )
-                        ],
-                        "conditions":
-                            conditions,
-                    }
+        for node in nodes:
+            conditions = [
+                {
+                    "type":
+                        item.type,
+                    "status":
+                        item.status,
+                }
+                for item in (
+                    node
+                    .status
+                    .conditions
+                    or []
                 )
+            ]
 
-        except ApiException as exc:
-            errors.append(
-                "nodes: "
-                f"{exc.status} {exc.reason}"
+            inventory[
+                "nodes"
+            ].append(
+                {
+                    "uid":
+                        node
+                        .metadata.uid,
+                    "name":
+                        node
+                        .metadata.name,
+                    "labels":
+                        _labels(
+                            node.metadata
+                        ),
+                    "provider_id":
+                        getattr(
+                            node.spec,
+                            "provider_id",
+                            None,
+                        ),
+                    "addresses": [
+                        {
+                            "type":
+                                item.type,
+                            "address":
+                                item.address,
+                        }
+                        for item in (
+                            node
+                            .status
+                            .addresses
+                            or []
+                        )
+                    ],
+                    "conditions":
+                        conditions,
+                }
             )
 
-        deployments = (
-            self._list_for_namespaces(
+        deployments = required_items(
+            "deployments",
+            lambda: self._list_for_namespaces(
                 self.apps
                 .list_deployment_for_all_namespaces,
                 self.apps
                 .list_namespaced_deployment,
-            )
+            ),
         )
 
         for deployment in deployments:
@@ -667,13 +723,14 @@ class KubernetesCollector:
                 }
             )
 
-        replicasets = (
-            self._list_for_namespaces(
+        replicasets = required_items(
+            "replicasets",
+            lambda: self._list_for_namespaces(
                 self.apps
                 .list_replica_set_for_all_namespaces,
                 self.apps
                 .list_namespaced_replica_set,
-            )
+            ),
         )
 
         for replica_set in replicasets:
@@ -723,11 +780,14 @@ class KubernetesCollector:
                 }
             )
 
-        pods = self._list_for_namespaces(
-            self.core
-            .list_pod_for_all_namespaces,
-            self.core
-            .list_namespaced_pod,
+        pods = required_items(
+            "pods",
+            lambda: self._list_for_namespaces(
+                self.core
+                .list_pod_for_all_namespaces,
+                self.core
+                .list_namespaced_pod,
+            ),
         )
 
         for pod in pods:
@@ -845,13 +905,14 @@ class KubernetesCollector:
                 }
             )
 
-        services = (
-            self._list_for_namespaces(
+        services = required_items(
+            "services",
+            lambda: self._list_for_namespaces(
                 self.core
                 .list_service_for_all_namespaces,
                 self.core
                 .list_namespaced_service,
-            )
+            ),
         )
 
         for service in services:
@@ -947,13 +1008,14 @@ class KubernetesCollector:
                 }
             )
 
-        ingresses = (
-            self._list_for_namespaces(
+        ingresses = required_items(
+            "ingresses",
+            lambda: self._list_for_namespaces(
                 self.networking
                 .list_ingress_for_all_namespaces,
                 self.networking
                 .list_namespaced_ingress,
-            )
+            ),
         )
 
         for ingress in ingresses:
@@ -1026,13 +1088,14 @@ class KubernetesCollector:
                 }
             )
 
-        endpoint_slices = (
-            self._list_for_namespaces(
+        endpoint_slices = required_items(
+            "endpoint_slices",
+            lambda: self._list_for_namespaces(
                 self.discovery
                 .list_endpoint_slice_for_all_namespaces,
                 self.discovery
                 .list_namespaced_endpoint_slice,
-            )
+            ),
         )
 
         for endpoint_slice in endpoint_slices:
@@ -1138,5 +1201,10 @@ class KubernetesCollector:
                     self.access_mode,
                 "collection_errors":
                     errors,
+                "collection_failures":
+                    collection_failures,
+                "resource_completeness":
+                    resource_completeness,
+                "skipped_optional": [],
             },
         }

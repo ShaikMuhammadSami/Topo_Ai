@@ -56,7 +56,18 @@ class _Manager:
             "collector_version": "1.0",
             "inventory": {},
             "metadata": {
-                "collection_status": "success"
+                "collection_status": "success",
+                "plugin_count": 1,
+                "successful_plugin_count": 1,
+                "failed_plugin_count": 0,
+                "plugins": [
+                    {
+                        "name": "kubernetes",
+                        "status": "success",
+                        "errors": [],
+                        "inventory_counts": {},
+                    }
+                ],
             },
         }
 

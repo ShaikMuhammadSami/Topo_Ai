@@ -13,6 +13,7 @@ from app.db.models import (
 from app.models.agents import (
     AgentSnapshotReceipt,
     AgentSnapshotSubmission,
+    agent_snapshot_completeness_error,
 )
 from app.models.topology import (
     Entity,
@@ -891,6 +892,16 @@ def persist_agent_snapshot(
     submission: AgentSnapshotSubmission,
     authorization_context=None,
 ) -> AgentSnapshotReceipt:
+    completeness_error = (
+        agent_snapshot_completeness_error(
+            submission
+        )
+    )
+    if completeness_error is not None:
+        raise ValueError(
+            completeness_error
+        )
+
     authorize_service_operation(
         "app.services.agent_snapshot_ingest.persist_agent_snapshot",
         authorization_context=authorization_context,

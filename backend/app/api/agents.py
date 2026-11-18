@@ -37,6 +37,7 @@ from app.models.agents import (
     AgentSnapshotSubmission,
     AgentSummary,
     AgentPluginsResponse,
+    agent_snapshot_completeness_error,
 )
 from app.repositories.agent_repository import (
     AgentEnrollmentRejected,
@@ -403,6 +404,17 @@ def submit_snapshot(
                 "Snapshot cluster name does "
                 "not match the enrolled agent."
             ),
+        )
+
+    completeness_error = (
+        agent_snapshot_completeness_error(
+            submission
+        )
+    )
+    if completeness_error is not None:
+        raise HTTPException(
+            status_code=400,
+            detail=completeness_error,
         )
 
     return persist_agent_snapshot(

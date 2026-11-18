@@ -81,6 +81,22 @@ def _plugins(
         if item.strip()
     ]
 
+
+def _require_enabled_plugins(
+    values: list[str],
+) -> list[str]:
+    normalized = [
+        value.strip().lower()
+        for value in values
+        if value.strip()
+    ]
+    if not normalized:
+        raise ValueError(
+            "At least one agent plugin must be enabled."
+        )
+    return normalized
+
+
 def agent_home() -> Path:
     override = os.getenv(
         "TOPO_AGENT_HOME"
@@ -298,6 +314,13 @@ class AgentConfig:
 
     change_watch_gcp: bool = False
 
+    def __post_init__(self) -> None:
+        self.enabled_plugins = (
+            _require_enabled_plugins(
+                self.enabled_plugins
+            )
+        )
+
     @classmethod
     def from_dict(
         cls,
@@ -336,10 +359,10 @@ class AgentConfig:
                 )
             ],
             enabled_plugins=[
-             str(item).lower()
-             for item in value.get(
-                 "enabled_plugins",
-                 ["kubernetes"],
+                str(item)
+                for item in value.get(
+                    "enabled_plugins",
+                    ["kubernetes"],
                 )
             ],
             docker_base_url=value.get(
@@ -696,6 +719,12 @@ class AgentConfig:
            self.enabled_plugins = _plugins(
               plugin_value
             )
+
+        self.enabled_plugins = (
+            _require_enabled_plugins(
+                self.enabled_plugins
+            )
+        )
 
         self.docker_base_url = os.getenv(
            "TOPO_DOCKER_BASE_URL",
