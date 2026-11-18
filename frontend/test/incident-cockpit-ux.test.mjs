@@ -317,7 +317,7 @@ test("incident deep-link route remains backward compatible", () => {
   )
 })
 
-test("all established sidebar routes remain present", () => {
+test("sidebar retains operational routes and omits informational mock-tool routes", () => {
   for (const href of [
     "/app",
     "/app/topology",
@@ -326,13 +326,12 @@ test("all established sidebar routes remain present", () => {
     "/app/change-impact",
     "/app/signals",
     "/app/identities",
-    "/app/cli",
-    "/app/ask",
     "/app/integrations",
     "/app/network-dependencies",
   ]) {
     assert.match(sidebarSource, new RegExp(`href: "${href}"`))
   }
+  assert.doesNotMatch(sidebarSource, /href: "\/app\/(?:cli|ask)"/)
 })
 
 test("sidebar groups operations, intelligence and tools", () => {

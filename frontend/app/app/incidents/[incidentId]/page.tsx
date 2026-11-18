@@ -20,7 +20,6 @@ export default async function IncidentBriefingPage({
       <AppTopbar
         title="Unified incident briefing"
         path={`app/incidents/${incidentId}`}
-        showIncidentContext={false}
       />
 
       <Suspense fallback={<RouteLoading />}>

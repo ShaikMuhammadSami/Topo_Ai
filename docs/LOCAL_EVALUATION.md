@@ -76,9 +76,9 @@ python3 -m pip install -e ./cli
 python -m pip install -e .\cli
 ```
 
-The `/app/cli` page is an illustrative in-browser simulator with fixed sample
-values. The `topo` executable below is the actual CLI and reads the running
-backend.
+The `/app/cli` page is a non-interactive pointer to this guide. It does not
+execute commands or report infrastructure connectivity. The `topo` executable
+below is the actual CLI and reads the running backend.
 
 Bash:
 

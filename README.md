@@ -165,11 +165,20 @@ $INCIDENT = (topo --tenant $TENANT -o json incidents list | Out-String | Convert
   <img src="docs/images/readme/cli-blast-radius.png" width="800" alt="topo incidents blast-radius: the failing Pod (direct) and the payment-service Service (dependent)">
 </p>
 
-## What is live and what is illustrative
+## What the workspace displays
 
-The local seed exercises the persisted topology, snapshot diff/change, signal, and incident APIs. The GitHub connector and AWS/Kubernetes observer plugins can be tested separately using the steps below.
+The authenticated workspace reads tenant-scoped incidents, topology snapshots,
+changes, identities, and integration configuration from the backend. An empty
+workspace remains empty; page rendering is not presented as proof that an Agent
+or cluster is connected.
 
-The Ask Topo answer panel, the in-browser CLI simulator, and the **Demo context** block at the bottom of the sidebar (cluster `prod-eu-west-1`, "collector connected") are illustrative UI areas with fixed sample values; they do not reflect your tenant or a live connection. The **Integrations** page shows real webhook endpoint configuration. The sample seed does not call an LLM, AWS, or Kubernetes.
+The local seed exercises the persisted topology, snapshot diff/change, signal,
+and incident APIs. It does not call an LLM, AWS, or Kubernetes. The standalone
+`/app/ask` and `/app/cli` URLs are informational pages: Ask Topo directs users to
+the evidence-scoped Incident Copilot, while the CLI page documents the real
+terminal CLI without simulating commands or connections. The GitHub connector
+and AWS/Kubernetes observer plugins can be tested separately using the steps
+below.
 
 ## Optional: test GitHub with a public repository
 

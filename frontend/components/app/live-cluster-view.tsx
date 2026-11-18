@@ -7,7 +7,6 @@ import {
 } from "react"
 import {
   AlertCircle,
-  CheckCircle2,
   Database,
   LoaderCircle,
   RefreshCw,
@@ -185,10 +184,6 @@ export function LiveClusterView() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 rounded-sm border border-ok/30 bg-ok/10 px-3 py-2 font-mono text-xs text-ok">
-          <CheckCircle2 className="h-4 w-4" />
-          backend-connected view
-        </div>
       </div>
 
       <section className="rounded-md border border-border bg-card p-5">
@@ -474,16 +469,21 @@ export function LiveClusterView() {
 
       {!snapshot &&
         !loadingSnapshot &&
-        !loadingList && (
+        !loadingList &&
+        !error && (
           <div className="rounded-md border border-dashed border-border p-10 text-center">
             <Server className="mx-auto h-6 w-6 text-muted-foreground" />
 
             <p className="mt-3 text-sm font-medium">
-              No snapshot selected
+              {snapshots.length === 0
+                ? "No topology snapshots"
+                : "No snapshot selected"}
             </p>
 
             <p className="mt-1 font-mono text-xs text-muted-foreground">
-              Capture or select a snapshot.
+              {snapshots.length === 0
+                ? "No collected infrastructure is available for this workspace."
+                : "Select a stored snapshot to inspect it."}
             </p>
           </div>
         )}

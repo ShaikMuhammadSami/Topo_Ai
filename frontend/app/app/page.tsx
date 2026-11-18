@@ -32,7 +32,6 @@ export default async function IncidentWorkspacePage({
             : "Incidents"
         }
         path="app"
-        showIncidentContext={false}
       />
 
       <Suspense fallback={<IncidentLoading />}>

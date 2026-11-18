@@ -7,7 +7,6 @@ export default function CodeToRuntimePage() {
       <AppTopbar
         title="Code to runtime"
         path="app/code-to-runtime"
-        showIncidentContext={false}
       />
 
       <CodeToRuntimeView />

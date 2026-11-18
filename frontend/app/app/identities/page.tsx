@@ -7,7 +7,6 @@ export default function IdentitiesPage() {
       <AppTopbar
         title="Identities · live resolution"
         path="app/identities"
-        showIncidentContext={false}
       />
 
       <LiveIdentitiesView />
